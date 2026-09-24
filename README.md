@@ -29,7 +29,7 @@ LLM + Agent Harness + Tool Calling + Knowledge Graph + Persistent Memory + Adapt
 
 | Слой | Стек |
 |---|---|
-| Backend | Python 3.11, FastAPI |
+| Backend | Python 3.13, FastAPI |
 | Agent Harness | LangGraph, LangChain core |
 | LLM | OpenAI (провайдер-агностичный слой) |
 | Database | PostgreSQL 16 + pgvector |
@@ -37,6 +37,12 @@ LLM + Agent Harness + Tool Calling + Knowledge Graph + Persistent Memory + Adapt
 | Frontend | React, TypeScript, Vite, TanStack Query, shadcn/ui |
 | Real-time | WebSocket |
 | Инфраструктура | Docker Compose, Alembic, pytest |
+
+## Структура репозитория
+
+- `backend/` — FastAPI-приложение, Agent Harness и инструменты
+- `frontend/` — React SPA
+- `infra/` — Docker Compose и окружение разработки
 
 ## Документация
 
