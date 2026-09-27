@@ -16,7 +16,7 @@
 | `AGENTS.md` | DOCUMENTATION | контекст проекта, план на 8 недель, архитектурные правила |
 | `INDEX.md` | DOCUMENTATION | главная точка входа для ИИ-агентов |
 | `docs/` | DOCUMENTATION | навигационная документация (PROJECT_MAP, ARCHITECTURE) |
-| `backend/` | APPLICATION (План) | будущий backend: FastAPI, Agent Harness, Tools; сейчас README-заглушка |
+| `backend/` | APPLICATION | FastAPI-скелет (`/health`, настройки, тесты); Agent Harness и Tools — план |
 | `frontend/` | APPLICATION (План) | будущий React SPA; сейчас README-заглушка |
 | `infra/` | INFRASTRUCTURE | работающая локальная БД: PostgreSQL 16 + pgvector |
 | `.gitignore` | CONFIG | исключения git |
@@ -36,7 +36,20 @@ AgentHR/
 ├── INDEX.md
 ├── README.md
 ├── backend/
-│   └── README.md
+│   ├── .env.example
+│   ├── .env                   (локальный, в git не попадает)
+│   ├── .python-version        (пин Python 3.13)
+│   ├── README.md
+│   ├── pyproject.toml
+│   ├── uv.lock                (генерируется, коммитится)
+│   ├── app/
+│   │   ├── __init__.py
+│   │   ├── main.py            (точка входа FastAPI, /health)
+│   │   └── core/
+│   │       ├── __init__.py
+│   │       └── config.py      (настройки, pydantic-settings)
+│   └── tests/
+│       └── test_health.py
 ├── docs/
 │   ├── ARCHITECTURE.md
 │   └── PROJECT_MAP.md
@@ -70,15 +83,19 @@ pgvector.
 **Важно:** данные хранятся в named volume `agenthr_postgres_data`; удаляются только
 `docker compose down -v`.
 
-### `backend/` — План
+### `backend/`
 
 **Role:** APPLICATION (backend)
 
-**Цель по плану:** FastAPI-приложение, Agent Harness (LangGraph), реестр Tools, слой БД
-(SQLAlchemy 2 async + Alembic), JWT-auth, провайдер-агностичный слой LLM.
+**Назначение:** backend-приложение AgentHR. Реализован скелет: FastAPI-точка входа (`app/main.py`,
+эндпоинт `/health`), настройки (`app/core/config.py`), тесты (`tests/`), зависимости через uv.
+
+**Цель по плану:** REST API, Agent Harness (LangGraph), реестр Tools, слой БД (SQLAlchemy 2 async +
+Alembic), JWT-auth, провайдер-агностичный слой LLM.
 Источники: `backend/README.md`, [`AGENTS.md`](../AGENTS.md) §2–3, §6.
 
-**Сейчас содержит:** только `README.md`. Кода нет.
+**Содержит сейчас:** `app/`, `tests/`, `pyproject.toml`, `uv.lock`, `.env.example`,
+`.python-version`, `README.md`.
 
 ### `frontend/` — План
 
@@ -147,6 +164,33 @@ healthcheck (`pg_isready`, интервал 5 с, 10 попыток).
 **Important:** реальный `.env` не коммитится (см. `.gitignore`). Значения из файла в документации
 не приводятся (кроме дефолтов шаблона, предназначенного для локальной разработки).
 
+#### `backend/app/main.py`
+
+**Role:** ENTRYPOINT / API
+
+**Responsibility:** создаёт FastAPI-приложение, читает настройки, объявляет эндпоинт `/health`.
+
+**Depends on:** `backend/app/core/config.py`, `fastapi`.
+
+**Used by:** запуск `uvicorn app.main:app`; тесты `backend/tests/test_health.py`.
+
+**Important:** при добавлении роутеров подключать их здесь; бизнес-логику в точку входа
+не складывать.
+
+#### `backend/app/core/config.py`
+
+**Role:** CONFIG
+
+**Responsibility:** настройки приложения (`Settings`) через pydantic-settings; читает переменные
+окружения и `backend/.env`; `get_settings()` кэширует экземпляр.
+
+**Depends on:** `pydantic-settings`.
+
+**Used by:** `backend/app/main.py`.
+
+**Important:** при добавлении переменных обновлять `backend/.env.example`; секреты в репозитории
+не хранить.
+
 ### Уровень 2 — важные
 
 #### `README.md`
@@ -175,6 +219,39 @@ healthcheck (`pg_isready`, интервал 5 с, 10 попыток).
 
 **Used by:** разработчики при работе с локальной БД.
 
+#### `backend/pyproject.toml`
+
+**Role:** BUILD / CONFIG
+
+**Responsibility:** метаданные проекта, зависимости (fastapi, uvicorn, pydantic-settings),
+dev-группа (pytest, httpx2, ruff), конфигурация pytest (`testpaths`, `pythonpath`) и ruff
+(line-length, target-version).
+
+**Depends on:** —
+
+**Used by:** uv (sync/run), разработчики.
+
+#### `backend/tests/test_health.py`
+
+**Role:** TEST
+
+**Responsibility:** тесты `/health` (200 + статус) и доступности `/docs` через FastAPI TestClient.
+
+**Depends on:** `backend/app/main.py` (импортирует `app`).
+
+**Used by:** `uv run pytest`.
+
+#### `backend/.env.example`
+
+**Role:** CONFIG (шаблон)
+
+**Responsibility:** шаблон локальных настроек backend: `APP_NAME`, `ENVIRONMENT`.
+Копируется в `backend/.env` (в git не попадает).
+
+**Depends on:** —
+
+**Used by:** pydantic-settings (чтение `backend/.env`).
+
 ### Уровень 3 — вспомогательные
 
 | Файл | Роль | Назначение |
@@ -182,7 +259,8 @@ healthcheck (`pg_isready`, интервал 5 с, 10 попыток).
 | `.gitignore` | CONFIG | исключения: Python-кэши, `.venv`, `node_modules`, `dist`, `.env` (кроме `.env.example`), IDE, OS |
 | `.editorconfig` | CONFIG | UTF-8, LF; Python — 4 пробела, TS/JS/JSON/YAML/CSS/HTML — 2 пробела |
 | `.gitattributes` | CONFIG | `* text=auto eol=lf`; CRLF для `.bat`/`.ps1` |
-| `backend/README.md` | DOCUMENTATION | заглушка: состав будущего backend и стек |
+| `backend/README.md` | DOCUMENTATION | команды запуска, тестов и линтера, состав backend |
+| `backend/.python-version` | CONFIG | пин версии Python (3.13) для uv |
 | `frontend/README.md` | DOCUMENTATION | заглушка: состав будущего frontend и стек |
 | `docs/PROJECT_MAP.md` | DOCUMENTATION | этот файл |
 | `docs/ARCHITECTURE.md` | DOCUMENTATION | архитектура: факт и план |
@@ -191,8 +269,22 @@ healthcheck (`pg_isready`, интервал 5 с, 10 попыток).
 
 ## 5. Зависимости между модулями
 
-**Факт.** Кода приложения нет, поэтому зависимостей между модулями нет. Существуют только связи
-инфраструктуры:
+**Факт.** Зависимости кода (backend):
+
+```text
+uvicorn app.main:app
+        │
+        ▼
+app/main.py ──▶ app/core/config.py ──▶ pydantic-settings (backend/.env)
+        ▲
+        │  импорт app
+tests/test_health.py  (FastAPI TestClient)
+```
+
+Backend **пока не подключён к БД** — `DATABASE_URL` и слой SQLAlchemy появятся вместе со следующим
+шагом плана (Alembic + начальная схема).
+
+Текущие инфраструктурные связи:
 
 ```text
 infra/.env ──(подстановка ${...})──▶ infra/docker-compose.yml ──(запускает)──▶ контейнер agenthr-postgres
@@ -200,8 +292,8 @@ infra/.env ──(подстановка ${...})──▶ infra/docker-compose.y
                                                                              named volume postgres_data
 ```
 
-Будущий backend подключится к БД по адресу `localhost:${POSTGRES_PORT}` (порт на хосте,
-по умолчанию `5433`).
+При подключении backend к БД адрес — `localhost:${POSTGRES_PORT}` (порт на хосте, по умолчанию
+`5433`).
 
 **План** ([`AGENTS.md`](../AGENTS.md) §2): `Frontend → Backend API → Agent Harness → Tools →
 БД / граф знаний / vector store`. Прямой доступ LLM к данным запрещён — только через Tools (§2.3).
@@ -214,9 +306,9 @@ infra/.env ──(подстановка ${...})──▶ infra/docker-compose.y
 | Точка входа | Файл | Статус |
 |---|---|---|
 | Запуск инфраструктуры | `infra/docker-compose.yml` | реализовано |
-| Backend-приложение | — | нет (план: `backend/`) |
+| Backend-приложение | `backend/app/main.py` (uvicorn) | скелет реализован |
+| Прогон тестов backend | `backend/tests/` (pytest) | базовые тесты есть |
 | Frontend-приложение | — | нет (план: `frontend/`) |
-| Прогон тестов | — | нет (план: pytest, [`AGENTS.md`](../AGENTS.md) §9) |
 
 ---
 
@@ -231,16 +323,29 @@ infra/.env ──(подстановка ${...})──▶ infra/docker-compose.y
 | `POSTGRES_DB` | имя базы, создаваемой при инициализации | нет |
 | `POSTGRES_PORT` | порт БД на хосте (по умолчанию `5433`; 5432 часто занят локальным PostgreSQL) | нет |
 
+### `backend/.env.example` (и локальный `backend/.env`)
+
+| Переменная | Назначение | Секрет |
+|---|---|---|
+| `APP_NAME` | заголовок FastAPI-приложения | нет |
+| `ENVIRONMENT` | название окружения (`local`, ...) | нет |
+
+### `backend/pyproject.toml`
+
+Зависимости проекта (fastapi, uvicorn, pydantic-settings), dev-группа (pytest, httpx2, ruff),
+конфигурация `pytest` (`testpaths`, `pythonpath`) и `ruff` (line-length, target-version).
+
 ### Прочие конфигурационные файлы
 
 - `.editorconfig` — единый стиль форматирования.
 - `.gitattributes` — нормализация переводов строк.
 - `.gitignore` — исключения git.
+- `backend/.python-version` — пин Python 3.13 для uv.
 
 ### Отсутствуют (План)
 
-`pyproject.toml`, `package.json`, `alembic.ini`, `Dockerfile` приложений, CI-конфигурация —
-появятся вместе с кодом.
+`package.json` (frontend), `alembic.ini`, `Dockerfile` приложений, CI-конфигурация — появятся
+вместе с кодом.
 
 ---
 
@@ -256,6 +361,7 @@ infra/.env ──(подстановка ${...})──▶ infra/docker-compose.y
 - Хранение: named volume `postgres_data`; данные переживают перезапуск, удаляются только
   `docker compose down -v`.
 - Проверено при настройке: контейнер `healthy`, данные сохраняются после `docker compose restart`.
+- Backend пока **не подключается** к БД: `DATABASE_URL` и слой SQLAlchemy/Alembic — план.
 
 **План** ([`AGENTS.md`](../AGENTS.md) §4–5):
 
@@ -279,26 +385,29 @@ infra/.env ──(подстановка ${...})──▶ infra/docker-compose.y
 
 ## 10. Тесты
 
-**Факт:** каталогов и файлов тестов нет; тестовый фреймворк не подключён.
+**Факт:** `backend/tests/test_health.py` — 2 теста (`/health`, `/docs`) на pytest + FastAPI
+TestClient. Запуск: `uv run pytest` из `backend/`. Конфигурация — в `backend/pyproject.toml`
+(`testpaths`, `pythonpath`).
 
-**План** ([`AGENTS.md`](../AGENTS.md) §9): pytest + httpx; функциональные тесты, агентские
-(на мок-LLM), сценарные e2e, тесты адаптивности, eval-наборы качества LLM.
+**План** ([`AGENTS.md`](../AGENTS.md) §9): функциональные тесты, агентские (на мок-LLM),
+сценарные e2e, тесты адаптивности, eval-наборы качества LLM.
 
 ---
 
 ## 11. Скрипты
 
 Нет ни каталога `scripts/`, ни `Makefile`, ни npm-скриптов. Все существующие операции — команды
-`docker compose` из [`infra/README.md`](../infra/README.md).
+из [`infra/README.md`](../infra/README.md) (`docker compose`) и
+[`backend/README.md`](../backend/README.md) (`uv sync`, `uv run uvicorn`, `uv run pytest`,
+`uv run ruff`).
 
 ---
 
 ## 12. Генерируемые файлы
 
-**Сейчас отсутствуют.**
-
-- `infra/.env` — локальный файл (копия `.env.example`), в git не попадает.
-- Уже перечислены в `.gitignore` (появятся с кодом): `.venv/`, `node_modules/`, `dist/`,
-  `__pycache__/`, `.pytest_cache/`, `.ruff_cache/`, `.mypy_cache/`, `.coverage`, `*.log`.
+- `backend/uv.lock` — генерируется uv; коммитится; вручную не редактируется.
+- Локальные/игнорируемые: `backend/.venv/`, `__pycache__/`, `.pytest_cache/`, `.ruff_cache/`,
+  `node_modules/`, `dist/`, `*.log` — перечислены в `.gitignore`.
+- `infra/.env` и `backend/.env` — локальные файлы (копии `.env.example`), в git не попадают.
 - План: Alembic-миграции будут генерироваться (autogenerate) и коммититься; применённые ревизии
   вручную не редактируются.
