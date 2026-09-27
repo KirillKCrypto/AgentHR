@@ -20,6 +20,8 @@ class Settings(BaseSettings):
 
     app_name: str = "AgentHR API"
     environment: str = "local"
+    # Локальный дефолт совпадает с infra/.env.example; переопределяется через backend/.env
+    database_url: str = "postgresql+asyncpg://agenthr:agenthr@localhost:5433/agenthr"
 
 
 @lru_cache

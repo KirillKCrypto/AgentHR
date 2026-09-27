@@ -19,9 +19,11 @@ AgentHR — интеллектуальная агентская система �
 - **Стек (зафиксирован):** Python 3.13 + FastAPI, LangGraph + LangChain core, PostgreSQL 16 +
   pgvector, React + TypeScript + Vite, Docker Compose, Alembic + SQLAlchemy, pytest.
 - **Текущее состояние:** реализованы инфраструктура (Docker Compose с PostgreSQL 16 + pgvector,
-  `infra/`) и скелет backend (FastAPI + `/health`, настройки через pydantic-settings, тесты —
-  `backend/`). `frontend/` — пока README-заглушка. Из чеклиста старта ([`AGENTS.md`](AGENTS.md), §12)
-  выполнены пункты 1–3; пункты 4–11 не начаты.
+  `infra/`) и backend-каркас (FastAPI: `/health`, `/health/db`, настройки, async-подключение
+  к БД, миграции Alembic, тесты — `backend/`). `frontend/` — пока README-заглушка.
+  Из чеклиста старта ([`AGENTS.md`](AGENTS.md), §12) выполнены пункты 1–3; пункт 4 выполнен
+  частично (миграционная инфраструктура и pgvector есть, таблицы — следующий шаг);
+  пункты 5–11 не начаты.
 
 ---
 
@@ -47,6 +49,7 @@ docker compose ps             # agenthr-postgres должен перейти в 
 cd backend
 uv sync                                       # зависимости (Python 3.13)
 Copy-Item .env.example .env                   # один раз: локальные настройки
+uv run alembic upgrade head                   # миграции (нужна запущенная БД)
 uv run uvicorn app.main:app --reload          # http://127.0.0.1:8000 (+ /docs)
 uv run pytest                                 # тесты
 ```
@@ -69,15 +72,18 @@ AgentHR/
 │   ├── docker-compose.yml
 │   ├── .env.example     — шаблон окружения (.env — локальный, в git не попадает)
 │   └── README.md        — запуск и проверка БД
-├── backend/             — СКЕЛЕТ: FastAPI (/health, настройки, тесты); Agent Harness и tools — план
+├── backend/             — КАРКАС: FastAPI, БД-сессия, Alembic; Harness и tools — план
 │   ├── app/
-│   │   ├── main.py      — точка входа FastAPI, эндпоинт /health
-│   │   └── core/config.py — настройки (pydantic-settings)
+│   │   ├── main.py      — точка входа FastAPI, эндпоинты /health и /health/db
+│   │   ├── core/config.py — настройки (pydantic-settings)
+│   │   └── db/          — async-движок (session.py), Base (base.py)
+│   ├── alembic/         — миграции (async; первая — включение pgvector)
+│   ├── alembic.ini      — конфигурация Alembic
 │   ├── tests/           — тесты (pytest)
 │   ├── pyproject.toml   — зависимости и конфигурация инструментов (uv)
 │   ├── uv.lock          — зафиксированные версии (генерируется, коммитится)
 │   ├── .env.example     — шаблон настроек (.env — локальный, в git не попадает)
-│   └── README.md        — команды запуска, тестов и линтера
+│   └── README.md        — команды запуска, тестов, миграций
 └── frontend/            — ПЛАН: React SPA; сейчас только README.md
 ```
 
@@ -95,17 +101,18 @@ AgentHR/
 Подробнее: [`docs/PROJECT_MAP.md`](docs/PROJECT_MAP.md) → раздел `infra/`;
 [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) → «Слой данных».
 
-### Backend — скелет реализован
+### Backend — каркас реализован
 
 **Path:** `backend/`
 
-Реализовано: каркас FastAPI-приложения — точка входа `app/main.py`, эндпоинт `/health`, настройки
-через pydantic-settings (`app/core/config.py`), тесты (`tests/`), зависимости и инструменты
-через uv (`pyproject.toml`, `uv.lock`).
+Реализовано: каркас FastAPI-приложения — точка входа `app/main.py` (эндпоинты `/health`,
+`/health/db`), настройки через pydantic-settings (`app/core/config.py`), слой БД (async-движок
+и сессии SQLAlchemy в `app/db/`), миграции Alembic (первая — включение pgvector), тесты (`tests/`),
+зависимости через uv (`pyproject.toml`, `uv.lock`).
 
-По плану здесь появятся: REST API (auth, вакансии, резюме, планы, интервью), Agent Harness
-(LangGraph), реестр Tools, слой БД (SQLAlchemy + Alembic), JWT-auth, провайдер-агностичный
-слой LLM. Источник: [`AGENTS.md`](AGENTS.md) §2–3, §6.
+По плану здесь появятся: модели и начальная схема БД, REST API (auth, вакансии, резюме, планы,
+интервью), Agent Harness (LangGraph), реестр Tools, JWT-auth, провайдер-агностичный слой LLM.
+Источник: [`AGENTS.md`](AGENTS.md) §2–3, §6.
 
 Подробнее: [`docs/PROJECT_MAP.md`](docs/PROJECT_MAP.md) → раздел `backend/`.
 
@@ -133,10 +140,13 @@ AgentHR/
    ├── docker compose up -d (infra/) ──▶ agenthr-postgres (PostgreSQL 16 + pgvector)
    │                                         │ named volume postgres_data
    │                                         ▼ данные переживают перезапуск
-   └── uv run uvicorn app.main:app (backend/) ──▶ FastAPI-скелет: GET /health, /docs
+   └── uv run uvicorn app.main:app (backend/) ──▶ FastAPI-каркас (backend/app)
+                                                    - GET /health, /health/db
+                                                    - Alembic-миграции (pgvector)
 ```
 
-Backend и БД пока не связаны (подключение — следующий шаг плана).
+Backend подключается к БД по `localhost:5433` (asyncpg, health-проверка `SELECT 1`).
+Моделей и таблиц пока нет — следующий шаг.
 
 **Целевая архитектура (план, не реализована)** — [`AGENTS.md`](AGENTS.md) §2:
 
@@ -163,8 +173,9 @@ Backend API (FastAPI)
 | Точка входа | Роль | Статус |
 |---|---|---|
 | `infra/docker-compose.yml` | запуск БД и инфраструктуры | реализовано |
-| `backend/app/main.py` (запуск: `uvicorn app.main:app`) | основной сервер приложения | скелет реализован |
-| Тесты: `backend/tests/` (`uv run pytest`) | прогон тестов | базовые тесты есть |
+| `backend/app/main.py` (запуск: `uvicorn app.main:app`) | основной сервер приложения | каркас реализован |
+| `backend/alembic/` (запуск: `uv run alembic upgrade head`) | миграции схемы БД | первая миграция есть |
+| Тесты: `backend/tests/` (`uv run pytest`) | прогон тестов | 5 тестов |
 | Точка входа frontend (Vite) | SPA | не создана (`frontend/` — заглушка) |
 
 ---
@@ -175,8 +186,10 @@ Backend API (FastAPI)
 |---|---|
 | `AGENTS.md` | требования, план на 8 недель, архитектурные правила, глоссарий — главный источник истины по замыслу |
 | `README.md` | краткое описание проекта и стека |
-| `backend/app/main.py` | точка входа FastAPI, эндпоинт `/health` |
+| `backend/app/main.py` | точка входа FastAPI, эндпоинты `/health`, `/health/db` |
 | `backend/app/core/config.py` | настройки приложения (pydantic-settings) |
+| `backend/app/db/session.py` | async-движок, фабрика сессий, зависимость `get_db` |
+| `backend/alembic/` | миграции схемы (async) |
 | `backend/pyproject.toml` | зависимости, конфигурация pytest и ruff |
 | `infra/docker-compose.yml` | описание контейнера с БД |
 | `infra/.env.example` | шаблон локального окружения (креды, порт) |
@@ -195,7 +208,7 @@ INDEX.md                    — главная точка входа (этот �
 ├── AGENTS.md               — исходные требования, план, архитектурные правила
 ├── README.md               — краткое описание проекта
 ├── infra/README.md         — работа с локальной БД
-└── backend/README.md       — работа с backend (запуск, тесты)
+└── backend/README.md       — работа с backend (запуск, тесты, миграции)
 ```
 
 ---
@@ -205,25 +218,27 @@ INDEX.md                    — главная точка входа (этот �
 - **`AGENTS.md`** — источник правил и плана. При изменениях проверять согласованность
   `INDEX.md` / `docs/PROJECT_MAP.md` / `docs/ARCHITECTURE.md` и что план не выдан за факт.
 - **`infra/docker-compose.yml`** — от него зависит БД всей команды. Изменение порта, volume или
-  healthcheck затрагивает: `infra/.env`, `infra/README.md`, будущие настройки backend.
+  healthcheck затрагивает: `infra/.env`, `infra/README.md`, настройки backend (`DATABASE_URL`).
 - **`backend/app/core/config.py`** — настройки backend. При добавлении переменных обновлять
   `backend/.env.example`; секреты — только через локальный `.env`.
-- **`infra/.env`** — локальный файл с кредами; в git не коммитится, значения не документируются.
+- **`backend/alembic/versions/`** — уже применённые миграции не редактировать; новые — только
+  через `alembic revision`. Состояние БД воспроизводится командами `upgrade head` / `downgrade base`.
+- **`infra/.env` и `backend/.env`** — локальные файлы; в git не коммитятся, значения
+  не документируются.
 - **Порт БД** — на хосте по умолчанию `5433` (5432 часто занят локальным PostgreSQL); при смене
-  синхронизировать `.env` и будущую конфигурацию backend.
+  синхронизировать `infra/.env` и `DATABASE_URL` в `backend/.env`.
 
 ---
 
 ## 10. Generated / Do Not Edit
 
-Автогенерируемые артефакты сейчас: `backend/uv.lock` (создаётся uv, коммитится, вручную
-не редактируется). Правила:
-
+- `backend/uv.lock` — генерируется uv; коммитится; вручную не редактируется.
+- `backend/alembic/versions/*` — файлы миграций (генерируются `alembic revision`); коммитятся.
+  Содержимое новой миграции можно дополнять руками, **применённые** ревизии не редактируются.
 - `infra/.env` и `backend/.env` — локальные файлы, не коммитить; значения не включать
   в документацию.
 - Локальные/игнорируемые (`backend/.venv/`, `__pycache__/`, `.pytest_cache/`, `.ruff_cache/`,
   `node_modules/`, `dist/`, `*.log`) перечислены в `.gitignore`.
-- Когда появятся Alembic-миграции: уже применённые ревизии вручную не редактировать.
 
 ---
 
@@ -231,13 +246,13 @@ INDEX.md                    — главная точка входа (этот �
 
 1. Перед изменением кода определи подсистему и её ответственность по этому файлу и
    [`docs/PROJECT_MAP.md`](docs/PROJECT_MAP.md).
-2. Не придумывай несуществующие модули: в `backend/` есть только скелет (`app/main.py`,
-   `app/core/config.py`, `tests/`), `frontend/` пока пуст. Перед созданием файла проверь,
-   что его ещё нет.
+2. Не придумывай несуществующие модули: в `backend/` есть каркас (`app/main.py`,
+   `app/core/config.py`, `app/db/`, `alembic/`, `tests/`), моделей и роутеров пока нет,
+   `frontend/` пуст. Перед созданием файла проверь, что его ещё нет.
 3. Соблюдай архитектурные правила проекта ([`AGENTS.md`](AGENTS.md) §2.3, §13): LLM не обращается
    к БД/графу напрямую — только через Tools; все действия агента логируются; состояние сессии
    сохраняется (checkpoint).
-4. Новое состояние БД — только через миграции Alembic (когда backend подключится к БД).
+4. Новое состояние БД — только через миграции Alembic.
 5. Не трогай секреты: `infra/.env` и `backend/.env` не коммитить, значения не документировать.
 6. Фича считается готовой только при наличии теста и прогона реального сценария
    ([`AGENTS.md`](AGENTS.md) §13).
@@ -255,10 +270,10 @@ INDEX.md                    — главная точка входа (этот �
 | Вопрос | Ответ |
 |---|---|
 | Где инфраструктура / запуск БД? | `infra/` → [`infra/README.md`](infra/README.md) |
-| Где API? | `backend/app/main.py` (сейчас только `/health`); остальное — план ([`AGENTS.md`](AGENTS.md) §2–3) |
+| Где API? | `backend/app/main.py` (сейчас `/health`, `/health/db`); остальное — план ([`AGENTS.md`](AGENTS.md) §2–3) |
 | Где агент, Harness и Tools? | Пока нет; план — `backend/` ([`AGENTS.md`](AGENTS.md) §3) |
 | Где фронтенд? | Пока нет; план — `frontend/` ([`AGENTS.md`](AGENTS.md) §7) |
-| Где работа с БД (модели, миграции)? | Пока нет; реализована только сама БД — `infra/` |
+| Где работа с БД (сессии, миграции)? | Сессии — `backend/app/db/`; миграции — `backend/alembic/` (моделей пока нет) |
 | Где конфигурация окружения? | `backend/.env.example` (backend), `infra/.env.example` (БД) |
 | Где тесты? | `backend/tests/` → `uv run pytest` ([`AGENTS.md`](AGENTS.md) §9 — план расширения) |
 | Где правила разработки? | [`AGENTS.md`](AGENTS.md) §13 |

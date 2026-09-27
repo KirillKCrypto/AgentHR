@@ -10,10 +10,10 @@
 
 ## 1. Обзор архитектуры
 
-Стадия проекта — неделя 1 (M0 «Фундамент»). Фактически реализованы: инфраструктурный контур
-(локальная PostgreSQL 16 + pgvector в Docker Compose) и скелет backend (FastAPI, эндпоинт
-`/health`, настройки, базовые тесты). Агентский цикл, схема БД, auth и внешние интеграции —
-пока нет.
+Стадия проекта — неделя 1 (M0 «Фундамент»). Фактически реализованы: инфраструктура (локальная
+PostgreSQL 16 + pgvector в Docker Compose) и backend-каркас (FastAPI: `/health`, `/health/db`,
+настройки, async-подключение к БД, миграции Alembic, базовые тесты). Агентский цикл, модели
+данных, auth и внешние интеграции — пока нет.
 
 Целевая архитектура — агентская система (не чат-бот): `LLM + Agent Harness + Tool Calling +
 граф знаний + персистентная память + адаптивное обучение` ([`AGENTS.md`](../AGENTS.md) §1–2).
@@ -24,9 +24,9 @@
 
 ## 2. Контекст системы
 
-**Факт.** Система сейчас = контейнер базы данных и скелет backend-сервера на машине
-разработчика. Backend и БД между собой пока не связаны. Пользователей, внешних сервисов
-и сетевого взаимодействия извне нет.
+**Факт.** Система сейчас = контейнер базы данных и backend-сервер на машине разработчика.
+Backend подключён к БД (asyncpg) и умеет проверять её доступность; пользовательского
+взаимодействия извне пока нет.
 
 **План.** Пользователь работает с системой через SPA по сценарию из 7 шагов: загрузка вакансии →
 загрузка резюме → анализ уровня → персональный план подготовки → тренировочные интервью →
@@ -45,12 +45,12 @@
    │                                         │ named volume
    │                                         ▼
    │                                     postgres_data (данные переживают перезапуск)
-   └── uv run uvicorn app.main:app (backend/) ──▶ FastAPI-скелет (backend/app)
-                                                     - GET /health
-                                                     - /docs (Swagger UI)
+   │                                         ▲
+   │                                         │ asyncpg (SELECT 1 в /health/db)
+   └── uv run uvicorn app.main:app (backend/) ──▶ FastAPI-каркас (backend/app)
+                                                     - GET /health, /health/db
+                                                     - Alembic-миграции (pgvector)
 ```
-
-Backend и БД пока не связаны: подключение к базе — следующий шаг плана.
 
 ### 3.2 План (не реализовано)
 
@@ -79,30 +79,32 @@ Backend API (FastAPI)          ← auth, бизнес-логика, владел
 
 **Location:** `infra/`
 
-**Ответственность:** предоставить локальную БД для разработки и будущего backend.
+**Ответственность:** предоставить локальную БД для разработки и backend.
 
 **Основные компоненты:** `docker-compose.yml` (сервис `postgres`), `.env.example` / `.env`
 (параметры подключения), `README.md` (инструкции).
 
 **Зависимости:** Docker Desktop; внешних сервисов нет.
 
-**Потребители:** разработчики; в будущем — backend (подключение к `localhost:${POSTGRES_PORT}`).
+**Потребители:** разработчики; backend (подключение к `localhost:${POSTGRES_PORT}`).
 
 **Ограничения:** данные в named volume; удаление — только `docker compose down -v`; порт на хосте
 по умолчанию `5433` (5432 часто занят локальным PostgreSQL).
 
-### Backend (частично реализован)
+### Backend (каркас реализован)
 
 **Location:** `backend/`
 
-**Реализовано:** FastAPI-точка входа `app/main.py` (эндпоинт `/health`), настройки
-`app/core/config.py` (pydantic-settings), тесты `tests/`, зависимости через uv
-(`pyproject.toml`, `uv.lock`).
+**Реализовано:** FastAPI-точка входа `app/main.py` (эндпоинты `/health`, `/health/db`), настройки
+`app/core/config.py` (pydantic-settings), слой БД `app/db/` (async-движок, фабрика сессий,
+`get_db`, `Base`), миграции Alembic (`alembic/`, первая — включение pgvector), тесты `tests/`,
+зависимости через uv.
 
-**Ответственность по плану:** аутентификация, REST-эндпоинты, сервисный слой, транзакции, запуск
-агентских сессий, трансляция стрима; владелец БД ([`AGENTS.md`](../AGENTS.md) §2.2).
+**Ответственность по плану:** модели и начальная схема БД, аутентификация, REST-эндпоинты,
+сервисный слой, транзакции, запуск агентских сессий, трансляция стрима; владелец БД
+([`AGENTS.md`](../AGENTS.md) §2.2).
 
-**Стек:** Python 3.13, FastAPI, SQLAlchemy 2 (async), Alembic, LangGraph.
+**Стек:** Python 3.13, FastAPI, SQLAlchemy 2 (async) + asyncpg, Alembic, LangGraph.
 
 ### Frontend (План)
 
@@ -124,7 +126,7 @@ Tools — типизированные функции (JSON Schema), единс�
 
 ## 5. Потоки данных
 
-**Факт:** отсутствуют (нет бизнес-логики; единственный маршрут — `/health`, не работающий с данными).
+**Факт:** отсутствуют (нет бизнес-логики; health-эндпоинты не работают с данными, кроме `SELECT 1`).
 
 **План** ([`AGENTS.md`](../AGENTS.md) §2.4):
 
@@ -139,8 +141,11 @@ Tools — типизированные функции (JSON Schema), единс�
 
 ## 6. Поток запроса
 
-**Факт:** единственный маршрут — `GET /health` в `backend/app/main.py` (отдаёт статус и окружение);
-вся обработка — внутри процесса uvicorn; БД не задействована.
+**Факт:** два маршрута в `backend/app/main.py`:
+
+- `GET /health` — статус и окружение (без обращения к БД);
+- `GET /health/db` — `SELECT 1` через `get_db` (async-сессия): 200 при доступной БД,
+  503 при `SQLAlchemyError` или `OSError` (сервер БД недоступен).
 
 **План:** REST + WebSocket между SPA и FastAPI; стриминг ответов агента пользователю
 ([`AGENTS.md`](../AGENTS.md) §2.1, §3.3).
@@ -152,17 +157,19 @@ Tools — типизированные функции (JSON Schema), единс�
 **Факт:**
 
 - СУБД: PostgreSQL 16 в контейнере `agenthr-postgres` (образ `pgvector/pgvector:pg16`).
-- Расширение `vector`: доступно в образе. Проверка — команда из [`infra/README.md`](../infra/README.md);
-  установка на чистой БД — `CREATE EXTENSION IF NOT EXISTS vector`.
-- Подключение: `localhost`, порт из `POSTGRES_PORT` (по умолчанию `5433`), креды — из `infra/.env`.
+- Расширение `vector` создаётся миграцией Alembic `6d7c8a1b787e`
+  (`CREATE EXTENSION IF NOT EXISTS vector`; откат удаляет расширение).
+- Подключение: `DATABASE_URL` из `backend/.env` (локальный дефолт в `app/core/config.py`);
+  движок и сессии — `backend/app/db/session.py` (asyncpg, `pool_pre_ping`).
+- Миграции: Alembic (async-шаблон), URL берётся в `alembic/env.py` из настроек;
+  команды — `uv run alembic upgrade head` / `downgrade base` / `current`.
+  Цикл upgrade → downgrade → upgrade проверен на локальной БД.
 - Хранение: named volume `postgres_data`; данные переживают перезапуск контейнера.
-- На момент составления проверено: контейнер `healthy`, расширение `vector` устанавливается,
-  данные сохраняются после `docker compose restart`.
-- Backend пока не подключается к БД: `DATABASE_URL`, SQLAlchemy и Alembic — план.
+- Модели и таблицы пока отсутствуют (`Base.metadata` пуст) — следующий шаг плана.
 
 **План** ([`AGENTS.md`](../AGENTS.md) §4–5): реляционная схема (`users`, `vacancies`, `resumes`,
-`topics`, `user_skill_states`, `interview_sessions`, `agent_actions` и др.); ORM SQLAlchemy 2
-(async), миграции Alembic; `agent_actions` — обязательный audit-лог; граф знаний — реляционная
+`topics`, `user_skill_states`, `interview_sessions`, `agent_actions` и др.); ORM-модели
+SQLAlchemy 2 (async); `agent_actions` — обязательный audit-лог; граф знаний — реляционная
 модель в Postgres с репозиторием-границей (без Neo4j в MVP).
 
 ---
@@ -195,15 +202,19 @@ Tools — типизированные функции (JSON Schema), единс�
 | `POSTGRES_DB` | имя базы, создаваемой при инициализации | нет |
 | `POSTGRES_PORT` | порт БД на хосте (по умолчанию `5433`) | нет |
 
-**Backend** — `backend/.env` (копия `backend/.env.example`): `APP_NAME` (заголовок приложения),
-`ENVIRONMENT` (название окружения); обе — не секреты. Настройки читает `app/core/config.py`
-(pydantic-settings).
+**Backend** — `backend/.env` (копия `backend/.env.example`):
+
+| Переменная | Назначение | Секрет |
+|---|---|---|
+| `APP_NAME` | заголовок FastAPI-приложения | нет |
+| `ENVIRONMENT` | название окружения (`local`, ...) | нет |
+| `DATABASE_URL` | подключение к PostgreSQL (`postgresql+asyncpg://...`) | да (содержит пароль) |
 
 Значения переменных окружения в документации не приводятся. `.env.example` — шаблоны для
-локальной разработки, они коммитятся.
+локальной разработки, они коммитятся. Настройки читает `app/core/config.py` (pydantic-settings).
 
 Прочие конфигурационные файлы: `.editorconfig`, `.gitattributes`, `.gitignore`,
-`backend/.python-version` (пин Python 3.13).
+`backend/alembic.ini`, `backend/.python-version` (пин Python 3.13).
 
 **План:** конфигурация frontend появится вместе с кодом.
 
@@ -229,7 +240,8 @@ Tools — типизированные функции (JSON Schema), единс�
 
 ## 12. Обработка ошибок
 
-**Факт:** не реализована.
+**Факт:** `/health/db` обрабатывает недоступность БД и отвечает 503 (`SQLAlchemyError` — ошибка
+запроса, `OSError` — соединение не установлено). Другой обработки ошибок нет.
 
 **План** ([`AGENTS.md`](../AGENTS.md) §9–10): валидация схем `tool_call`, откат при ошибке
 инструмента, лимиты/таймауты, fallback-ответ агента.
@@ -238,8 +250,12 @@ Tools — типизированные функции (JSON Schema), единс�
 
 ## 13. Тестирование
 
-**Факт:** подключён pytest; `backend/tests/test_health.py` проверяет `/health` и `/docs` через
-FastAPI TestClient. Запуск: `uv run pytest` из `backend/`; конфигурация — в `backend/pyproject.toml`.
+**Факт:** подключён pytest; в `backend/tests/` 5 тестов:
+
+- `test_health.py` — `/health` и `/docs`;
+- `test_health_db.py` — `/health/db`: 200 и 503 (через подмену `get_db`, без реального Postgres).
+
+Запуск: `uv run pytest` из `backend/`; конфигурация — в `backend/pyproject.toml`.
 
 **План** ([`AGENTS.md`](../AGENTS.md) §9): функциональные тесты, агентские (на мок-LLM), сценарные
 e2e, тесты адаптивности на синтетических пользователях, eval-наборы для качества LLM (извлечение,
@@ -266,12 +282,14 @@ Backend (из [`backend/README.md`](../backend/README.md)):
 cd backend
 uv sync                                  # установка зависимостей (Python 3.13)
 Copy-Item .env.example .env              # один раз
+uv run alembic upgrade head              # миграции (нужна запущенная БД)
 uv run uvicorn app.main:app --reload     # запуск сервера (http://127.0.0.1:8000)
 uv run pytest                            # тесты
 uv run ruff check .                      # линтер
 ```
 
-Dockerfile приложений и CI нет. Платформа разработки — Windows + Docker Desktop + uv.
+Миграции применяются вручную (`alembic upgrade head`); автоматического применения при старте
+приложения нет. Dockerfile приложений и CI нет. Платформа разработки — Windows + Docker Desktop + uv.
 
 **План:** сборка frontend (Vite) — появится вместе с кодом.
 
@@ -297,8 +315,11 @@ Dockerfile приложений и CI нет. Платформа разрабо�
 ## 16. Известные архитектурные риски
 
 - **Порт БД.** 5432 часто занят локальным PostgreSQL; проект использует 5433. При смене порта
-  синхронизировать `infra/.env` и будущую конфигурацию backend.
-- **Зависимость от Docker Desktop.** При выключенном движке команды `docker compose` не работают.
+  синхронизировать `infra/.env` и `DATABASE_URL` в `backend/.env`.
+- **Зависимость от Docker Desktop.** При выключенном движке команды `docker compose` не работают,
+  а `/health/db` отвечает 503.
+- **Миграции вручную.** Автоприменения миграций при старте нет — перед запуском нужен
+  `alembic upgrade head`.
 - **Стадия проекта.** Значительная часть архитектуры существует только в плане; риск расхождения
   документации и кода снижается правилом обновлять эти три документа при изменениях.
 - **Плановые риски проекта** (точность оценки ответов, качество онтологии, стоимость agent-loop,
