@@ -11,9 +11,9 @@
 ## 1. Обзор архитектуры
 
 Стадия проекта — неделя 1 (M0 «Фундамент»). Фактически реализованы: инфраструктура (локальная
-PostgreSQL 16 + pgvector в Docker Compose) и backend-каркас (FastAPI: `/health`, `/health/db`,
-настройки, async-подключение к БД, модель `User`, миграции Alembic, базовые тесты). Агентский
-цикл, остальные модели данных, auth и внешние интеграции — пока нет.
+PostgreSQL 16 + pgvector в Docker Compose) и backend-каркас (FastAPI: health-эндпоинты,
+JWT-аутентификация, настройки, async-подключение к БД, модель `User`, миграции Alembic,
+тесты). Агентский цикл, остальные модели данных и внешние интеграции — пока нет.
 
 Целевая архитектура — агентская система (не чат-бот): `LLM + Agent Harness + Tool Calling +
 граф знаний + персистентная память + адаптивное обучение` ([`AGENTS.md`](../AGENTS.md) §1–2).
@@ -25,8 +25,8 @@ PostgreSQL 16 + pgvector в Docker Compose) и backend-каркас (FastAPI: `/
 ## 2. Контекст системы
 
 **Факт.** Система сейчас = контейнер базы данных и backend-сервер на машине разработчика.
-Backend подключён к БД (asyncpg), умеет проверять её доступность и хранит таблицу `users`.
-Пользовательского взаимодействия извне пока нет.
+Backend подключён к БД (asyncpg), регистрирует и аутентифицирует пользователей (JWT),
+хранит таблицу `users`. Пользовательского взаимодействия извне пока нет.
 
 **План.** Пользователь работает с системой через SPA по сценарию из 7 шагов: загрузка вакансии →
 загрузка резюме → анализ уровня → персональный план подготовки → тренировочные интервью →
@@ -46,9 +46,11 @@ Backend подключён к БД (asyncpg), умеет проверять её
    │                                         ▼
    │                                     postgres_data (данные переживают перезапуск)
    │                                         ▲
-   │                                         │ asyncpg (SELECT 1 в /health/db)
-   └── uv run uvicorn app.main:app (backend/) ──▶ FastAPI-каркас (backend/app)
+   │                                         │ asyncpg
+   └── uv run uvicorn app.main:app (backend/) ──▶ FastAPI (backend/app)
                                                      - GET /health, /health/db
+                                                     - POST /auth/register, /auth/login, /auth/refresh
+                                                     - GET /me (Bearer access)
                                                      - модель User (app/models/)
                                                      - Alembic-миграции (pgvector, users)
 ```
@@ -92,20 +94,21 @@ Backend API (FastAPI)          ← auth, бизнес-логика, владел
 **Ограничения:** данные в named volume; удаление — только `docker compose down -v`; порт на хосте
 по умолчанию `5433` (5432 часто занят локальным PostgreSQL).
 
-### Backend (каркас реализован)
+### Backend (каркас и auth реализованы)
 
 **Location:** `backend/`
 
-**Реализовано:** FastAPI-точка входа `app/main.py` (эндпоинты `/health`, `/health/db`), настройки
-`app/core/config.py` (pydantic-settings), слой БД `app/db/` (async-движок, фабрика сессий,
-`get_db`, `Base`), модель `User` (`app/models/`), миграции Alembic (`alembic/`: pgvector,
-таблица `users`), тесты `tests/`, зависимости через uv.
+**Реализовано:** FastAPI-точка входа `app/main.py` (health-эндпоинты, подключение роутеров),
+JWT-аутентификация (`app/api/`: `register`, `login`, `refresh`, `/me`; `app/core/security.py`:
+argon2id + PyJWT), настройки `app/core/config.py` (pydantic-settings), слой БД `app/db/`
+(async-движок, фабрика сессий, `get_db`, `Base`), модель `User` (`app/models/`), схемы
+(`app/schemas/`), миграции Alembic (`alembic/`), тесты `tests/`.
 
-**Ответственность по плану:** остальные модели и схема БД, аутентификация, REST-эндпоинты,
-сервисный слой, транзакции, запуск агентских сессий, трансляция стрима; владелец БД
-([`AGENTS.md`](../AGENTS.md) §2.2).
+**Ответственность по плану:** остальные модели и схема БД, доменные REST API, сервисный слой,
+запуск агентских сессий, трансляция стрима; владелец БД ([`AGENTS.md`](../AGENTS.md) §2.2).
 
-**Стек:** Python 3.13, FastAPI, SQLAlchemy 2 (async) + asyncpg, Alembic, LangGraph.
+**Стек:** Python 3.13, FastAPI, SQLAlchemy 2 (async) + asyncpg, Alembic, PyJWT, pwdlib (argon2),
+LangGraph.
 
 ### Frontend (План)
 
@@ -127,8 +130,8 @@ Tools — типизированные функции (JSON Schema), единс�
 
 ## 5. Потоки данных
 
-**Факт:** отсутствуют (нет бизнес-логики; health-эндпоинты не работают с данными, кроме `SELECT 1`;
-таблица `users` создана, но с ней пока никто не работает).
+**Факт:** доменные потоки отсутствуют (нет бизнес-логики). Есть поток аутентификации:
+регистрация → argon2-хеш → `users`; логин → проверка хеша → пара JWT-токенов.
 
 **План** ([`AGENTS.md`](../AGENTS.md) §2.4):
 
@@ -143,11 +146,14 @@ Tools — типизированные функции (JSON Schema), единс�
 
 ## 6. Поток запроса
 
-**Факт:** два маршрута в `backend/app/main.py`:
+**Факт** — маршруты в `backend/app/api/routes/` и `backend/app/main.py`:
 
 - `GET /health` — статус и окружение (без обращения к БД);
-- `GET /health/db` — `SELECT 1` через `get_db` (async-сессия): 200 при доступной БД,
-  503 при `SQLAlchemyError` или `OSError` (сервер БД недоступен).
+- `GET /health/db` — `SELECT 1` через `get_db`: 200 / 503;
+- `POST /auth/register` — валидация → argon2-хеш → `INSERT` (409 при занятом email);
+- `POST /auth/login` — проверка пароля (401 при ошибке) → пара access/refresh-токенов;
+- `POST /auth/refresh` — проверка refresh-токена → новая пара;
+- `GET /me` — `get_current_user`: Bearer → проверка access-JWT → `SELECT` пользователя → 200/401.
 
 **План:** REST + WebSocket между SPA и FastAPI; стриминг ответов агента пользователю
 ([`AGENTS.md`](../AGENTS.md) §2.1, §3.3).
@@ -162,7 +168,7 @@ Tools — типизированные функции (JSON Schema), единс�
 - Расширение `vector` создаётся миграцией Alembic `6d7c8a1b787e`
   (`CREATE EXTENSION IF NOT EXISTS vector`; откат удаляет расширение).
 - Таблица `users` создаётся миграцией `68cf3aa5da9d`: `id` (UUID, `gen_random_uuid()`),
-  `email` (уникальный), `password_hash`, `created_at` (`timestamptz`, `now()`).
+  `email` (уникальный), `password_hash` (argon2id-хеш), `created_at` (`timestamptz`, `now()`).
   ORM-модель — `backend/app/models/user.py`.
 - Подключение: `DATABASE_URL` из `backend/.env` (локальный дефолт в `app/core/config.py`);
   движок и сессии — `backend/app/db/session.py` (asyncpg, `pool_pre_ping`).
@@ -212,6 +218,10 @@ SQLAlchemy 2 (async); `agent_actions` — обязательный audit-лог;
 | `APP_NAME` | заголовок FastAPI-приложения | нет |
 | `ENVIRONMENT` | название окружения (`local`, ...) | нет |
 | `DATABASE_URL` | подключение к PostgreSQL (`postgresql+asyncpg://...`) | да (содержит пароль) |
+| `JWT_SECRET_KEY` | секрет подписи JWT (dev-дефолт в коде; в проде — только из окружения) | да |
+| `JWT_ALGORITHM` | алгоритм подписи (`HS256`) | нет |
+| `ACCESS_TOKEN_EXPIRE_MINUTES` | время жизни access-токена (по умолчанию 30) | нет |
+| `REFRESH_TOKEN_EXPIRE_DAYS` | время жизни refresh-токена (по умолчанию 30) | нет |
 
 Значения переменных окружения в документации не приводятся. `.env.example` — шаблоны для
 локальной разработки, они коммитятся. Настройки читает `app/core/config.py` (pydantic-settings).
@@ -225,10 +235,20 @@ SQLAlchemy 2 (async); `agent_actions` — обязательный audit-лог;
 
 ## 10. Аутентификация / авторизация
 
-**Факт:** не реализована (таблица `users` и модель `User` подготовлены под неё).
+**Факт:** JWT (access + refresh), сервер не хранит сессии:
 
-**План** ([`AGENTS.md`](../AGENTS.md) §6, §10): JWT (access + refresh); изоляция данных по
-`user_id` на уровне Tools.
+- `POST /auth/register` — argon2id-хеш пароля (`pwdlib`), 409 при занятом email;
+- `POST /auth/login` — проверка пароля (одинаковый 401 для неверного пароля и неизвестного
+  email; фиктивный хеш выравнивает время ответа), выдача пары токенов (`PyJWT`, HS256;
+  claims `sub`/`type`/`iat`/`exp`);
+- `POST /auth/refresh` — новая пара по refresh-токену;
+- `GET /me` — защищённый эндпоинт (зависимость `get_current_user`, `HTTPBearer`).
+
+Access-TTL — 30 минут, refresh-TTL — 30 дней (настройки). Секрет — `JWT_SECRET_KEY`
+(dev-дефолт в коде, в продакшене обязательно переопределить). Refresh-токены stateless.
+
+**План** ([`AGENTS.md`](../AGENTS.md) §6, §10): изоляция данных по `user_id` на уровне Tools;
+при необходимости отзыва токенов — таблица refresh-сессий (отдельный шаг).
 
 ---
 
@@ -243,8 +263,9 @@ SQLAlchemy 2 (async); `agent_actions` — обязательный audit-лог;
 
 ## 12. Обработка ошибок
 
-**Факт:** `/health/db` обрабатывает недоступность БД и отвечает 503 (`SQLAlchemyError` — ошибка
-запроса, `OSError` — соединение не установлено). Другой обработки ошибок нет.
+**Факт:** `/health/db` отвечает 503 при недоступной БД (`SQLAlchemyError`/`OSError`);
+auth-эндпоинты — 401 (неверные данные/токен), 409 (дубликат email), 422 (валидация Pydantic).
+Другой обработки ошибок нет.
 
 **План** ([`AGENTS.md`](../AGENTS.md) §9–10): валидация схем `tool_call`, откат при ошибке
 инструмента, лимиты/таймауты, fallback-ответ агента.
@@ -253,11 +274,14 @@ SQLAlchemy 2 (async); `agent_actions` — обязательный audit-лог;
 
 ## 13. Тестирование
 
-**Факт:** подключён pytest (+ `pytest-asyncio`); в `backend/tests/` 6 тестов:
+**Факт:** подключён pytest (+ `pytest-asyncio`); в `backend/tests/` 20 тестов:
 
 - `test_health.py` — `/health` и `/docs`;
 - `test_health_db.py` — `/health/db`: 200 и 503 (через подмену `get_db`, без реального Postgres);
-- `test_user_model.py` — вставка/чтение `User` в реальной БД (пропускается, если БД недоступна).
+- `test_user_model.py` — вставка/чтение `User` в реальной БД (пропускается, если БД недоступна);
+- `test_auth.py` — register/login/me/refresh и негативные кейсы (дубликат email, неверный пароль,
+  отсутствие/битый/просроченный токен, refresh вместо access) через `httpx2.AsyncClient`
+  и `ASGITransport`.
 
 Запуск: `uv run pytest` из `backend/`; конфигурация — в `backend/pyproject.toml`.
 
@@ -324,6 +348,8 @@ uv run ruff check .                      # линтер
   а `/health/db` отвечает 503.
 - **Миграции вручную.** Автоприменения миграций при старте нет — перед запуском нужен
   `alembic upgrade head`.
+- **Аутентификация MVP.** Refresh-токены stateless (отозвать до истечения нельзя); dev-дефолт
+  `JWT_SECRET_KEY` нельзя использовать в продакшене.
 - **Стадия проекта.** Значительная часть архитектуры существует только в плане; риск расхождения
   документации и кода снижается правилом обновлять эти три документа при изменениях.
 - **Плановые риски проекта** (точность оценки ответов, качество онтологии, стоимость agent-loop,

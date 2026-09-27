@@ -1,9 +1,10 @@
 # Backend
 
-Backend-приложение AgentHR на FastAPI. Реализован каркас: точка входа, health-эндпоинты,
-настройки, подключение к БД, модель User и миграции.
+Backend-приложение AgentHR на FastAPI. Реализованы: каркас, health-эндпоинты,
+JWT-аутентификация, подключение к БД, модель User и миграции.
 
-Стек: Python 3.13, FastAPI, SQLAlchemy 2 (async) + asyncpg, Alembic, LangGraph (план).
+Стек: Python 3.13, FastAPI, SQLAlchemy 2 (async) + asyncpg, Alembic, PyJWT, pwdlib (argon2),
+LangGraph (план).
 
 ## Запуск
 
@@ -13,6 +14,14 @@ Copy-Item .env.example .env              # один раз, локальные �
 uv run alembic upgrade head              # применить миграции (нужна запущенная БД из infra/)
 uv run uvicorn app.main:app --reload     # http://127.0.0.1:8000, документация — /docs
 ```
+
+## Эндпоинты
+
+- `GET /health`, `GET /health/db` — проверки работоспособности;
+- `POST /auth/register` — регистрация `{email, password}` → 201 (409, если email занят);
+- `POST /auth/login` — вход `{email, password}` → `{access_token, refresh_token, token_type}`;
+- `POST /auth/refresh` — обновление пары токенов `{refresh_token}`;
+- `GET /me` — текущий пользователь (заголовок `Authorization: Bearer <access_token>`).
 
 ## Тесты и линтер
 
@@ -35,13 +44,21 @@ URL БД берётся из настроек (`backend/.env`, переменн�
 
 ## Структура
 
-- `app/main.py` — точка входа FastAPI: `/health`, `/health/db`
+- `app/main.py` — точка входа FastAPI: роутеры, `/health`, `/health/db`
+- `app/api/` — роутеры (`routes/auth.py`, `routes/users.py`) и зависимости (`deps.py`)
 - `app/core/config.py` — настройки (pydantic-settings, читает `.env`)
+- `app/core/security.py` — argon2-хеши паролей, выпуск/проверка JWT
 - `app/db/session.py` — async-движок, фабрика сессий, зависимость `get_db`
 - `app/db/base.py` — базовый класс моделей (`Base`)
 - `app/models/` — ORM-модели (сейчас `User` в `user.py`)
+- `app/schemas/` — Pydantic-схемы (сейчас `auth.py`)
 - `alembic/` — миграции (async), `alembic/versions/`
-- `tests/` — тесты (pytest + FastAPI TestClient)
+- `tests/` — тесты (pytest + httpx2, интеграционные требуют запущенную БД)
 
-Дальше по плану (см. `AGENTS.md`): остальные модели и таблицы, REST API, Agent Harness,
-реестр Tools, JWT-auth, слой LLM.
+## Безопасность (важно)
+
+`JWT_SECRET_KEY` в коде — только dev-дефолт; в продакшене обязательно задавать через окружение.
+Refresh-токены stateless: отзыв до истечения не поддерживается (осознанный компромисс MVP).
+
+Дальше по плану (см. `AGENTS.md`): остальные модели и таблицы, доменные REST API, Agent Harness,
+реестр Tools, слой LLM.

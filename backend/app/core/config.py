@@ -22,6 +22,11 @@ class Settings(BaseSettings):
     environment: str = "local"
     # Локальный дефолт совпадает с infra/.env.example; переопределяется через backend/.env
     database_url: str = "postgresql+asyncpg://agenthr:agenthr@localhost:5433/agenthr"
+    # JWT: локальный dev-дефолт; в продакшене обязательно переопределить через .env
+    jwt_secret_key: str = "dev-insecure-secret-change-me-in-production"
+    jwt_algorithm: str = "HS256"
+    access_token_expire_minutes: int = 30
+    refresh_token_expire_days: int = 30
 
 
 @lru_cache
