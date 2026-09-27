@@ -17,7 +17,7 @@
 | `INDEX.md` | DOCUMENTATION | главная точка входа для ИИ-агентов |
 | `docs/` | DOCUMENTATION | навигационная документация (PROJECT_MAP, ARCHITECTURE) |
 | `backend/` | APPLICATION | FastAPI-каркас (`/health`, `/health/db`, JWT-auth, слой LLM, модель `User`, миграции); Harness — план |
-| `frontend/` | APPLICATION (План) | будущий React SPA; сейчас README-заглушка |
+| `frontend/` | APPLICATION | каркас SPA: Vite + React 19 + TS, Tailwind 4, shadcn/ui, роутинг; страницы-заглушки |
 | `infra/` | INFRASTRUCTURE | работающая локальная БД: PostgreSQL 16 + pgvector |
 | `.gitignore` | CONFIG | исключения git |
 | `.editorconfig` | CONFIG | единый стиль (UTF-8, LF, отступы) |
@@ -89,7 +89,30 @@ AgentHR/
 │   ├── ARCHITECTURE.md
 │   └── PROJECT_MAP.md
 ├── frontend/
-│   └── README.md
+│   ├── .gitignore             (node_modules, dist, локальные файлы)
+│   ├── .npmrc                 (save-exact=true)
+│   ├── .oxlintrc.json         (конфигурация линтера)
+│   ├── README.md              (команды и соглашения)
+│   ├── components.json        (конфигурация shadcn/ui)
+│   ├── index.html
+│   ├── package.json           (зависимости, зафиксированные версии)
+│   ├── package-lock.json      (генерируется, коммитится)
+│   ├── tsconfig.json
+│   ├── tsconfig.app.json
+│   ├── tsconfig.node.json
+│   ├── vite.config.ts         (React + Tailwind 4, алиас @/*)
+│   ├── public/
+│   │   └── favicon.svg
+│   └── src/
+│       ├── main.tsx           (QueryClientProvider + BrowserRouter)
+│       ├── App.tsx            (шапка и маршруты /, /login, 404)
+│       ├── index.css          (Tailwind 4 + тема shadcn)
+│       ├── components/ui/     (Button, Card, Input, Label — shadcn/ui)
+│       ├── lib/utils.ts       (cn)
+│       └── pages/
+│           ├── DashboardPage.tsx
+│           ├── LoginPage.tsx  (форма без подключения к API)
+│           └── NotFoundPage.tsx
 └── infra/
     ├── .env.example
     ├── .env              (локальный, в git не попадает)
@@ -136,14 +159,21 @@ pgvector.
 `tests/`, `pyproject.toml`, `uv.lock`, `.env.example`, `.python-version`, `README.md`.
 Доменных сервисов пока нет.
 
-### `frontend/` — План
+### `frontend/`
 
 **Role:** APPLICATION (frontend)
 
-**Цель по плану:** React + TypeScript + Vite SPA, 7 экранов, TanStack Query, shadcn/ui.
-Источники: `frontend/README.md`, [`AGENTS.md`](../AGENTS.md) §7.
+**Назначение:** React SPA AgentHR. Реализован каркас: Vite + React 19 + TypeScript, Tailwind CSS 4,
+shadcn/ui (Base UI: Button, Card, Input, Label), роутинг (react-router 8: `/`, `/login`, 404),
+TanStack Query (провайдер настроен), страницы-заглушки в `src/pages/`.
 
-**Сейчас содержит:** только `README.md`. Кода нет.
+**Цель по плану:** подключение экрана входа к API, затем экраны `/vacancies/new`, `/profile`,
+`/plans/:id`, `/interview/:id`, `/reports/:id` ([`AGENTS.md`](../AGENTS.md) §7).
+Источник: `frontend/README.md`.
+
+**Содержит сейчас:** `src/` (main, App, pages, components/ui, lib), конфигурации
+(`package.json`, `vite.config.ts`, `tsconfig*.json`, `components.json`, `.npmrc`,
+`.oxlintrc.json`), `index.html`, `README.md`.
 
 ### `docs/`
 
@@ -507,6 +537,31 @@ dev-группа (pytest, pytest-asyncio, httpx2, ruff), конфигураци�
 
 **Used by:** pydantic-settings (чтение `backend/.env`).
 
+#### `frontend/src/App.tsx`
+
+**Role:** UI (маршрутизация)
+
+**Responsibility:** шапка (`AgentHR`, ссылка «Вход») и маршруты: `/` → `DashboardPage`,
+`/login` → `LoginPage`, `*` → `NotFoundPage`.
+
+**Depends on:** `react-router`, `frontend/src/pages/*`.
+
+**Used by:** `frontend/src/main.tsx`.
+
+**Important:** новые экраны добавлять здесь; список экранов — [`AGENTS.md`](../AGENTS.md) §7.
+
+#### `frontend/package.json`
+
+**Role:** BUILD / CONFIG
+
+**Responsibility:** зависимости frontend (React 19, react-router 8, TanStack Query 5,
+Tailwind 4, shadcn/ui: Base UI, lucide, cn, cva), скрипты `dev` / `build` / `lint` / `preview`.
+Версии зафиксированы (`.npmrc` → `save-exact=true`).
+
+**Depends on:** —
+
+**Used by:** npm; сборка — `tsc -b && vite build`.
+
 ### Уровень 3 — вспомогательные
 
 | Файл | Роль | Назначение |
@@ -521,7 +576,14 @@ dev-группа (pytest, pytest-asyncio, httpx2, ruff), конфигураци�
 | `backend/app/llm/__init__.py` | LLM | реэкспорт интерфейса и реализаций слоя LLM |
 | `backend/app/api/__init__.py`, `backend/app/api/routes/__init__.py`, `backend/app/schemas/__init__.py` | PACKAGE | пакеты-инициализаторы |
 | `backend/alembic/versions/*` | MIGRATION | файлы миграций (генерируются, коммитятся) |
-| `frontend/README.md` | DOCUMENTATION | заглушка: состав будущего frontend и стек |
+| `frontend/README.md` | DOCUMENTATION | команды и соглашения frontend |
+| `frontend/src/main.tsx` | UI | точка входа SPA (QueryClientProvider + BrowserRouter) |
+| `frontend/src/pages/*` | UI | экраны-заглушки (дашборд, вход, 404) |
+| `frontend/src/components/ui/*` | UI | сгенерированные компоненты shadcn/ui |
+| `frontend/src/index.css` | UI | Tailwind 4 + тема shadcn (сгенерирована) |
+| `frontend/vite.config.ts`, `frontend/tsconfig*.json` | BUILD | конфигурация сборки и TS (алиас `@/*`) |
+| `frontend/components.json` | CONFIG | конфигурация shadcn/ui |
+| `frontend/.npmrc`, `frontend/.oxlintrc.json` | CONFIG | точные версии зависимостей; настройки линтера |
 | `docs/PROJECT_MAP.md` | DOCUMENTATION | этот файл |
 | `docs/ARCHITECTURE.md` | DOCUMENTATION | архитектура: факт и план |
 
@@ -557,6 +619,13 @@ tests/* ──▶ app.main (TestClient / AsyncClient); /health/db — через
             test_llm.py ──▶ MockProvider (без сети), OpenAI — skip без ключа
 ```
 
+**Frontend** (пока не связан с backend — подключение к API на следующем шаге):
+
+```text
+src/main.tsx ──▶ QueryClientProvider + BrowserRouter
+    └──▶ src/App.tsx ──▶ src/pages/* ──▶ src/components/ui/* (shadcn/ui)
+```
+
 `Base.metadata` содержит модель `User`; `app/models/__init__.py` импортирует все модели,
 поэтому autogenerate видит полные метаданные. Остальные таблицы
 ([`AGENTS.md`](../AGENTS.md) §5) — по плану недель 3–4.
@@ -585,7 +654,8 @@ Backend подключается к БД по `localhost:${POSTGRES_PORT}` (по
 | Backend-приложение | `backend/app/main.py` (uvicorn) | каркас + auth реализованы |
 | Миграции БД | `backend/alembic/` (`uv run alembic ...`) | 2 миграции: pgvector, users |
 | Прогон тестов backend | `backend/tests/` (pytest) | 28 тестов (1 пропускается без ключа OpenAI) |
-| Frontend-приложение | — | нет (план: `frontend/`) |
+| Frontend dev-сервер | `frontend/` (`npm run dev`) | каркас (страницы-заглушки) |
+| Сборка frontend | `npm run build` (tsc + vite) | проходит |
 
 ---
 
@@ -620,16 +690,25 @@ Backend подключается к БД по `localhost:${POSTGRES_PORT}` (по
 - `pyproject.toml` — зависимости, dev-группа, конфигурация pytest и ruff.
 - `alembic.ini` — расположение миграций и логирование; URL БД задаётся в `alembic/env.py`.
 
+### `frontend/`
+
+- `package.json` — зависимости и npm-скрипты (`dev`, `build`, `lint`, `preview`).
+- `.npmrc` — `save-exact=true` (фиксация версий).
+- `vite.config.ts` — React + Tailwind 4 (`@tailwindcss/vite`), алиас `@/*`.
+- `tsconfig.json` / `tsconfig.app.json` / `tsconfig.node.json` — TypeScript (алиас `@/*`).
+- `components.json` — конфигурация shadcn/ui.
+- `.oxlintrc.json` — линтер (react/only-export-components отключён для `components/ui`).
+
 ### Прочие конфигурационные файлы
 
 - `.editorconfig` — единый стиль форматирования.
 - `.gitattributes` — нормализация переводов строк.
-- `.gitignore` — исключения git.
+- `.gitignore` — исключения git (корневой и `frontend/.gitignore`).
 - `backend/.python-version` — пин Python 3.13 для uv.
 
 ### Отсутствуют (План)
 
-`package.json` (frontend), `Dockerfile` приложений, CI-конфигурация — появятся вместе с кодом.
+`Dockerfile` приложений, CI-конфигурация — появятся вместе с кодом.
 
 ---
 
@@ -674,7 +753,7 @@ Backend подключается к БД по `localhost:${POSTGRES_PORT}` (по
 
 ## 10. Тесты
 
-**Факт:** `backend/tests/` — 28 тестов на pytest (+ `pytest-asyncio`):
+**Backend.** `backend/tests/` — 28 тестов на pytest (+ `pytest-asyncio`):
 
 - `test_health.py` — `/health` (200 + статус) и `/docs` (200);
 - `test_health_db.py` — `/health/db`: 200 и 503 (два случая: `SQLAlchemyError`, `OSError`)
@@ -688,6 +767,9 @@ Backend подключается к БД по `localhost:${POSTGRES_PORT}` (по
 Запуск: `uv run pytest` из `backend/`. Конфигурация — в `backend/pyproject.toml`
 (`testpaths`, `pythonpath`, `asyncio_mode`).
 
+**Frontend.** Тестов пока нет; проверки — `npm run build` (типы + сборка) и `npm run lint`
+(oxlint). Навигация проверена вручную (dev-сервер).
+
 **План** ([`AGENTS.md`](../AGENTS.md) §9): функциональные тесты, агентские (на мок-LLM),
 сценарные e2e, тесты адаптивности, eval-наборы качества LLM.
 
@@ -695,10 +777,12 @@ Backend подключается к БД по `localhost:${POSTGRES_PORT}` (по
 
 ## 11. Скрипты
 
-Нет ни каталога `scripts/`, ни `Makefile`, ни npm-скриптов. Все существующие операции — команды
-из [`infra/README.md`](../infra/README.md) (`docker compose`) и
-[`backend/README.md`](../backend/README.md) (`uv sync`, `uv run uvicorn`, `uv run pytest`,
-`uv run ruff`, `uv run alembic upgrade head` и др.).
+- **Backend:** каталога `scripts/` и `Makefile` нет; команды — в
+  [`backend/README.md`](../backend/README.md) (`uv sync`, `uv run uvicorn`, `uv run pytest`,
+  `uv run ruff`, `uv run alembic upgrade head`).
+- **Frontend:** npm-скрипты в `frontend/package.json` — `dev`, `build` (`tsc -b && vite build`),
+  `lint` (oxlint), `preview`.
+- **Инфраструктура:** команды `docker compose` из [`infra/README.md`](../infra/README.md).
 
 ---
 
@@ -707,6 +791,9 @@ Backend подключается к БД по `localhost:${POSTGRES_PORT}` (по
 - `backend/uv.lock` — генерируется uv; коммитится; вручную не редактируется.
 - `backend/alembic/versions/*` — файлы миграций (генерация `alembic revision`); коммитятся;
   применённые ревизии вручную не редактируются.
+- `frontend/package-lock.json` — генерируется npm; коммитится; вручную не редактируется.
+- `frontend/src/components/ui/*` — генерируются shadcn CLI (править только осознанно).
 - Локальные/игнорируемые: `backend/.venv/`, `__pycache__/`, `.pytest_cache/`, `.ruff_cache/`,
-  `node_modules/`, `dist/`, `*.log` — перечислены в `.gitignore`.
+  `frontend/node_modules/`, `frontend/dist/`, `*.log` — перечислены в `.gitignore` и
+  `frontend/.gitignore`.
 - `infra/.env` и `backend/.env` — локальные файлы (копии `.env.example`), в git не попадают.

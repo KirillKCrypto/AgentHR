@@ -11,10 +11,11 @@
 ## 1. Обзор архитектуры
 
 Стадия проекта — неделя 1 (M0 «Фундамент»). Фактически реализованы: инфраструктура (локальная
-PostgreSQL 16 + pgvector в Docker Compose) и backend-каркас (FastAPI: health-эндпоинты,
+PostgreSQL 16 + pgvector в Docker Compose), backend-каркас (FastAPI: health-эндпоинты,
 JWT-аутентификация, слой LLM с mock- и OpenAI-провайдерами, настройки, async-подключение к БД,
-модель `User`, миграции Alembic, тесты). Агентский цикл, остальные модели данных и внешние
-интеграции в рантайме — пока нет.
+модель `User`, миграции Alembic, тесты) и каркас frontend (Vite + React 19 + TS, Tailwind CSS 4,
+shadcn/ui, роутинг, страницы-заглушки). Frontend и backend пока не связаны; агентский цикл
+и внешние интеграции в рантайме — в плане.
 
 Целевая архитектура — агентская система (не чат-бот): `LLM + Agent Harness + Tool Calling +
 граф знаний + персистентная память + адаптивное обучение` ([`AGENTS.md`](../AGENTS.md) §1–2).
@@ -25,10 +26,10 @@ JWT-аутентификация, слой LLM с mock- и OpenAI-провайд
 
 ## 2. Контекст системы
 
-**Факт.** Система сейчас = контейнер базы данных и backend-сервер на машине разработчика.
-Backend подключён к БД (asyncpg), регистрирует и аутентифицирует пользователей (JWT), хранит
-таблицу `users`, имеет готовый слой LLM (по умолчанию mock). Пользовательского взаимодействия
-извне пока нет.
+**Факт.** Система сейчас = контейнер базы данных, backend-сервер и SPA-каркас на машине
+разработчика. Backend подключён к БД (asyncpg), регистрирует и аутентифицирует пользователей
+(JWT), хранит таблицу `users`, имеет готовый слой LLM (по умолчанию mock). SPA рендерит
+заглушки экранов и пока не обращается к API.
 
 **План.** Пользователь работает с системой через SPA по сценарию из 7 шагов: загрузка вакансии →
 загрузка резюме → анализ уровня → персональный план подготовки → тренировочные интервью →
@@ -49,13 +50,16 @@ Backend подключён к БД (asyncpg), регистрирует и аут
    │                                     postgres_data (данные переживают перезапуск)
    │                                         ▲
    │                                         │ asyncpg
-   └── uv run uvicorn app.main:app (backend/) ──▶ FastAPI (backend/app)
-                                                     - GET /health, /health/db
-                                                     - POST /auth/register, /auth/login, /auth/refresh
-                                                     - GET /me (Bearer access)
-                                                     - слой LLM: MockProvider / OpenAIProvider (app/llm/)
-                                                     - модель User (app/models/)
-                                                     - Alembic-миграции (pgvector, users)
+   ├── uv run uvicorn app.main:app (backend/) ──▶ FastAPI (backend/app)
+   │                                                 - GET /health, /health/db
+   │                                                 - POST /auth/register, /auth/login, /auth/refresh
+   │                                                 - GET /me (Bearer access)
+   │                                                 - слой LLM: MockProvider / OpenAIProvider (app/llm/)
+   │                                                 - модель User (app/models/)
+   │                                                 - Alembic-миграции (pgvector, users)
+   └── npm run dev (frontend/) ──▶ Vite dev-сервер (SPA-каркас)
+                                     - / (дашборд-заглушка), /login (форма без API), 404
+                                     - пока не обращается к backend
 ```
 
 ### 3.2 План (не реализовано)
@@ -115,10 +119,21 @@ argon2id + PyJWT), слой LLM (`app/llm/`: провайдер-агностич
 **Стек:** Python 3.13, FastAPI, SQLAlchemy 2 (async) + asyncpg, Alembic, PyJWT, pwdlib (argon2),
 openai, LangGraph (план).
 
-### Frontend (План)
+### Frontend (каркас реализован)
 
-React + TypeScript + Vite, 7 экранов ([`AGENTS.md`](../AGENTS.md) §7). Без state-менеджеров —
-данные через TanStack Query; UI — shadcn/ui.
+**Location:** `frontend/`
+
+**Реализовано:** SPA-каркас на Vite + React 19 + TypeScript; Tailwind CSS 4;
+shadcn/ui (Base UI: Button, Card, Input, Label); роутинг react-router 8 (`/` — дашборд-заглушка,
+`/login` — форма без подключения к API, 404); TanStack Query (провайдер настроен);
+зафиксированные версии зависимостей (`.npmrc` → `save-exact=true`); линтер oxlint.
+
+**Ответственность по плану:** загрузка резюме/вакансий, отображение профиля/плана/прогресса,
+проведение интервью (WebSocket), отчёты. Экраны: `/vacancies/new`, `/profile`, `/plans/:id`,
+`/interview/:id`, `/reports/:id` ([`AGENTS.md`](../AGENTS.md) §7).
+
+**Ограничения журнала:** без state-менеджеров, анимаций и кастомных визуализаций;
+UI — только из shadcn/ui; один типизированный API-клиент (появится со шагом подключения к API).
 
 ### Agent Harness и Tools (План)
 
@@ -162,6 +177,9 @@ Tools — типизированные функции (JSON Schema), единс�
 
 Вне HTTP-запросов: `app/llm/` даёт интерфейс для вызовов LLM (mock по умолчанию; OpenAI —
 при наличии ключа), пока не подключён к агентскому циклу.
+
+**Frontend:** рендерит маршруты SPA на клиенте; запросы к backend пока не выполняются
+(следующий шаг — API-клиент и подключение `/login`).
 
 **План:** REST + WebSocket между SPA и FastAPI; стриминг ответов агента пользователю
 ([`AGENTS.md`](../AGENTS.md) §2.1, §3.3).
@@ -236,13 +254,17 @@ SQLAlchemy 2 (async); `agent_actions` — обязательный audit-лог;
 | `OPENAI_API_KEY` | ключ OpenAI (для `LLM_PROVIDER=openai`) | да |
 | `OPENAI_MODEL` | модель OpenAI (для `LLM_PROVIDER=openai`) | нет |
 
+**Frontend** — конфигурация в репозитории: `frontend/package.json` (зависимости и скрипты),
+`frontend/.npmrc` (`save-exact=true`), `frontend/vite.config.ts` (React + Tailwind 4, alias
+`@/*`), `frontend/tsconfig*.json`, `frontend/components.json` (shadcn/ui),
+`frontend/.oxlintrc.json`. Переменных окружения frontend пока нет (появятся с API-клиентом).
+
 Значения переменных окружения в документации не приводятся. `.env.example` — шаблоны для
-локальной разработки, они коммитятся. Настройки читает `app/core/config.py` (pydantic-settings).
+локальной разработки, они коммитятся. Настройки backend читает `app/core/config.py`
+(pydantic-settings).
 
 Прочие конфигурационные файлы: `.editorconfig`, `.gitattributes`, `.gitignore`,
 `backend/alembic.ini`, `backend/.python-version` (пин Python 3.13).
-
-**План:** конфигурация frontend появится вместе с кодом.
 
 ---
 
@@ -259,9 +281,11 @@ SQLAlchemy 2 (async); `agent_actions` — обязательный audit-лог;
 
 Access-TTL — 30 минут, refresh-TTL — 30 дней (настройки). Секрет — `JWT_SECRET_KEY`
 (dev-дефолт в коде, в продакшене обязательно переопределить). Refresh-токены stateless.
+Frontend пока не подключён к auth-эндпоинтам.
 
-**План** ([`AGENTS.md`](../AGENTS.md) §6, §10): изоляция данных по `user_id` на уровне Tools;
-при необходимости отзыва токенов — таблица refresh-сессий (отдельный шаг).
+**План** ([`AGENTS.md`](../AGENTS.md) §6, §10): подключение экрана входа к API (следующий шаг),
+изоляция данных по `user_id` на уровне Tools; при необходимости отзыва токенов — таблица
+refresh-сессий (отдельный шаг).
 
 ---
 
@@ -279,16 +303,18 @@ Access-TTL — 30 минут, refresh-TTL — 30 дней (настройки). 
 **Факт:** `/health/db` отвечает 503 при недоступной БД (`SQLAlchemyError`/`OSError`);
 auth-эндпоинты — 401 (неверные данные/токен), 409 (дубликат email), 422 (валидация Pydantic);
 слой LLM использует исключения `LLMError`/`LLMConfigurationError` (конфигурация, пустой ответ,
-невалидные аргументы tool-call). Другой обработки ошибок нет.
+невалидные аргументы tool-call). Frontend: явных состояний ошибок пока нет (заглушки).
+Другой обработки ошибок нет.
 
 **План** ([`AGENTS.md`](../AGENTS.md) §9–10): валидация схем `tool_call`, откат при ошибке
-инструмента, лимиты/таймауты, fallback-ответ агента.
+инструмента, лимиты/таймауты, fallback-ответ агента; на фронтенде — состояния
+`loading / error / empty / ready`.
 
 ---
 
 ## 13. Тестирование
 
-**Факт:** подключён pytest (+ `pytest-asyncio`); в `backend/tests/` 28 тестов:
+**Backend (факт):** подключён pytest (+ `pytest-asyncio`); в `backend/tests/` 28 тестов:
 
 - `test_health.py` — `/health` и `/docs`;
 - `test_health_db.py` — `/health/db`: 200 и 503 (через подмену `get_db`, без реального Postgres);
@@ -299,6 +325,9 @@ auth-эндпоинты — 401 (неверные данные/токен), 409 
 - `test_llm.py` — MockProvider и фабрика без сети; живой вызов OpenAI пропускается без ключа.
 
 Запуск: `uv run pytest` из `backend/`; конфигурация — в `backend/pyproject.toml`.
+
+**Frontend (факт):** автотестов нет; проверки — `npm run build` (типы + production-сборка)
+и `npm run lint` (oxlint); навигация по маршрутам проверена вручную на dev-сервере.
 
 **План** ([`AGENTS.md`](../AGENTS.md) §9): функциональные тесты, агентские (на мок-LLM), сценарные
 e2e, тесты адаптивности на синтетических пользователях, eval-наборы для качества LLM (извлечение,
@@ -331,10 +360,18 @@ uv run pytest                            # тесты
 uv run ruff check .                      # линтер
 ```
 
-Миграции применяются вручную (`alembic upgrade head`); автоматического применения при старте
-приложения нет. Dockerfile приложений и CI нет. Платформа разработки — Windows + Docker Desktop + uv.
+Frontend (из [`frontend/README.md`](../frontend/README.md)):
 
-**План:** сборка frontend (Vite) — появится вместе с кодом.
+```powershell
+cd frontend
+npm install
+npm run dev      # http://localhost:5173
+npm run build    # проверка типов + production-сборка
+npm run lint     # oxlint
+```
+
+Миграции применяются вручную (`alembic upgrade head`); автоматического применения при старте
+приложения нет. Dockerfile приложений и CI нет. Платформа разработки — Windows + Docker Desktop + uv + Node.js.
 
 ---
 
@@ -347,7 +384,8 @@ uv run ruff check .                      # линтер
 3. Состояние сессии сохраняется (checkpoint) — сессию можно продолжить/восстановить.
 4. Новое состояние — только через миграции Alembic.
 5. Каждый инструмент — с JSON Schema, валидацией и записью в audit-лог.
-6. Frontend: без state-менеджеров, анимаций и кастомных визуализаций без явного запроса.
+6. Frontend: без state-менеджеров, анимаций и кастомных визуализаций без явного запроса;
+   UI — только из shadcn/ui; версии зависимостей зафиксированы.
 7. Граф знаний на MVP — реляционная модель в Postgres; доступ через репозиторий-границу
    (для возможной миграции на Neo4j/AGE без переписывания агента).
 8. Язык: документация и комментарии — русский; коммиты — английский (conventional commits);
@@ -367,6 +405,8 @@ uv run ruff check .                      # линтер
   `JWT_SECRET_KEY` нельзя использовать в продакшене.
 - **LLM по умолчанию — mock.** Реальные вызовы требуют ключа и модели; без ключа живые сценарии
   LLM-слоя не проверяются (тест пропускается).
+- **Frontend не связан с backend.** API-клиент, авторизация в UI и CORS — следующий шаг;
+  до него SPA работает на заглушках.
 - **Стадия проекта.** Значительная часть архитектуры существует только в плане; риск расхождения
   документации и кода снижается правилом обновлять эти три документа при изменениях.
 - **Плановые риски проекта** (точность оценки ответов, качество онтологии, стоимость agent-loop,

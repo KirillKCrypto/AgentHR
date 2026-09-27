@@ -52,4 +52,4 @@ LLM + Agent Harness + Tool Calling + Knowledge Graph + Persistent Memory + Adapt
 ## Статус
 
 Проект в разработке. Текущий этап — неделя 1: фундамент (инфраструктура, база данных,
-аутентификация, слой LLM).
+аутентификация, слой LLM, каркас frontend).
