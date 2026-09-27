@@ -16,7 +16,7 @@
 | `AGENTS.md` | DOCUMENTATION | контекст проекта, план на 8 недель, архитектурные правила |
 | `INDEX.md` | DOCUMENTATION | главная точка входа для ИИ-агентов |
 | `docs/` | DOCUMENTATION | навигационная документация (PROJECT_MAP, ARCHITECTURE) |
-| `backend/` | APPLICATION | FastAPI-каркас (`/health`, `/health/db`, БД-сессия, миграции); Harness и Tools — план |
+| `backend/` | APPLICATION | FastAPI-каркас (`/health`, `/health/db`, модель `User`, БД-сессия, миграции); Harness и Tools — план |
 | `frontend/` | APPLICATION (План) | будущий React SPA; сейчас README-заглушка |
 | `infra/` | INFRASTRUCTURE | работающая локальная БД: PostgreSQL 16 + pgvector |
 | `.gitignore` | CONFIG | исключения git |
@@ -45,21 +45,26 @@ AgentHR/
 │   │   ├── env.py             (настройка миграций, URL из настроек)
 │   │   ├── script.py.mako
 │   │   └── versions/
-│   │       └── 6d7c8a1b787e_enable_pgvector_extension.py
+│   │       ├── 6d7c8a1b787e_enable_pgvector_extension.py
+│   │       └── 68cf3aa5da9d_create_users_table.py
 │   ├── app/
 │   │   ├── __init__.py
 │   │   ├── main.py            (точка входа FastAPI, /health, /health/db)
 │   │   ├── core/
 │   │   │   ├── __init__.py
 │   │   │   └── config.py      (настройки, pydantic-settings)
-│   │   └── db/
-│   │       ├── __init__.py
-│   │       ├── base.py        (Base для будущих моделей)
-│   │       └── session.py     (async-движок, get_db)
+│   │   ├── db/
+│   │   │   ├── __init__.py
+│   │   │   ├── base.py        (Base для моделей)
+│   │   │   └── session.py     (async-движок, get_db)
+│   │   └── models/
+│   │       ├── __init__.py    (импортирует все модели для Alembic)
+│   │       └── user.py        (модель User)
 │   ├── pyproject.toml
 │   ├── tests/
 │   │   ├── test_health.py
-│   │   └── test_health_db.py
+│   │   ├── test_health_db.py
+│   │   └── test_user_model.py
 │   └── uv.lock                (генерируется, коммитится)
 ├── docs/
 │   ├── ARCHITECTURE.md
@@ -100,15 +105,16 @@ pgvector.
 
 **Назначение:** backend-приложение AgentHR. Реализован каркас: FastAPI-точка входа
 (`app/main.py`, эндпоинты `/health`, `/health/db`), настройки (`app/core/config.py`), слой БД
-(`app/db/`: async-движок, сессии, `Base`), миграции (`alembic/`), тесты (`tests/`), зависимости
-через uv.
+(`app/db/`: async-движок, сессии, `Base`), модель `User` (`app/models/`), миграции (`alembic/`),
+тесты (`tests/`), зависимости через uv.
 
-**Цель по плану:** модели и начальная схема БД, REST API, Agent Harness (LangGraph), реестр Tools,
+**Цель по плану:** остальные модели и схема БД, REST API, Agent Harness (LangGraph), реестр Tools,
 JWT-auth, провайдер-агностичный слой LLM.
 Источники: `backend/README.md`, [`AGENTS.md`](../AGENTS.md) §2–3, §6.
 
-**Содержит сейчас:** `app/`, `alembic/`, `alembic.ini`, `tests/`, `pyproject.toml`, `uv.lock`,
-`.env.example`, `.python-version`, `README.md`. Моделей и роутеров пока нет.
+**Содержит сейчас:** `app/` (включая модель `User`), `alembic/`, `alembic.ini`, `tests/`,
+`pyproject.toml`, `uv.lock`, `.env.example`, `.python-version`, `README.md`.
+Роутеров и сервисов пока нет.
 
 ### `frontend/` — План
 
@@ -221,6 +227,19 @@ healthcheck (`pg_isready`, интервал 5 с, 10 попыток).
 
 **Important:** единственная точка создания сессий; URL — из настроек (`DATABASE_URL`).
 
+#### `backend/app/models/user.py`
+
+**Role:** MODEL
+
+**Responsibility:** ORM-модель `User`: `id` (UUID, `gen_random_uuid()`), `email` (уникальный),
+`password_hash`, `created_at` (`timestamptz`, `now()`).
+
+**Depends on:** `backend/app/db/base.py`.
+
+**Used by:** Alembic (autogenerate через `app/models/__init__.py`); в будущем — auth и сервисы.
+
+**Important:** изменение модели требует новой миграции (`alembic revision --autogenerate`).
+
 ### Уровень 2 — важные
 
 #### `README.md`
@@ -256,7 +275,7 @@ healthcheck (`pg_isready`, интервал 5 с, 10 попыток).
 **Responsibility:** окружение Alembic: URL БД из настроек приложения,
 `target_metadata = Base.metadata` (для autogenerate), async-запуск миграций.
 
-**Depends on:** `backend/app/core/config.py`, `backend/app/db/base.py`, `alembic`.
+**Depends on:** `backend/app/core/config.py`, `backend/app/models/__init__.py`, `alembic`.
 
 **Used by:** команды `alembic upgrade/downgrade/revision`.
 
@@ -274,8 +293,9 @@ URL намеренно не задаётся здесь (берётся в `env.
 **Role:** BUILD / CONFIG
 
 **Responsibility:** метаданные проекта, зависимости (fastapi, uvicorn, pydantic-settings,
-sqlalchemy[asyncio], asyncpg, alembic), dev-группа (pytest, httpx2, ruff), конфигурация pytest
-(`testpaths`, `pythonpath`) и ruff (line-length, target-version).
+sqlalchemy[asyncio], asyncpg, alembic), dev-группа (pytest, pytest-asyncio, httpx2, ruff),
+конфигурация pytest (`testpaths`, `pythonpath`, `asyncio_mode`) и ruff (line-length,
+target-version).
 
 **Depends on:** —
 
@@ -303,6 +323,17 @@ sqlalchemy[asyncio], asyncpg, alembic), dev-группа (pytest, httpx2, ruff),
 
 **Used by:** `uv run pytest`.
 
+#### `backend/tests/test_user_model.py`
+
+**Role:** TEST
+
+**Responsibility:** интеграционный тест: вставка `User` в реальную БД, чтение обратно, очистка
+данных; пропускается, если PostgreSQL недоступен. Требует `pytest-asyncio`.
+
+**Depends on:** `backend/app/models/user.py`, `backend/app/db/session.py`.
+
+**Used by:** `uv run pytest`.
+
 #### `backend/.env.example`
 
 **Role:** CONFIG (шаблон)
@@ -323,7 +354,8 @@ sqlalchemy[asyncio], asyncpg, alembic), dev-группа (pytest, httpx2, ruff),
 | `.gitattributes` | CONFIG | `* text=auto eol=lf`; CRLF для `.bat`/`.ps1` |
 | `backend/README.md` | DOCUMENTATION | команды запуска, тестов, миграций; состав backend |
 | `backend/.python-version` | CONFIG | пин версии Python (3.13) для uv |
-| `backend/app/db/base.py` | MODEL | базовый класс `Base` для будущих ORM-моделей |
+| `backend/app/db/base.py` | MODEL | базовый класс `Base` для ORM-моделей |
+| `backend/app/models/__init__.py` | MODEL | импорт всех моделей и `Base` (нужен Alembic для autogenerate) |
 | `backend/alembic/versions/*` | MIGRATION | файлы миграций (генерируются, коммитятся) |
 | `frontend/README.md` | DOCUMENTATION | заглушка: состав будущего frontend и стек |
 | `docs/PROJECT_MAP.md` | DOCUMENTATION | этот файл |
@@ -345,13 +377,16 @@ app/main.py ──▶ app/core/config.py ──▶ pydantic-settings (backend/.e
     │
     └── /health/db ──▶ SELECT 1 через get_db
 
+app/models/* ──▶ Base.metadata
 alembic/env.py ──▶ config (settings) + Base.metadata ──▶ миграции в БД
 
-tests/* ──▶ app.main (TestClient); /health/db — через dependency_overrides (без реальной БД)
+tests/* ──▶ app.main (TestClient); /health/db — через dependency_overrides;
+            test_user_model.py ──▶ реальная БД (skip, если недоступна)
 ```
 
-Моделей и таблиц пока нет: `Base.metadata` пуст, поэтому autogenerate новых миграций начнёт
-работать после появления моделей (следующий шаг плана).
+`Base.metadata` содержит модель `User`; `app/models/__init__.py` импортирует все модели,
+поэтому autogenerate видит полные метаданные. Остальные таблицы
+([`AGENTS.md`](../AGENTS.md) §5) — по плану недель 3–4.
 
 Текущие инфраструктурные связи:
 
@@ -375,8 +410,8 @@ Backend подключается к БД по `localhost:${POSTGRES_PORT}` (по
 |---|---|---|
 | Запуск инфраструктуры | `infra/docker-compose.yml` | реализовано |
 | Backend-приложение | `backend/app/main.py` (uvicorn) | каркас реализован |
-| Миграции БД | `backend/alembic/` (`uv run alembic ...`) | первая миграция есть |
-| Прогон тестов backend | `backend/tests/` (pytest) | 5 тестов |
+| Миграции БД | `backend/alembic/` (`uv run alembic ...`) | 2 миграции: pgvector, users |
+| Прогон тестов backend | `backend/tests/` (pytest) | 6 тестов |
 | Frontend-приложение | — | нет (план: `frontend/`) |
 
 ---
@@ -428,14 +463,17 @@ Backend подключается к БД по `localhost:${POSTGRES_PORT}` (по
 - Подключение backend: `DATABASE_URL` из `backend/.env` (дефолт в коде —
   `postgresql+asyncpg://...@localhost:5433/agenthr`); движок — `backend/app/db/session.py`.
 - Health-проверка: `GET /health/db` выполняет `SELECT 1`; 200 — доступна, 503 — недоступна.
-- Миграции: Alembic (async), `backend/alembic/`; состояние — `alembic current`;
-  цикл `upgrade head` → `downgrade base` → `upgrade head` проверен.
+- Миграции: Alembic (async), `backend/alembic/`; состояние — `alembic current`.
+  Ревизии: `6d7c8a1b787e` (pgvector) → `68cf3aa5da9d` (таблица `users`); цикл
+  `upgrade head` → `downgrade -1` → `upgrade head` проверен.
+- Модель `User` (`backend/app/models/user.py`): `id` (UUID, `gen_random_uuid()`), `email`
+  (уникальный), `password_hash`, `created_at` (`timestamptz`, `now()`).
 - Хранение: named volume `postgres_data`; данные переживают перезапуск, удаляются только
   `docker compose down -v`.
 
 **План** ([`AGENTS.md`](../AGENTS.md) §4–5):
 
-- Реляционная схема: `users`, `resumes`, `vacancies`, `topics`, `topic_prerequisites`,
+- Остальные таблицы схемы: `resumes`, `vacancies`, `topics`, `topic_prerequisites`,
   `user_skill_states`, `interview_sessions` / `interview_turns`, `agent_actions`,
   `learning_plans` / `plan_items`, `embeddings` (pgvector).
 - ORM-модели (SQLAlchemy 2) — от `Base` в `backend/app/db/base.py`; миграции — autogenerate.
@@ -455,14 +493,16 @@ Backend подключается к БД по `localhost:${POSTGRES_PORT}` (по
 
 ## 10. Тесты
 
-**Факт:** `backend/tests/` — 5 тестов на pytest + FastAPI TestClient:
+**Факт:** `backend/tests/` — 6 тестов на pytest (+ `pytest-asyncio`):
 
 - `test_health.py` — `/health` (200 + статус) и `/docs` (200);
 - `test_health_db.py` — `/health/db`: 200 и 503 (два случая: `SQLAlchemyError`, `OSError`)
-  через подмену зависимости `get_db`; реальная БД не требуется.
+  через подмену зависимости `get_db`; реальная БД не требуется;
+- `test_user_model.py` — интеграционный: вставка/чтение `User` в реальной БД, очистка данных;
+  пропускается, если PostgreSQL недоступен.
 
 Запуск: `uv run pytest` из `backend/`. Конфигурация — в `backend/pyproject.toml`
-(`testpaths`, `pythonpath`).
+(`testpaths`, `pythonpath`, `asyncio_mode`).
 
 **План** ([`AGENTS.md`](../AGENTS.md) §9): функциональные тесты, агентские (на мок-LLM),
 сценарные e2e, тесты адаптивности, eval-наборы качества LLM.

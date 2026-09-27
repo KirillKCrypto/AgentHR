@@ -1,7 +1,7 @@
 # Backend
 
 Backend-приложение AgentHR на FastAPI. Реализован каркас: точка входа, health-эндпоинты,
-настройки, подключение к БД и миграции.
+настройки, подключение к БД, модель User и миграции.
 
 Стек: Python 3.13, FastAPI, SQLAlchemy 2 (async) + asyncpg, Alembic, LangGraph (план).
 
@@ -38,9 +38,10 @@ URL БД берётся из настроек (`backend/.env`, переменн�
 - `app/main.py` — точка входа FastAPI: `/health`, `/health/db`
 - `app/core/config.py` — настройки (pydantic-settings, читает `.env`)
 - `app/db/session.py` — async-движок, фабрика сессий, зависимость `get_db`
-- `app/db/base.py` — базовый класс моделей (`Base`) для будущих таблиц
+- `app/db/base.py` — базовый класс моделей (`Base`)
+- `app/models/` — ORM-модели (сейчас `User` в `user.py`)
 - `alembic/` — миграции (async), `alembic/versions/`
 - `tests/` — тесты (pytest + FastAPI TestClient)
 
-Дальше по плану (см. `AGENTS.md`): модели и начальная схема БД, REST API, Agent Harness,
+Дальше по плану (см. `AGENTS.md`): остальные модели и таблицы, REST API, Agent Harness,
 реестр Tools, JWT-auth, слой LLM.

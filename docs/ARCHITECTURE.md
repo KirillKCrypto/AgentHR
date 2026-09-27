@@ -12,8 +12,8 @@
 
 Стадия проекта — неделя 1 (M0 «Фундамент»). Фактически реализованы: инфраструктура (локальная
 PostgreSQL 16 + pgvector в Docker Compose) и backend-каркас (FastAPI: `/health`, `/health/db`,
-настройки, async-подключение к БД, миграции Alembic, базовые тесты). Агентский цикл, модели
-данных, auth и внешние интеграции — пока нет.
+настройки, async-подключение к БД, модель `User`, миграции Alembic, базовые тесты). Агентский
+цикл, остальные модели данных, auth и внешние интеграции — пока нет.
 
 Целевая архитектура — агентская система (не чат-бот): `LLM + Agent Harness + Tool Calling +
 граф знаний + персистентная память + адаптивное обучение` ([`AGENTS.md`](../AGENTS.md) §1–2).
@@ -25,8 +25,8 @@ PostgreSQL 16 + pgvector в Docker Compose) и backend-каркас (FastAPI: `/
 ## 2. Контекст системы
 
 **Факт.** Система сейчас = контейнер базы данных и backend-сервер на машине разработчика.
-Backend подключён к БД (asyncpg) и умеет проверять её доступность; пользовательского
-взаимодействия извне пока нет.
+Backend подключён к БД (asyncpg), умеет проверять её доступность и хранит таблицу `users`.
+Пользовательского взаимодействия извне пока нет.
 
 **План.** Пользователь работает с системой через SPA по сценарию из 7 шагов: загрузка вакансии →
 загрузка резюме → анализ уровня → персональный план подготовки → тренировочные интервью →
@@ -49,7 +49,8 @@ Backend подключён к БД (asyncpg) и умеет проверять е
    │                                         │ asyncpg (SELECT 1 в /health/db)
    └── uv run uvicorn app.main:app (backend/) ──▶ FastAPI-каркас (backend/app)
                                                      - GET /health, /health/db
-                                                     - Alembic-миграции (pgvector)
+                                                     - модель User (app/models/)
+                                                     - Alembic-миграции (pgvector, users)
 ```
 
 ### 3.2 План (не реализовано)
@@ -97,10 +98,10 @@ Backend API (FastAPI)          ← auth, бизнес-логика, владел
 
 **Реализовано:** FastAPI-точка входа `app/main.py` (эндпоинты `/health`, `/health/db`), настройки
 `app/core/config.py` (pydantic-settings), слой БД `app/db/` (async-движок, фабрика сессий,
-`get_db`, `Base`), миграции Alembic (`alembic/`, первая — включение pgvector), тесты `tests/`,
-зависимости через uv.
+`get_db`, `Base`), модель `User` (`app/models/`), миграции Alembic (`alembic/`: pgvector,
+таблица `users`), тесты `tests/`, зависимости через uv.
 
-**Ответственность по плану:** модели и начальная схема БД, аутентификация, REST-эндпоинты,
+**Ответственность по плану:** остальные модели и схема БД, аутентификация, REST-эндпоинты,
 сервисный слой, транзакции, запуск агентских сессий, трансляция стрима; владелец БД
 ([`AGENTS.md`](../AGENTS.md) §2.2).
 
@@ -126,7 +127,8 @@ Tools — типизированные функции (JSON Schema), единс�
 
 ## 5. Потоки данных
 
-**Факт:** отсутствуют (нет бизнес-логики; health-эндпоинты не работают с данными, кроме `SELECT 1`).
+**Факт:** отсутствуют (нет бизнес-логики; health-эндпоинты не работают с данными, кроме `SELECT 1`;
+таблица `users` создана, но с ней пока никто не работает).
 
 **План** ([`AGENTS.md`](../AGENTS.md) §2.4):
 
@@ -159,15 +161,16 @@ Tools — типизированные функции (JSON Schema), единс�
 - СУБД: PostgreSQL 16 в контейнере `agenthr-postgres` (образ `pgvector/pgvector:pg16`).
 - Расширение `vector` создаётся миграцией Alembic `6d7c8a1b787e`
   (`CREATE EXTENSION IF NOT EXISTS vector`; откат удаляет расширение).
+- Таблица `users` создаётся миграцией `68cf3aa5da9d`: `id` (UUID, `gen_random_uuid()`),
+  `email` (уникальный), `password_hash`, `created_at` (`timestamptz`, `now()`).
+  ORM-модель — `backend/app/models/user.py`.
 - Подключение: `DATABASE_URL` из `backend/.env` (локальный дефолт в `app/core/config.py`);
   движок и сессии — `backend/app/db/session.py` (asyncpg, `pool_pre_ping`).
 - Миграции: Alembic (async-шаблон), URL берётся в `alembic/env.py` из настроек;
   команды — `uv run alembic upgrade head` / `downgrade base` / `current`.
   Цикл upgrade → downgrade → upgrade проверен на локальной БД.
-- Хранение: named volume `postgres_data`; данные переживают перезапуск контейнера.
-- Модели и таблицы пока отсутствуют (`Base.metadata` пуст) — следующий шаг плана.
 
-**План** ([`AGENTS.md`](../AGENTS.md) §4–5): реляционная схема (`users`, `vacancies`, `resumes`,
+**План** ([`AGENTS.md`](../AGENTS.md) §4–5): остальные таблицы схемы (`vacancies`, `resumes`,
 `topics`, `user_skill_states`, `interview_sessions`, `agent_actions` и др.); ORM-модели
 SQLAlchemy 2 (async); `agent_actions` — обязательный audit-лог; граф знаний — реляционная
 модель в Postgres с репозиторием-границей (без Neo4j в MVP).
@@ -222,7 +225,7 @@ SQLAlchemy 2 (async); `agent_actions` — обязательный audit-лог;
 
 ## 10. Аутентификация / авторизация
 
-**Факт:** не реализована.
+**Факт:** не реализована (таблица `users` и модель `User` подготовлены под неё).
 
 **План** ([`AGENTS.md`](../AGENTS.md) §6, §10): JWT (access + refresh); изоляция данных по
 `user_id` на уровне Tools.
@@ -250,10 +253,11 @@ SQLAlchemy 2 (async); `agent_actions` — обязательный audit-лог;
 
 ## 13. Тестирование
 
-**Факт:** подключён pytest; в `backend/tests/` 5 тестов:
+**Факт:** подключён pytest (+ `pytest-asyncio`); в `backend/tests/` 6 тестов:
 
 - `test_health.py` — `/health` и `/docs`;
-- `test_health_db.py` — `/health/db`: 200 и 503 (через подмену `get_db`, без реального Postgres).
+- `test_health_db.py` — `/health/db`: 200 и 503 (через подмену `get_db`, без реального Postgres);
+- `test_user_model.py` — вставка/чтение `User` в реальной БД (пропускается, если БД недоступна).
 
 Запуск: `uv run pytest` из `backend/`; конфигурация — в `backend/pyproject.toml`.
 
