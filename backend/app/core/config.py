@@ -33,6 +33,11 @@ class Settings(BaseSettings):
     openai_model: str | None = None
     # CORS: браузерные источники, которым разрешены запросы (frontend dev-сервер)
     cors_origins: list[str] = ["http://localhost:5173"]
+    # Agent Harness: лимиты цикла
+    agent_max_steps: int = 10
+    agent_token_budget: int = 50000
+    agent_timeout_seconds: float = 120
+    agent_tool_timeout_seconds: float = 30
 
 
 @lru_cache

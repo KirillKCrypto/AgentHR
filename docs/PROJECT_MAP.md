@@ -52,9 +52,10 @@ AgentHR/
 │   │   ├── __init__.py
 │   │   ├── main.py            (точка входа FastAPI; CORS, роутеры, /health, /health/db)
 │   │   ├── agent/
-│   │   │   ├── __init__.py    (реэкспорт реестра, исполнителя, аудита)
+│   │   │   ├── __init__.py    (реэкспорт реестра, исполнителя, аудита, harness)
 │   │   │   ├── audit.py       (AgentActionRecord, AuditLogger, InMemory/Db)
 │   │   │   ├── executor.py    (ToolExecutor: валидация, таймаут, аудит)
+│   │   │   ├── harness.py     (AgentHarness: граф LangGraph, лимиты, checkpointer)
 │   │   │   └── tools.py       (ToolDefinition, ToolRegistry, JSON Schema)
 │   │   ├── api/
 │   │   │   ├── __init__.py
@@ -93,6 +94,7 @@ AgentHR/
 │   │   ├── test_cors.py
 │   │   ├── test_llm.py
 │   │   ├── test_agent_tools.py
+│   │   ├── test_agent_harness.py
 │   │   └── test_agent_audit.py
 │   └── uv.lock                (генерируется, коммитится)
 ├── docs/
@@ -164,7 +166,7 @@ pgvector.
 **Назначение:** backend-приложение AgentHR. Реализован каркас: FastAPI-точка входа
 (`app/main.py`: CORS, роутеры, `/health`, `/health/db`), JWT-аутентификация (`app/api/`,
 `app/core/security.py`), слой LLM (`app/llm/`: интерфейс, mock- и OpenAI-провайдеры), агентский
-слой (`app/agent/`: реестр Tools, исполнитель tool-calls, аудит-логгер), настройки
+слой (`app/agent/`: реестр Tools, исполнитель tool-calls, аудит-логгер, граф LangGraph), настройки
 (`app/core/config.py`), слой БД (`app/db/`), модели `User` и `AgentAction` (`app/models/`),
 миграции (`alembic/`), тесты (`tests/`), зависимости через uv.
 
@@ -355,6 +357,22 @@ healthcheck (`pg_isready`, интервал 5 с, 10 попыток).
 **Used by:** `backend/app/agent/executor.py`; в будущем — Harness и конкретные инструменты.
 
 **Important:** каждый инструмент обязан иметь JSON Schema; повторная регистрация имени запрещена.
+
+#### `backend/app/agent/harness.py`
+
+**Role:** AGENT (оркестратор)
+
+**Responsibility:** `AgentHarness` — граф LangGraph «модель → tools → модель»: лимиты
+(`max_steps`, `token_budget`, `timeout_seconds`), checkpointer (`InMemorySaver`, `thread_id`),
+аудит LLM-шагов и вызовов инструментов; `AgentRunResult` (статус, сообщения, токены, шаги).
+
+**Depends on:** `app/agent/tools.py`, `app/agent/executor.py`, `app/agent/audit.py`,
+`app/llm/base.py`, `langgraph`.
+
+**Used by:** будущие агентские сценарии (M2+); тесты `backend/tests/test_agent_harness.py`.
+
+**Important:** конфигурация лимитов — `AGENT_*` в настройках; checkpointer в памяти (рестарт
+процесса теряет состояние потока).
 
 ### Уровень 2 — важные
 
@@ -667,6 +685,18 @@ preflight `OPTIONS /auth/login` разрешён.
 
 **Used by:** `uv run pytest`.
 
+#### `backend/tests/test_agent_harness.py`
+
+**Role:** TEST
+
+**Responsibility:** тесты графа на мок-LLM: полный цикл с инструментом и аудитом, лимит шагов,
+бюджет токенов, таймаут, ошибка LLM, ошибка инструмента (возврат в модель), продолжение
+истории по `thread_id` (checkpoint).
+
+**Depends on:** `backend/app/agent/harness.py`, `app/llm` (MockProvider).
+
+**Used by:** `uv run pytest`.
+
 #### `backend/tests/test_agent_audit.py`
 
 **Role:** TEST
@@ -775,6 +805,7 @@ app/main.py ──▶ app/core/config.py ──▶ pydantic-settings (backend/.e
     └── (пока не подключён) app/llm/factory.py ──▶ MockProvider / OpenAIProvider (SDK openai)
 
 app/agent/executor.py ──▶ app/agent/tools.py (JSON Schema) + app/agent/audit.py ──▶ agent_actions
+app/agent/harness.py ──▶ LangGraph (граф, InMemorySaver) ──▶ LLMProvider + ToolExecutor
 
 app/models/* ──▶ Base.metadata
 alembic/env.py ──▶ config (settings) + Base.metadata ──▶ миграции в БД
@@ -826,7 +857,7 @@ Backend подключается к БД по `localhost:${POSTGRES_PORT}` (по
 | Запуск инфраструктуры | `infra/docker-compose.yml` | реализовано |
 | Backend-приложение | `backend/app/main.py` (uvicorn) | каркас + auth реализованы |
 | Миграции БД | `backend/alembic/` (`uv run alembic ...`) | 3 миграции: pgvector, users, agent_actions |
-| Прогон тестов backend | `backend/tests/` (pytest) | 40 тестов (1 пропускается без ключа OpenAI) |
+| Прогон тестов backend | `backend/tests/` (pytest) | 47 тестов (1 пропускается без ключа OpenAI) |
 | Frontend dev-сервер | `frontend/` (`npm run dev`) | вход/регистрация через API |
 | Генерация типов API | `frontend/` (`npm run generate:api`, нужен backend) | скрипт готов |
 | Сборка frontend | `npm run build` (tsc + vite) | проходит |
@@ -859,6 +890,10 @@ Backend подключается к БД по `localhost:${POSTGRES_PORT}` (по
 | `OPENAI_API_KEY` | ключ OpenAI (нужен для `LLM_PROVIDER=openai`) | да |
 | `OPENAI_MODEL` | модель OpenAI (нужна для `LLM_PROVIDER=openai`) | нет |
 | `CORS_ORIGINS` | браузерные источники (JSON-массив; по умолчанию `["http://localhost:5173"]`) | нет |
+| `AGENT_MAX_STEPS` | максимум шагов агентского цикла (по умолчанию 10) | нет |
+| `AGENT_TOKEN_BUDGET` | бюджет токенов на цикл (по умолчанию 50000) | нет |
+| `AGENT_TIMEOUT_SECONDS` | общий таймаут цикла, сек (по умолчанию 120) | нет |
+| `AGENT_TOOL_TIMEOUT_SECONDS` | таймаут одного инструмента, сек (по умолчанию 30) | нет |
 
 ### `backend/pyproject.toml` и `backend/alembic.ini`
 
@@ -932,7 +967,7 @@ Backend подключается к БД по `localhost:${POSTGRES_PORT}` (по
 
 ## 10. Тесты
 
-**Backend.** `backend/tests/` — 40 тестов на pytest (+ `pytest-asyncio`):
+**Backend.** `backend/tests/` — 47 тестов на pytest (+ `pytest-asyncio`):
 
 - `test_health.py` — `/health` (200 + статус) и `/docs` (200);
 - `test_health_db.py` — `/health/db`: 200 и 503 (два случая: `SQLAlchemyError`, `OSError`)
@@ -945,6 +980,8 @@ Backend подключается к БД по `localhost:${POSTGRES_PORT}` (по
 - `test_llm.py` — MockProvider и фабрика без сети; живой тест OpenAI пропускается без ключа;
 - `test_agent_tools.py` — реестр инструментов и исполнитель: валидация аргументов, ошибки
   обработчика, таймаут, аудит-записи (без БД);
+- `test_agent_harness.py` — граф LangGraph на мок-LLM: полный цикл с инструментом, лимиты
+  шагов/токенов, таймаут, ошибки LLM и инструмента, продолжение истории по `thread_id`;
 - `test_agent_audit.py` — запись/чтение аудит-лога в реальной БД; пропускается без PostgreSQL.
 
 Запуск: `uv run pytest` из `backend/`. Конфигурация — в `backend/pyproject.toml`

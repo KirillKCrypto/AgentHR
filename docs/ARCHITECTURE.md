@@ -10,12 +10,12 @@
 
 ## 1. Обзор архитектуры
 
-M0 «Фундамент» (неделя 1) закрыт: реализованы инфраструктура (PostgreSQL 16 + pgvector
-в Docker Compose), backend (FastAPI: health, JWT-аутентификация, слой LLM, агентский слой —
-реестр Tools, исполнитель tool-calls, аудит; миграции, тесты) и frontend (SPA со входом
-и регистрацией через API). Идёт неделя 2 (M1 «Agent Harness»): граф LangGraph — в работе.
+M0 «Фундамент» (неделя 1) и M1 «Agent Harness» (неделя 2) закрыты: реализованы инфраструктура
+(PostgreSQL 16 + pgvector в Docker Compose), backend (FastAPI: health, JWT-аутентификация,
+слой LLM, Agent Harness — реестр Tools, исполнитель, граф LangGraph с лимитами и checkpointer,
+аудит в `agent_actions`; миграции, тесты) и frontend (SPA со входом и регистрацией через API).
 Для живого ответа LLM нужен ключ OpenAI; доменные модели данных и внешние интеграции
-в рантайме — в плане.
+в рантайме — в плане (дальше — M2: вакансии/резюме → профиль знаний).
 
 Целевая архитектура — агентская система (не чат-бот): `LLM + Agent Harness + Tool Calling +
 граф знаний + персистентная память + адаптивное обучение` ([`AGENTS.md`](../AGENTS.md) §1–2).
@@ -55,7 +55,7 @@ mock). CORS разрешает запросы с dev-сервера frontend.
    │                                                 - GET /me (Bearer access)
    │                                                 - CORS: http://localhost:5173
    │                                                 - слой LLM: MockProvider / OpenAIProvider (app/llm/)
-   │                                                 - агентский слой: Tools + исполнитель + аудит (app/agent/)
+   │                                                 - Agent Harness: граф LangGraph с лимитами и checkpointer (app/agent/)
    │                                                 - модели User, AgentAction (app/models/)
    │                                                 - Alembic-миграции (pgvector, users, agent_actions)
    └── npm run dev (frontend/) ──▶ Vite dev-сервер (SPA)
@@ -142,13 +142,17 @@ openai, LangGraph (план).
 **Ограничения:** без state-менеджеров (TanStack Query + `useState`), без анимаций и кастомных
 визуализаций; UI — только shadcn/ui; версии зависимостей фиксированы.
 
-### Agent Harness и Tools (частично реализовано)
+### Agent Harness и Tools (реализовано)
 
 **Реализовано:** реестр Tools с JSON Schema (`app/agent/tools.py`), исполнитель tool-calls
-(`app/agent/executor.py`: валидация аргументов, таймаут, перехват ошибок) и аудит-логгер
-(`app/agent/audit.py` → таблица `agent_actions`).
+(`app/agent/executor.py`: валидация аргументов, таймаут, перехват ошибок, аудит-записи),
+аудит-логгер (`app/agent/audit.py` → таблица `agent_actions`, включая LLM-шаги и токены)
+и граф LangGraph (`app/agent/harness.py`: цикл модель→tools→модель, лимиты шагов/токенов/
+времени, checkpointer `InMemorySaver` по `thread_id`, статусы `completed` / `max_steps` /
+`token_budget` / `timeout` / `llm_error`).
 
-**В работе:** граф LangGraph (цикл агент→tools→агент), лимиты (шаги/токены/время), checkpointer.
+**Ограничение:** checkpointer пока в памяти — при рестарте процесса состояние потоков теряется
+(PostgreSQL-checkpointer — отдельный шаг).
 
 Целевая роль: LangGraph-оркестратор — состояние, маршрутизация tool-calls, лимиты, audit-лог;
 Tools — типизированные функции, единственный способ агента дотянуться до данных
@@ -281,6 +285,10 @@ Frontend и backend связаны по REST (CORS-разрешение для d
 | `OPENAI_API_KEY` | ключ OpenAI (для `LLM_PROVIDER=openai`) | да |
 | `OPENAI_MODEL` | модель OpenAI (для `LLM_PROVIDER=openai`) | нет |
 | `CORS_ORIGINS` | браузерные источники (по умолчанию `["http://localhost:5173"]`) | нет |
+| `AGENT_MAX_STEPS` | максимум шагов агентского цикла (по умолчанию 10) | нет |
+| `AGENT_TOKEN_BUDGET` | бюджет токенов на цикл (по умолчанию 50000) | нет |
+| `AGENT_TIMEOUT_SECONDS` | общий таймаут цикла, сек (по умолчанию 120) | нет |
+| `AGENT_TOOL_TIMEOUT_SECONDS` | таймаут одного инструмента, сек (по умолчанию 30) | нет |
 
 **Frontend** — `frontend/.env.example` (копия в `frontend/.env` при необходимости):
 
@@ -350,7 +358,7 @@ auth-эндпоинты — 401 (неверные данные/токен), 409 
 
 ## 13. Тестирование
 
-**Backend (факт):** подключён pytest (+ `pytest-asyncio`); в `backend/tests/` 40 тестов:
+**Backend (факт):** подключён pytest (+ `pytest-asyncio`); в `backend/tests/` 47 тестов:
 
 - `test_health.py` — `/health` и `/docs`;
 - `test_health_db.py` — `/health/db`: 200 и 503 (через подмену `get_db`, без реального Postgres);
@@ -362,6 +370,8 @@ auth-эндпоинты — 401 (неверные данные/токен), 409 
 - `test_llm.py` — MockProvider и фабрика без сети; живой вызов OpenAI пропускается без ключа;
 - `test_agent_tools.py` — реестр инструментов и исполнитель: валидация аргументов, ошибки
   обработчика, таймаут, аудит-записи (без БД);
+- `test_agent_harness.py` — граф на мок-LLM: полный цикл с инструментом, лимиты
+  шагов/токенов, таймаут, ошибки LLM и инструмента, продолжение истории по `thread_id`;
 - `test_agent_audit.py` — запись/чтение аудит-лога в реальной БД; пропускается без PostgreSQL.
 
 Запуск: `uv run pytest` из `backend/`; конфигурация — в `backend/pyproject.toml`.
@@ -451,6 +461,8 @@ npm run generate:api     # обновить типы из OpenAPI (нужен з
   при изменении API без регенерации типы разойдутся с backend.
 - **LLM по умолчанию — mock.** Реальные вызовы требуют ключа и модели; без ключа живые сценарии
   LLM-слоя не проверяются (тест пропускается).
+- **Checkpointer в памяти.** Состояние агентских потоков (`thread_id`) живёт в процессе backend:
+  после рестарта сессии не восстановить (PostgreSQL-checkpointer — отдельный шаг).
 - **Стадия проекта.** Значительная часть архитектуры существует только в плане; риск расхождения
   документации и кода снижается правилом обновлять эти три документа при изменениях.
 - **Плановые риски проекта** (точность оценки ответов, качество онтологии, стоимость agent-loop,

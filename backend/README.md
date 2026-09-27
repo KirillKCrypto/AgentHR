@@ -30,6 +30,12 @@ uv run uvicorn app.main:app --reload     # http://127.0.0.1:8000, докумен
 - Интерфейс (`app/llm/base.py`): `generate_with_tools` (function calling) и
   `generate_structured` (структурированный JSON по схеме).
 
+## Agent Harness
+
+- `app/agent/harness.py` — граф LangGraph: цикл «модель → tools → модель», лимиты
+  (`AGENT_MAX_STEPS`, `AGENT_TOKEN_BUDGET`, `AGENT_TIMEOUT_SECONDS`), checkpointer по `thread_id`.
+- Каждый вызов LLM и инструмента пишется в таблицу `agent_actions` (аудит-лог).
+
 ## Тесты и линтер
 
 ```powershell
@@ -55,7 +61,8 @@ URL БД берётся из настроек (`backend/.env`, переменн�
 - `app/api/` — роутеры (`routes/auth.py`, `routes/users.py`) и зависимости (`deps.py`)
 - `app/core/config.py` — настройки (pydantic-settings, читает `.env`)
 - `app/core/security.py` — argon2-хеши паролей, выпуск/проверка JWT
-- `app/agent/` — реестр Tools (JSON Schema), исполнитель tool-calls, аудит-логгер
+- `app/agent/` — реестр Tools (JSON Schema), исполнитель tool-calls, аудит-логгер,
+  граф LangGraph (`harness.py`)
 - `app/db/session.py` — async-движок, фабрика сессий, зависимость `get_db`
 - `app/db/base.py` — базовый класс моделей (`Base`)
 - `app/llm/` — слой LLM: `base.py` (интерфейс), `mock.py`, `openai.py`, `factory.py`
@@ -70,5 +77,5 @@ URL БД берётся из настроек (`backend/.env`, переменн�
 Refresh-токены stateless: отзыв до истечения не поддерживается (осознанный компромисс MVP).
 Ключ `OPENAI_API_KEY` — только через окружение.
 
-Дальше по плану (см. `AGENTS.md`): граф LangGraph (Agent Harness) и лимиты, остальные модели
-и таблицы, доменные REST API.
+Дальше по плану (см. `AGENTS.md`): M2 — извлечение требований вакансии и навыков резюме,
+онтология v1, профиль знаний; затем доменные REST API.

@@ -1,4 +1,4 @@
-"""Agent Harness: инструменты агента, аудит действий и исполнение вызовов."""
+"""Agent Harness: инструменты агента, аудит действий и граф LangGraph."""
 
 from app.agent.audit import (
     AgentActionRecord,
@@ -7,6 +7,7 @@ from app.agent.audit import (
     InMemoryAuditLogger,
 )
 from app.agent.executor import ToolExecutionResult, ToolExecutor
+from app.agent.harness import AgentHarness, AgentRunResult
 from app.agent.tools import (
     ToolArgumentsError,
     ToolDefinition,
@@ -16,6 +17,8 @@ from app.agent.tools import (
 
 __all__ = [
     "AgentActionRecord",
+    "AgentHarness",
+    "AgentRunResult",
     "AuditLogger",
     "DbAuditLogger",
     "InMemoryAuditLogger",
