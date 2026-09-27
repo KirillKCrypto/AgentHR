@@ -10,11 +10,12 @@
 
 ## 1. Обзор архитектуры
 
-Стадия проекта — M0 «Фундамент» (неделя 1) закрыт: реализованы инфраструктура (PostgreSQL 16 +
-pgvector в Docker Compose), backend (FastAPI: health, JWT-аутентификация, слой LLM с mock-
-и OpenAI-провайдерами, модель `User`, миграции, тесты) и frontend (SPA-каркас со входом
-и регистрацией через API). Для живого ответа LLM нужен ключ OpenAI; агентский цикл, доменные
-модели данных и внешние интеграции в рантайме — в плане.
+M0 «Фундамент» (неделя 1) закрыт: реализованы инфраструктура (PostgreSQL 16 + pgvector
+в Docker Compose), backend (FastAPI: health, JWT-аутентификация, слой LLM, агентский слой —
+реестр Tools, исполнитель tool-calls, аудит; миграции, тесты) и frontend (SPA со входом
+и регистрацией через API). Идёт неделя 2 (M1 «Agent Harness»): граф LangGraph — в работе.
+Для живого ответа LLM нужен ключ OpenAI; доменные модели данных и внешние интеграции
+в рантайме — в плане.
 
 Целевая архитектура — агентская система (не чат-бот): `LLM + Agent Harness + Tool Calling +
 граф знаний + персистентная память + адаптивное обучение` ([`AGENTS.md`](../AGENTS.md) §1–2).
@@ -54,8 +55,9 @@ mock). CORS разрешает запросы с dev-сервера frontend.
    │                                                 - GET /me (Bearer access)
    │                                                 - CORS: http://localhost:5173
    │                                                 - слой LLM: MockProvider / OpenAIProvider (app/llm/)
-   │                                                 - модель User (app/models/)
-   │                                                 - Alembic-миграции (pgvector, users)
+   │                                                 - агентский слой: Tools + исполнитель + аудит (app/agent/)
+   │                                                 - модели User, AgentAction (app/models/)
+   │                                                 - Alembic-миграции (pgvector, users, agent_actions)
    └── npm run dev (frontend/) ──▶ Vite dev-сервер (SPA)
                                      - /login: регистрация и вход через REST API
                                      - /: дашборд — /me через TanStack Query, выход
@@ -140,11 +142,17 @@ openai, LangGraph (план).
 **Ограничения:** без state-менеджеров (TanStack Query + `useState`), без анимаций и кастомных
 визуализаций; UI — только shadcn/ui; версии зависимостей фиксированы.
 
-### Agent Harness и Tools (План)
+### Agent Harness и Tools (частично реализовано)
 
-LangGraph-оркестратор: цикл агента, состояние, маршрутизация tool-calls, лимиты, audit-лог.
-Tools — типизированные функции (JSON Schema), единственный способ агента дотянуться до данных
-([`AGENTS.md`](../AGENTS.md) §2.2, §3.2–3.3). Слой LLM для Harness уже готов (`app/llm/`).
+**Реализовано:** реестр Tools с JSON Schema (`app/agent/tools.py`), исполнитель tool-calls
+(`app/agent/executor.py`: валидация аргументов, таймаут, перехват ошибок) и аудит-логгер
+(`app/agent/audit.py` → таблица `agent_actions`).
+
+**В работе:** граф LangGraph (цикл агент→tools→агент), лимиты (шаги/токены/время), checkpointer.
+
+Целевая роль: LangGraph-оркестратор — состояние, маршрутизация tool-calls, лимиты, audit-лог;
+Tools — типизированные функции, единственный способ агента дотянуться до данных
+([`AGENTS.md`](../AGENTS.md) §2.2, §3.2–3.3). Слой LLM готов (`app/llm/`).
 
 ### Граф знаний и векторный слой (План)
 
@@ -211,6 +219,9 @@ Tools — типизированные функции (JSON Schema), единс�
 - Таблица `users` создаётся миграцией `68cf3aa5da9d`: `id` (UUID, `gen_random_uuid()`),
   `email` (уникальный), `password_hash` (argon2id-хеш), `created_at` (`timestamptz`, `now()`).
   ORM-модель — `backend/app/models/user.py`.
+- Таблица `agent_actions` (миграция `22cd6bbf10ed`) — аудит-лог действий агента: шаг, tool,
+  аргументы/результат (JSONB), статус, токены, длительность; `session_id` без FK (до недели 5).
+  ORM-модель — `backend/app/models/agent_action.py`.
 - Подключение: `DATABASE_URL` из `backend/.env` (локальный дефолт в `app/core/config.py`);
   движок и сессии — `backend/app/db/session.py` (asyncpg, `pool_pre_ping`).
 - Миграции: Alembic (async-шаблон), URL берётся в `alembic/env.py` из настроек;
@@ -339,7 +350,7 @@ auth-эндпоинты — 401 (неверные данные/токен), 409 
 
 ## 13. Тестирование
 
-**Backend (факт):** подключён pytest (+ `pytest-asyncio`); в `backend/tests/` 30 тестов:
+**Backend (факт):** подключён pytest (+ `pytest-asyncio`); в `backend/tests/` 40 тестов:
 
 - `test_health.py` — `/health` и `/docs`;
 - `test_health_db.py` — `/health/db`: 200 и 503 (через подмену `get_db`, без реального Postgres);
@@ -348,7 +359,10 @@ auth-эндпоинты — 401 (неверные данные/токен), 409 
   отсутствие/битый/просроченный токен, refresh вместо access) через `httpx2.AsyncClient`
   и `ASGITransport`;
 - `test_cors.py` — CORS-заголовок и preflight для frontend-origin;
-- `test_llm.py` — MockProvider и фабрика без сети; живой вызов OpenAI пропускается без ключа.
+- `test_llm.py` — MockProvider и фабрика без сети; живой вызов OpenAI пропускается без ключа;
+- `test_agent_tools.py` — реестр инструментов и исполнитель: валидация аргументов, ошибки
+  обработчика, таймаут, аудит-записи (без БД);
+- `test_agent_audit.py` — запись/чтение аудит-лога в реальной БД; пропускается без PostgreSQL.
 
 Запуск: `uv run pytest` из `backend/`; конфигурация — в `backend/pyproject.toml`.
 

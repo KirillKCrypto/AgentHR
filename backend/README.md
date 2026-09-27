@@ -55,10 +55,11 @@ URL БД берётся из настроек (`backend/.env`, переменн�
 - `app/api/` — роутеры (`routes/auth.py`, `routes/users.py`) и зависимости (`deps.py`)
 - `app/core/config.py` — настройки (pydantic-settings, читает `.env`)
 - `app/core/security.py` — argon2-хеши паролей, выпуск/проверка JWT
+- `app/agent/` — реестр Tools (JSON Schema), исполнитель tool-calls, аудит-логгер
 - `app/db/session.py` — async-движок, фабрика сессий, зависимость `get_db`
 - `app/db/base.py` — базовый класс моделей (`Base`)
 - `app/llm/` — слой LLM: `base.py` (интерфейс), `mock.py`, `openai.py`, `factory.py`
-- `app/models/` — ORM-модели (сейчас `User` в `user.py`)
+- `app/models/` — ORM-модели (`User`, `AgentAction`)
 - `app/schemas/` — Pydantic-схемы (сейчас `auth.py`)
 - `alembic/` — миграции (async), `alembic/versions/`
 - `tests/` — тесты (pytest + httpx2, интеграционные требуют запущенную БД)
@@ -69,5 +70,5 @@ URL БД берётся из настроек (`backend/.env`, переменн�
 Refresh-токены stateless: отзыв до истечения не поддерживается (осознанный компромисс MVP).
 Ключ `OPENAI_API_KEY` — только через окружение.
 
-Дальше по плану (см. `AGENTS.md`): остальные модели и таблицы, доменные REST API, Agent Harness,
-реестр Tools.
+Дальше по плану (см. `AGENTS.md`): граф LangGraph (Agent Harness) и лимиты, остальные модели
+и таблицы, доменные REST API.

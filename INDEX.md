@@ -18,13 +18,14 @@ AgentHR — интеллектуальная агентская система �
 - **Тип:** monorepo — `backend/` + `frontend/` + `infra/`.
 - **Стек (зафиксирован):** Python 3.13 + FastAPI, LangGraph + LangChain core, PostgreSQL 16 +
   pgvector, React + TypeScript + Vite, Docker Compose, Alembic + SQLAlchemy, pytest.
-- **Текущее состояние:** реализованы инфраструктура (Docker Compose с PostgreSQL 16 + pgvector,
-  `infra/`), backend (FastAPI: health, JWT-auth, слой LLM, модель `User`, миграции, тесты —
-  `backend/`) и frontend (Vite + React 19 + TS, Tailwind 4, shadcn/ui; **вход и регистрация
-  подключены к API** — `frontend/`). Это закрывает M0 «Фундамент» (для живого ответа LLM нужен
-  ключ OpenAI). Из чеклиста старта ([`AGENTS.md`](AGENTS.md), §12) выполнены пункты 1–3, 5, 6
-  и 10; пункт 4 выполняется поэтапно (миграции, pgvector, `users`; остальные таблицы —
-  недели 3–4); пункты 7–9, 11 не начаты.
+- **Текущее состояние:** M0 «Фундамент» закрыт: инфраструктура (`infra/`), backend (FastAPI:
+  health, JWT-auth, слой LLM, модель `User`, миграции, тесты — `backend/`) и frontend (вход
+  и регистрация через API — `frontend/`). Идёт неделя 2 (M1 «Agent Harness»): реализованы реестр
+  tools с JSON Schema, исполнитель tool-calls (валидация, таймаут, аудит) и таблица
+  `agent_actions`; граф LangGraph — в работе. Из чеклиста старта ([`AGENTS.md`](AGENTS.md), §12)
+  выполнены пункты 1–3, 5, 6 и 10; пункт 4 выполняется поэтапно (миграции, pgvector, `users`,
+  `agent_actions`); пункт 7 — частично; пункты 8, 9, 11 не начаты. Для живого ответа LLM
+  нужен ключ OpenAI.
 
 ---
 
@@ -85,13 +86,14 @@ AgentHR/
 ├── backend/             — КАРКАС: FastAPI, JWT-auth, слой LLM, модель User, БД-сессия, Alembic
 │   ├── app/
 │   │   ├── main.py      — точка входа FastAPI (CORS, роутеры, /health, /health/db)
+│   │   ├── agent/       — реестр tools, исполнитель tool-calls, аудит-логгер
 │   │   ├── api/         — роутеры (routes/auth.py, routes/users.py), deps.py (get_current_user)
 │   │   ├── core/        — config.py (настройки), security.py (argon2-хеши, JWT)
 │   │   ├── db/          — async-движок (session.py), Base (base.py)
 │   │   ├── llm/         — провайдер-агностичный слой LLM (base, mock, openai, factory)
-│   │   ├── models/      — ORM-модели (user.py — User)
+│   │   ├── models/      — ORM-модели (user.py — User, agent_action.py — AgentAction)
 │   │   └── schemas/     — Pydantic-схемы (auth.py)
-│   ├── alembic/         — миграции (async; pgvector, users)
+│   ├── alembic/         — миграции (async; pgvector, users, agent_actions)
 │   ├── alembic.ini      — конфигурация Alembic
 │   ├── tests/           — тесты (pytest)
 │   ├── pyproject.toml   — зависимости и конфигурация инструментов (uv)
@@ -135,10 +137,12 @@ AgentHR/
 (`POST /auth/register`, `POST /auth/login`, `POST /auth/refresh`, `GET /me`; argon2-хеши паролей
 в `app/core/security.py`), CORS для frontend dev-сервера, слой LLM (`app/llm/`:
 провайдер-агностичный интерфейс, `MockProvider` для тестов без сети, `OpenAIProvider` на
-официальном SDK — function calling и JSON Schema), настройки через pydantic-settings
-(`app/core/config.py`), слой БД (async-движок и сессии SQLAlchemy в `app/db/`), модель `User`
-(`app/models/`), миграции Alembic (pgvector, таблица `users`), тесты (`tests/`), зависимости
-через uv (`pyproject.toml`, `uv.lock`).
+официальном SDK — function calling и JSON Schema), агентский слой (`app/agent/`: реестр Tools
+с JSON Schema, исполнитель tool-calls с валидацией, таймаутом и аудит-логом в `agent_actions`),
+настройки через pydantic-settings (`app/core/config.py`), слой БД (async-движок и сессии
+SQLAlchemy в `app/db/`), модели `User` и `AgentAction` (`app/models/`), миграции Alembic
+(pgvector, `users`, `agent_actions`), тесты (`tests/`), зависимости через uv
+(`pyproject.toml`, `uv.lock`).
 
 По плану здесь появятся: остальные модели и схема БД, доменные REST API (вакансии, резюме,
 планы, интервью), Agent Harness (LangGraph), реестр Tools. Источник: [`AGENTS.md`](AGENTS.md)
@@ -223,8 +227,8 @@ Backend API (FastAPI)
 |---|---|---|
 | `infra/docker-compose.yml` | запуск БД и инфраструктуры | реализовано |
 | `backend/app/main.py` (запуск: `uvicorn app.main:app`) | основной сервер приложения | каркас + auth реализованы |
-| `backend/alembic/` (запуск: `uv run alembic upgrade head`) | миграции схемы БД | 2 миграции: pgvector, users |
-| Тесты: `backend/tests/` (`uv run pytest`) | прогон тестов | 30 тестов (1 пропускается без ключа OpenAI) |
+| `backend/alembic/` (запуск: `uv run alembic upgrade head`) | миграции схемы БД | 3 миграции: pgvector, users, agent_actions |
+| Тесты: `backend/tests/` (`uv run pytest`) | прогон тестов | 40 тестов (1 пропускается без ключа OpenAI) |
 | `frontend/` (запуск: `npm run dev`) | SPA-разработка | вход/регистрация через API |
 | `frontend/` (`npm run generate:api`) | генерация типов из OpenAPI (нужен backend) | скрипт готов |
 
@@ -244,6 +248,8 @@ Backend API (FastAPI)
 | `backend/app/db/session.py` | async-движок, фабрика сессий, зависимость `get_db` |
 | `backend/app/models/user.py` | ORM-модель `User` |
 | `backend/app/llm/` | слой LLM: интерфейс (`base.py`), `MockProvider`, `OpenAIProvider`, фабрика |
+| `backend/app/agent/` | реестр Tools (JSON Schema), исполнитель tool-calls, аудит-логгер; цикл LangGraph — в работе |
+| `backend/app/models/agent_action.py` | ORM-модель записи аудит-лога (`agent_actions`) |
 | `backend/alembic/` | миграции схемы (async) |
 | `frontend/src/App.tsx` | маршруты и шапка SPA |
 | `frontend/src/api/client.ts` | типизированный API-клиент (login/register/me) |
@@ -286,6 +292,8 @@ INDEX.md                    — главная точка входа (этот �
   всех клиентов; `JWT_SECRET_KEY` в продакшене меняется только вместе с инвалидацией токенов.
 - **`backend/app/llm/base.py`** — контракт слоя LLM (сообщения, tools, результаты). Изменение
   контракта затронет всех провайдеров и будущий Agent Harness.
+- **`backend/app/agent/tools.py`** — контракт инструментов: каждый инструмент обязан иметь
+  JSON Schema и async-обработчик, а его вызовы попадают в `agent_actions` (правило проекта).
 - **`backend/app/models/`** — ORM-модели: изменение модели требует новой миграции
   (`alembic revision --autogenerate`).
 - **`backend/alembic/versions/`** — уже применённые миграции не редактировать; новые — только
@@ -357,6 +365,7 @@ INDEX.md                    — главная точка входа (этот �
 | Где API? | Роутеры — `backend/app/api/routes/` (auth, users); health — `backend/app/main.py`; остальное — план ([`AGENTS.md`](AGENTS.md) §2–3) |
 | Где аутентификация? | Backend: `backend/app/core/security.py` + `backend/app/api/deps.py`; frontend: `frontend/src/pages/LoginPage.tsx` + `frontend/src/lib/tokens.ts` |
 | Где LLM-слой? | `backend/app/llm/` (`base.py` — интерфейс, `mock.py` / `openai.py` — реализации, `factory.py` — выбор по `LLM_PROVIDER`) |
+| Где реестр инструментов и аудит агента? | `backend/app/agent/` (`tools.py`, `executor.py`, `audit.py`); записи — в таблице `agent_actions` |
 | Где фронтенд? | `frontend/` (каркас + вход: маршруты — `src/App.tsx`, экраны — `src/pages/`, запуск — `npm run dev`) |
 | Где API-клиент frontend / типы API? | `frontend/src/api/client.ts`; типы — `frontend/src/api/schema.d.ts` (`npm run generate:api`) |
 | Где UI-компоненты? | `frontend/src/components/ui/` (shadcn/ui, Base UI); новые — `npx shadcn@latest add <name>` |

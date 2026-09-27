@@ -5,6 +5,7 @@
 """
 
 from app.db.base import Base
+from app.models.agent_action import AgentAction
 from app.models.user import User
 
-__all__ = ["Base", "User"]
+__all__ = ["AgentAction", "Base", "User"]

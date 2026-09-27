@@ -16,7 +16,7 @@
 | `AGENTS.md` | DOCUMENTATION | контекст проекта, план на 8 недель, архитектурные правила |
 | `INDEX.md` | DOCUMENTATION | главная точка входа для ИИ-агентов |
 | `docs/` | DOCUMENTATION | навигационная документация (PROJECT_MAP, ARCHITECTURE) |
-| `backend/` | APPLICATION | FastAPI-каркас (`/health`, `/health/db`, JWT-auth, слой LLM, модель `User`, миграции); Harness — план |
+| `backend/` | APPLICATION | FastAPI-каркас (`/health`, `/health/db`, JWT-auth, слой LLM, агентский слой, миграции); Harness-граф — в работе |
 | `frontend/` | APPLICATION | SPA-каркас: Vite + React 19 + TS, Tailwind 4, shadcn/ui; вход/регистрация через API |
 | `infra/` | INFRASTRUCTURE | работающая локальная БД: PostgreSQL 16 + pgvector |
 | `.gitignore` | CONFIG | исключения git |
@@ -46,10 +46,16 @@ AgentHR/
 │   │   ├── script.py.mako
 │   │   └── versions/
 │   │       ├── 6d7c8a1b787e_enable_pgvector_extension.py
+│   │       ├── 22cd6bbf10ed_create_agent_actions_table.py
 │   │       └── 68cf3aa5da9d_create_users_table.py
 │   ├── app/
 │   │   ├── __init__.py
 │   │   ├── main.py            (точка входа FastAPI; CORS, роутеры, /health, /health/db)
+│   │   ├── agent/
+│   │   │   ├── __init__.py    (реэкспорт реестра, исполнителя, аудита)
+│   │   │   ├── audit.py       (AgentActionRecord, AuditLogger, InMemory/Db)
+│   │   │   ├── executor.py    (ToolExecutor: валидация, таймаут, аудит)
+│   │   │   └── tools.py       (ToolDefinition, ToolRegistry, JSON Schema)
 │   │   ├── api/
 │   │   │   ├── __init__.py
 │   │   │   ├── deps.py        (get_current_user — Bearer)
@@ -73,6 +79,7 @@ AgentHR/
 │   │   │   └── openai.py      (OpenAIProvider, SDK openai)
 │   │   ├── models/
 │   │   │   ├── __init__.py    (импортирует все модели для Alembic)
+│   │   │   ├── agent_action.py (модель AgentAction)
 │   │   │   └── user.py        (модель User)
 │   │   └── schemas/
 │   │       ├── __init__.py
@@ -84,7 +91,9 @@ AgentHR/
 │   │   ├── test_user_model.py
 │   │   ├── test_auth.py
 │   │   ├── test_cors.py
-│   │   └── test_llm.py
+│   │   ├── test_llm.py
+│   │   ├── test_agent_tools.py
+│   │   └── test_agent_audit.py
 │   └── uv.lock                (генерируется, коммитится)
 ├── docs/
 │   ├── ARCHITECTURE.md
@@ -154,15 +163,16 @@ pgvector.
 
 **Назначение:** backend-приложение AgentHR. Реализован каркас: FastAPI-точка входа
 (`app/main.py`: CORS, роутеры, `/health`, `/health/db`), JWT-аутентификация (`app/api/`,
-`app/core/security.py`), слой LLM (`app/llm/`: интерфейс, mock- и OpenAI-провайдеры), настройки
-(`app/core/config.py`), слой БД (`app/db/`), модель `User` (`app/models/`), миграции (`alembic/`),
-тесты (`tests/`), зависимости через uv.
+`app/core/security.py`), слой LLM (`app/llm/`: интерфейс, mock- и OpenAI-провайдеры), агентский
+слой (`app/agent/`: реестр Tools, исполнитель tool-calls, аудит-логгер), настройки
+(`app/core/config.py`), слой БД (`app/db/`), модели `User` и `AgentAction` (`app/models/`),
+миграции (`alembic/`), тесты (`tests/`), зависимости через uv.
 
 **Цель по плану:** остальные модели и схема БД, доменные REST API, Agent Harness (LangGraph),
 реестр Tools.
 Источники: `backend/README.md`, [`AGENTS.md`](../AGENTS.md) §2–3, §6.
 
-**Содержит сейчас:** `app/` (api, core, db, llm, models, schemas), `alembic/`, `alembic.ini`,
+**Содержит сейчас:** `app/` (agent, api, core, db, llm, models, schemas), `alembic/`, `alembic.ini`,
 `tests/`, `pyproject.toml`, `uv.lock`, `.env.example`, `.python-version`, `README.md`.
 Доменных сервисов пока нет.
 
@@ -332,6 +342,20 @@ healthcheck (`pg_isready`, интервал 5 с, 10 попыток).
 
 **Important:** изменение контракта затронет всех провайдеров и будущий Harness.
 
+#### `backend/app/agent/tools.py`
+
+**Role:** AGENT (реестр инструментов)
+
+**Responsibility:** `ToolDefinition` (описание + async-обработчик), `ToolRegistry`
+(регистрация, поиск, `specs()` для LLM, валидация аргументов по JSON Schema через `jsonschema`),
+ошибки `ToolNotFoundError`/`ToolArgumentsError`.
+
+**Depends on:** `backend/app/llm/base.py` (`ToolSpec`), `jsonschema`.
+
+**Used by:** `backend/app/agent/executor.py`; в будущем — Harness и конкретные инструменты.
+
+**Important:** каждый инструмент обязан иметь JSON Schema; повторная регистрация имени запрещена.
+
 ### Уровень 2 — важные
 
 #### `README.md`
@@ -477,6 +501,43 @@ dev-группа (pytest, pytest-asyncio, httpx2, ruff), конфигураци�
 
 **Used by:** точки сборки приложения/скриптов (в `main.py` пока не подключён).
 
+#### `backend/app/agent/executor.py`
+
+**Role:** AGENT (исполнение tool-calls)
+
+**Responsibility:** `ToolExecutor` — валидирует аргументы, вызывает обработчик с таймаутом
+(`asyncio.wait_for`), перехватывает ошибки (агент получает текст ошибки, цикл не падает),
+пишет запись в аудит-лог; возвращает `ToolExecutionResult` для контекста LLM.
+
+**Depends on:** `backend/app/agent/tools.py`, `backend/app/agent/audit.py`, `backend/app/llm/base.py`.
+
+**Used by:** в будущем — Harness; тесты `backend/tests/test_agent_tools.py`.
+
+#### `backend/app/agent/audit.py`
+
+**Role:** AGENT (аудит)
+
+**Responsibility:** `AgentActionRecord`, Protocol `AuditLogger`, реализации:
+`InMemoryAuditLogger` (тесты без БД) и `DbAuditLogger` (запись в таблицу `agent_actions`).
+
+**Depends on:** `backend/app/models/agent_action.py`.
+
+**Used by:** `backend/app/agent/executor.py`; в будущем — Harness.
+
+#### `backend/app/models/agent_action.py`
+
+**Role:** MODEL
+
+**Responsibility:** ORM-модель `AgentAction` (таблица `agent_actions`): шаг, tool, аргументы,
+результат, статус, токены, длительность, время; `session_id` — свободная ссылка без FK
+(сессии появятся на неделе 5).
+
+**Depends on:** `backend/app/db/base.py`.
+
+**Used by:** `backend/app/agent/audit.py`, Alembic (autogenerate).
+
+**Important:** изменение модели требует новой миграции.
+
 #### `frontend/src/api/client.ts`
 
 **Role:** API-клиент (frontend)
@@ -594,6 +655,29 @@ preflight `OPTIONS /auth/login` разрешён.
 
 **Used by:** `uv run pytest`.
 
+#### `backend/tests/test_agent_tools.py`
+
+**Role:** TEST
+
+**Responsibility:** тесты реестра и исполнителя без БД: дубликаты имён, `specs()`, валидация
+аргументов, успешное исполнение с аудит-записью, невалидные аргументы без вызова обработчика,
+ошибка обработчика, таймаут.
+
+**Depends on:** `backend/app/agent/*`.
+
+**Used by:** `uv run pytest`.
+
+#### `backend/tests/test_agent_audit.py`
+
+**Role:** TEST
+
+**Responsibility:** интеграционный тест `DbAuditLogger`: запись и чтение строки
+из `agent_actions` в реальной БД; пропускается без PostgreSQL.
+
+**Depends on:** `backend/app/agent/audit.py`, `backend/app/db/session.py`.
+
+**Used by:** `uv run pytest`.
+
 #### `backend/.env.example`
 
 **Role:** CONFIG (шаблон)
@@ -690,6 +774,8 @@ app/main.py ──▶ app/core/config.py ──▶ pydantic-settings (backend/.e
     │
     └── (пока не подключён) app/llm/factory.py ──▶ MockProvider / OpenAIProvider (SDK openai)
 
+app/agent/executor.py ──▶ app/agent/tools.py (JSON Schema) + app/agent/audit.py ──▶ agent_actions
+
 app/models/* ──▶ Base.metadata
 alembic/env.py ──▶ config (settings) + Base.metadata ──▶ миграции в БД
 
@@ -739,8 +825,8 @@ Backend подключается к БД по `localhost:${POSTGRES_PORT}` (по
 |---|---|---|
 | Запуск инфраструктуры | `infra/docker-compose.yml` | реализовано |
 | Backend-приложение | `backend/app/main.py` (uvicorn) | каркас + auth реализованы |
-| Миграции БД | `backend/alembic/` (`uv run alembic ...`) | 2 миграции: pgvector, users |
-| Прогон тестов backend | `backend/tests/` (pytest) | 30 тестов (1 пропускается без ключа OpenAI) |
+| Миграции БД | `backend/alembic/` (`uv run alembic ...`) | 3 миграции: pgvector, users, agent_actions |
+| Прогон тестов backend | `backend/tests/` (pytest) | 40 тестов (1 пропускается без ключа OpenAI) |
 | Frontend dev-сервер | `frontend/` (`npm run dev`) | вход/регистрация через API |
 | Генерация типов API | `frontend/` (`npm run generate:api`, нужен backend) | скрипт готов |
 | Сборка frontend | `npm run build` (tsc + vite) | проходит |
@@ -818,6 +904,9 @@ Backend подключается к БД по `localhost:${POSTGRES_PORT}` (по
 - Модель `User` (`backend/app/models/user.py`): `id` (UUID, `gen_random_uuid()`), `email`
   (уникальный), `password_hash` (argon2id-хеш), `created_at` (`timestamptz`, `now()`).
 - Таблица `users` используется auth-эндпоинтами; plaintext-пароли не хранятся нигде.
+- Таблица `agent_actions` (миграция `22cd6bbf10ed`): аудит-лог действий агента — шаг, tool,
+  аргументы и результат (JSONB), статус, токены, длительность; `session_id` — свободная ссылка
+  без FK (сессии появятся на неделе 5).
 
 **План** ([`AGENTS.md`](../AGENTS.md) §4–5):
 
@@ -843,7 +932,7 @@ Backend подключается к БД по `localhost:${POSTGRES_PORT}` (по
 
 ## 10. Тесты
 
-**Backend.** `backend/tests/` — 30 тестов на pytest (+ `pytest-asyncio`):
+**Backend.** `backend/tests/` — 40 тестов на pytest (+ `pytest-asyncio`):
 
 - `test_health.py` — `/health` (200 + статус) и `/docs` (200);
 - `test_health_db.py` — `/health/db`: 200 и 503 (два случая: `SQLAlchemyError`, `OSError`)
@@ -853,7 +942,10 @@ Backend подключается к БД по `localhost:${POSTGRES_PORT}` (по
 - `test_auth.py` — интеграционные тесты auth (register/login/me/refresh + негативные кейсы)
   через `httpx2.AsyncClient` + `ASGITransport`;
 - `test_cors.py` — CORS-заголовки и preflight для frontend-origin;
-- `test_llm.py` — MockProvider и фабрика без сети; живой тест OpenAI пропускается без ключа.
+- `test_llm.py` — MockProvider и фабрика без сети; живой тест OpenAI пропускается без ключа;
+- `test_agent_tools.py` — реестр инструментов и исполнитель: валидация аргументов, ошибки
+  обработчика, таймаут, аудит-записи (без БД);
+- `test_agent_audit.py` — запись/чтение аудит-лога в реальной БД; пропускается без PostgreSQL.
 
 Запуск: `uv run pytest` из `backend/`. Конфигурация — в `backend/pyproject.toml`
 (`testpaths`, `pythonpath`, `asyncio_mode`).
