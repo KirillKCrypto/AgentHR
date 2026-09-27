@@ -20,18 +20,18 @@ AgentHR — интеллектуальная агентская система �
   pgvector, React + TypeScript + Vite, Docker Compose, Alembic + SQLAlchemy, pytest.
 - **Текущее состояние:** реализованы инфраструктура (Docker Compose с PostgreSQL 16 + pgvector,
   `infra/`), backend (FastAPI: health, JWT-auth, слой LLM, модель `User`, миграции, тесты —
-  `backend/`) и каркас frontend (Vite + React 19 + TS, Tailwind CSS 4, shadcn/ui, роутинг,
-  страницы-заглушки — `frontend/`). Из чеклиста старта ([`AGENTS.md`](AGENTS.md), §12)
-  выполнены пункты 1–3, 5, 6; пункт 4 выполняется поэтапно (миграции, pgvector, `users`;
-  остальные таблицы — недели 3–4); пункт 10 — частично (каркас готов; подключение `/login`
-  к API — следующий шаг); пункты 7–9, 11 не начаты.
+  `backend/`) и frontend (Vite + React 19 + TS, Tailwind 4, shadcn/ui; **вход и регистрация
+  подключены к API** — `frontend/`). Это закрывает M0 «Фундамент» (для живого ответа LLM нужен
+  ключ OpenAI). Из чеклиста старта ([`AGENTS.md`](AGENTS.md), §12) выполнены пункты 1–3, 5, 6
+  и 10; пункт 4 выполняется поэтапно (миграции, pgvector, `users`; остальные таблицы —
+  недели 3–4); пункты 7–9, 11 не начаты.
 
 ---
 
 ## 2. Быстрый старт
 
 Запускаются три компонента: база данных, backend (FastAPI) и frontend (Vite). Требования:
-Docker Desktop с запущенным движком и [uv](https://docs.astral.sh/uv/), Node.js 20+.
+Docker Desktop с запущенным движком, [uv](https://docs.astral.sh/uv/), Node.js 20+.
 
 **1. База данных** (`infra/`):
 
@@ -58,12 +58,12 @@ uv run pytest                                 # тесты
 По умолчанию `LLM_PROVIDER=mock` — сеть не нужна. Для реального вызова задайте
 `LLM_PROVIDER=openai`, `OPENAI_API_KEY`, `OPENAI_MODEL` в `backend/.env`.
 
-**3. Frontend** (`frontend/`):
+**3. Frontend** (`frontend/`, нужен запущенный backend):
 
 ```powershell
 cd frontend
 npm install
-npm run dev      # http://localhost:5173
+npm run dev      # http://localhost:5173 — регистрация/вход работают
 ```
 
 ---
@@ -84,7 +84,7 @@ AgentHR/
 │   └── README.md        — запуск и проверка БД
 ├── backend/             — КАРКАС: FastAPI, JWT-auth, слой LLM, модель User, БД-сессия, Alembic
 │   ├── app/
-│   │   ├── main.py      — точка входа FastAPI (подключение роутеров, /health, /health/db)
+│   │   ├── main.py      — точка входа FastAPI (CORS, роутеры, /health, /health/db)
 │   │   ├── api/         — роутеры (routes/auth.py, routes/users.py), deps.py (get_current_user)
 │   │   ├── core/        — config.py (настройки), security.py (argon2-хеши, JWT)
 │   │   ├── db/          — async-движок (session.py), Base (base.py)
@@ -98,16 +98,18 @@ AgentHR/
 │   ├── uv.lock          — зафиксированные версии (генерируется, коммитится)
 │   ├── .env.example     — шаблон настроек (.env — локальный, в git не попадает)
 │   └── README.md        — команды запуска, тестов, миграций
-└── frontend/            — КАРКАС: Vite + React 19 + TS, Tailwind 4, shadcn/ui, роутинг; заглушки
+└── frontend/            — РЕАЛИЗОВАНО: SPA-каркас + вход/регистрация через API
     ├── src/
     │   ├── main.tsx     — точка входа (QueryClientProvider, BrowserRouter)
     │   ├── App.tsx      — шапка и маршруты /, /login, 404
+    │   ├── api/         — клиент API: client.ts (fetch + типы), schema.d.ts (из OpenAPI)
     │   ├── pages/       — экраны (DashboardPage, LoginPage, NotFoundPage)
     │   ├── components/ui/ — shadcn/ui (Button, Card, Input, Label)
-    │   └── lib/utils.ts — утилита cn
+    │   └── lib/         — tokens.ts (хранение токенов), utils.ts (cn)
     ├── index.html
-    ├── package.json     — зависимости (зафиксированные версии)
+    ├── package.json     — зависимости (зафиксированные версии) и скрипты
     ├── package-lock.json
+    ├── .env.example     — VITE_API_BASE_URL
     └── README.md        — команды и соглашения
 ```
 
@@ -131,11 +133,12 @@ AgentHR/
 
 Реализовано: FastAPI-приложение — health-эндпоинты (`/health`, `/health/db`), JWT-аутентификация
 (`POST /auth/register`, `POST /auth/login`, `POST /auth/refresh`, `GET /me`; argon2-хеши паролей
-в `app/core/security.py`), слой LLM (`app/llm/`: провайдер-агностичный интерфейс, `MockProvider`
-для тестов без сети, `OpenAIProvider` на официальном SDK — function calling и JSON Schema),
-настройки через pydantic-settings (`app/core/config.py`), слой БД (async-движок и сессии
-SQLAlchemy в `app/db/`), модель `User` (`app/models/`), миграции Alembic (pgvector, таблица
-`users`), тесты (`tests/`), зависимости через uv (`pyproject.toml`, `uv.lock`).
+в `app/core/security.py`), CORS для frontend dev-сервера, слой LLM (`app/llm/`:
+провайдер-агностичный интерфейс, `MockProvider` для тестов без сети, `OpenAIProvider` на
+официальном SDK — function calling и JSON Schema), настройки через pydantic-settings
+(`app/core/config.py`), слой БД (async-движок и сессии SQLAlchemy в `app/db/`), модель `User`
+(`app/models/`), миграции Alembic (pgvector, таблица `users`), тесты (`tests/`), зависимости
+через uv (`pyproject.toml`, `uv.lock`).
 
 По плану здесь появятся: остальные модели и схема БД, доменные REST API (вакансии, резюме,
 планы, интервью), Agent Harness (LangGraph), реестр Tools. Источник: [`AGENTS.md`](AGENTS.md)
@@ -143,18 +146,19 @@ SQLAlchemy в `app/db/`), модель `User` (`app/models/`), миграции 
 
 Подробнее: [`docs/PROJECT_MAP.md`](docs/PROJECT_MAP.md) → раздел `backend/`.
 
-### Frontend — каркас реализован
+### Frontend — реализовано (вход через API)
 
 **Path:** `frontend/`
 
-Реализовано: каркас SPA — Vite + React 19 + TypeScript, Tailwind CSS 4, shadcn/ui (Base UI),
-роутинг (react-router 8), TanStack Query (настроен), страницы-заглушки: дашборд (`/`), вход
-(`/login` — форма без подключения к API), 404. Версии зависимостей зафиксированы
+Реализовано: Vite + React 19 + TypeScript, Tailwind CSS 4, shadcn/ui (Base UI), роутинг
+(react-router 8), TanStack Query; типизированный API-клиент (`src/api/client.ts`, типы
+из OpenAPI в `src/api/schema.d.ts`); экран `/login` — регистрация и вход с состояниями
+loading/error, сохранение токенов (`src/lib/tokens.ts`), редирект на дашборд; дашборд — загрузка
+`/me` через TanStack Query, выход из аккаунта; 404. Версии зависимостей зафиксированы
 (`.npmrc` → `save-exact=true`).
 
-По плану: подключение экрана входа к API (следующий шаг), затем остальные экраны
-(`/vacancies/new`, `/profile`, `/plans/:id`, `/interview/:id`, `/reports/:id`).
-Источник: [`AGENTS.md`](AGENTS.md) §7.
+По плану: остальные экраны продукта — `/vacancies/new`, `/profile`, `/plans/:id`,
+`/interview/:id`, `/reports/:id` ([`AGENTS.md`](AGENTS.md) §7).
 
 Подробнее: [`docs/PROJECT_MAP.md`](docs/PROJECT_MAP.md) → раздел `frontend/`;
 [`frontend/README.md`](frontend/README.md) — команды и соглашения.
@@ -180,12 +184,14 @@ SQLAlchemy в `app/db/`), модель `User` (`app/models/`), миграции 
    │                                                 - GET /health, /health/db
    │                                                 - POST /auth/register, /auth/login, /auth/refresh
    │                                                 - GET /me (Bearer access-токен)
+   │                                                 - CORS: http://localhost:5173
    │                                                 - слой LLM: MockProvider / OpenAIProvider
    │                                                 - модель User (app/models/)
    │                                                 - Alembic-миграции (pgvector, users)
-   └── npm run dev (frontend/) ──▶ Vite dev-сервер (SPA-каркас)
-                                     - / (дашборд-заглушка), /login (форма без API), 404
-                                     - пока не обращается к backend (следующий шаг)
+   └── npm run dev (frontend/) ──▶ Vite dev-сервер (SPA)
+                                     - /login: регистрация и вход через API
+                                     - /: дашборд — /me через TanStack Query, выход
+                                     - токены в localStorage
 ```
 
 Backend подключается к БД по `localhost:5433` (asyncpg; пароли — argon2id-хеши, токены — JWT).
@@ -218,8 +224,9 @@ Backend API (FastAPI)
 | `infra/docker-compose.yml` | запуск БД и инфраструктуры | реализовано |
 | `backend/app/main.py` (запуск: `uvicorn app.main:app`) | основной сервер приложения | каркас + auth реализованы |
 | `backend/alembic/` (запуск: `uv run alembic upgrade head`) | миграции схемы БД | 2 миграции: pgvector, users |
-| Тесты: `backend/tests/` (`uv run pytest`) | прогон тестов | 28 тестов (1 пропускается без ключа OpenAI) |
-| `frontend/` (запуск: `npm run dev`) | SPA-разработка | каркас (страницы-заглушки) |
+| Тесты: `backend/tests/` (`uv run pytest`) | прогон тестов | 30 тестов (1 пропускается без ключа OpenAI) |
+| `frontend/` (запуск: `npm run dev`) | SPA-разработка | вход/регистрация через API |
+| `frontend/` (`npm run generate:api`) | генерация типов из OpenAPI (нужен backend) | скрипт готов |
 
 ---
 
@@ -229,7 +236,7 @@ Backend API (FastAPI)
 |---|---|
 | `AGENTS.md` | требования, план на 8 недель, архитектурные правила, глоссарий — главный источник истины по замыслу |
 | `README.md` | краткое описание проекта и стека |
-| `backend/app/main.py` | точка входа FastAPI: роутеры auth/users, `/health`, `/health/db` |
+| `backend/app/main.py` | точка входа FastAPI: CORS, роутеры auth/users, `/health`, `/health/db` |
 | `backend/app/core/config.py` | настройки приложения (pydantic-settings) |
 | `backend/app/core/security.py` | argon2-хеширование паролей, выпуск/проверка JWT |
 | `backend/app/api/routes/auth.py` | `register`, `login`, `refresh` |
@@ -238,11 +245,12 @@ Backend API (FastAPI)
 | `backend/app/models/user.py` | ORM-модель `User` |
 | `backend/app/llm/` | слой LLM: интерфейс (`base.py`), `MockProvider`, `OpenAIProvider`, фабрика |
 | `backend/alembic/` | миграции схемы (async) |
-| `backend/pyproject.toml` | зависимости, конфигурация pytest и ruff |
 | `frontend/src/App.tsx` | маршруты и шапка SPA |
-| `frontend/src/pages/` | экраны (пока заглушки) |
+| `frontend/src/api/client.ts` | типизированный API-клиент (login/register/me) |
+| `frontend/src/pages/LoginPage.tsx` | вход/регистрация с состояниями loading/error |
+| `frontend/src/lib/tokens.ts` | сохранение/очистка токенов (localStorage) |
 | `frontend/src/components/ui/` | компоненты shadcn/ui (Button, Card, Input, Label) |
-| `frontend/package.json` | зависимости frontend (зафиксированные версии) |
+| `frontend/package.json` | зависимости frontend (зафиксированные версии) и скрипты |
 | `infra/docker-compose.yml` | описание контейнера с БД |
 | `infra/.env.example` | шаблон локального окружения (креды, порт) |
 | `infra/README.md` | команды запуска/проверки/остановки БД |
@@ -261,7 +269,7 @@ INDEX.md                    — главная точка входа (этот �
 ├── README.md               — краткое описание проекта
 ├── infra/README.md         — работа с локальной БД
 ├── backend/README.md       — работа с backend (запуск, тесты, миграции)
-└── frontend/README.md      — работа с frontend (запуск, сборка, соглашения)
+└── frontend/README.md      — работа с frontend (запуск, сборка, API)
 ```
 
 ---
@@ -282,10 +290,16 @@ INDEX.md                    — главная точка входа (этот �
   (`alembic revision --autogenerate`).
 - **`backend/alembic/versions/`** — уже применённые миграции не редактировать; новые — только
   через `alembic revision`. Состояние БД воспроизводится командами `upgrade head` / `downgrade base`.
+- **`frontend/src/api/schema.d.ts`** — типы генерируются из OpenAPI (`npm run generate:api`,
+  нужен запущенный backend); вручную не редактировать, обновлять при изменении API.
+- **`frontend/src/api/client.ts`** — единая точка HTTP-запросов фронтенда; новые вызовы API
+  добавлять сюда, а не разбрасывать `fetch` по компонентам.
 - **`frontend/src/components/ui/`** — сгенерированные компоненты shadcn/ui; правки вносить
   осознанно (обновление реестром перезапишет). Новые компоненты — `npx shadcn@latest add <name>`.
 - **`frontend/package.json`** — версии зафиксированы (`.npmrc` → `save-exact=true`); не добавлять
   state-менеджеры и анимации без явной необходимости ([`AGENTS.md`](AGENTS.md) §7, §13).
+- **CORS** (`backend/app/main.py`, `CORS_ORIGINS`) — при смене порта dev-сервера frontend
+  обновить список источников.
 - **`infra/.env` и `backend/.env`** — локальные файлы; в git не коммитятся, значения
   не документируются.
 - **Порт БД** — на хосте по умолчанию `5433` (5432 часто занят локальным PostgreSQL); при смене
@@ -298,6 +312,8 @@ INDEX.md                    — главная точка входа (этот �
 - `backend/uv.lock` — генерируется uv; коммитится; вручную не редактируется.
 - `backend/alembic/versions/*` — файлы миграций (генерируются `alembic revision`); коммитятся.
   Содержимое новой миграции можно дополнять руками, **применённые** ревизии не редактируются.
+- `frontend/src/api/schema.d.ts` — генерируется `npm run generate:api` (openapi-typescript);
+  коммитится; вручную не редактируется.
 - `frontend/src/components/ui/*` — генерируются shadcn CLI (правки только осознанно).
 - `frontend/package-lock.json` — генерируется npm; коммитится; вручную не редактируется.
 - `frontend/node_modules/`, `frontend/dist/` — локальные/артефакты сборки; игнорируются
@@ -315,7 +331,7 @@ INDEX.md                    — главная точка входа (этот �
    [`docs/PROJECT_MAP.md`](docs/PROJECT_MAP.md).
 2. Не придумывай несуществующие модули: в `backend/` есть каркас (`app/main.py`, `app/api/`,
    `app/core/`, `app/db/`, `app/llm/`, `app/models/` — только `User`, `app/schemas/`, `alembic/`,
-   `tests/`), во `frontend/` — каркас (3 страницы-заглушки, 4 компонента UI); доменных роутеров
+   `tests/`), во `frontend/` — каркас (3 страницы, API-клиент, 4 компонента UI); доменных роутов
    и сервисов пока нет. Перед созданием файла проверь, что его ещё нет.
 3. Соблюдай архитектурные правила проекта ([`AGENTS.md`](AGENTS.md) §2.3, §13): LLM не обращается
    к БД/графу напрямую — только через Tools; все действия агента логируются; состояние сессии
@@ -339,13 +355,14 @@ INDEX.md                    — главная точка входа (этот �
 |---|---|
 | Где инфраструктура / запуск БД? | `infra/` → [`infra/README.md`](infra/README.md) |
 | Где API? | Роутеры — `backend/app/api/routes/` (auth, users); health — `backend/app/main.py`; остальное — план ([`AGENTS.md`](AGENTS.md) §2–3) |
-| Где аутентификация? | `backend/app/core/security.py` (argon2 + JWT), `backend/app/api/deps.py` (`get_current_user`) |
+| Где аутентификация? | Backend: `backend/app/core/security.py` + `backend/app/api/deps.py`; frontend: `frontend/src/pages/LoginPage.tsx` + `frontend/src/lib/tokens.ts` |
 | Где LLM-слой? | `backend/app/llm/` (`base.py` — интерфейс, `mock.py` / `openai.py` — реализации, `factory.py` — выбор по `LLM_PROVIDER`) |
-| Где фронтенд? | `frontend/` (каркас: маршруты — `src/App.tsx`, экраны — `src/pages/`, запуск — `npm run dev`) |
+| Где фронтенд? | `frontend/` (каркас + вход: маршруты — `src/App.tsx`, экраны — `src/pages/`, запуск — `npm run dev`) |
+| Где API-клиент frontend / типы API? | `frontend/src/api/client.ts`; типы — `frontend/src/api/schema.d.ts` (`npm run generate:api`) |
 | Где UI-компоненты? | `frontend/src/components/ui/` (shadcn/ui, Base UI); новые — `npx shadcn@latest add <name>` |
 | Где агент, Harness и Tools? | Пока нет; план — `backend/` ([`AGENTS.md`](AGENTS.md) §3) |
 | Где работа с БД (модели, сессии, миграции)? | Модели — `backend/app/models/`; сессии — `backend/app/db/`; миграции — `backend/alembic/` |
-| Где конфигурация окружения? | `backend/.env.example` (backend, включая JWT и LLM), `infra/.env.example` (БД) |
+| Где конфигурация окружения? | `backend/.env.example` (backend), `infra/.env.example` (БД), `frontend/.env.example` (VITE_API_BASE_URL) |
 | Где тесты? | `backend/tests/` → `uv run pytest`; frontend — `npm run build` + `npm run lint` ([`AGENTS.md`](AGENTS.md) §9 — план расширения) |
 | Где правила разработки? | [`AGENTS.md`](AGENTS.md) §13 |
 | Где план на 8 недель? | [`AGENTS.md`](AGENTS.md) §8 |

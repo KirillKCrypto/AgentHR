@@ -17,7 +17,7 @@
 | `INDEX.md` | DOCUMENTATION | главная точка входа для ИИ-агентов |
 | `docs/` | DOCUMENTATION | навигационная документация (PROJECT_MAP, ARCHITECTURE) |
 | `backend/` | APPLICATION | FastAPI-каркас (`/health`, `/health/db`, JWT-auth, слой LLM, модель `User`, миграции); Harness — план |
-| `frontend/` | APPLICATION | каркас SPA: Vite + React 19 + TS, Tailwind 4, shadcn/ui, роутинг; страницы-заглушки |
+| `frontend/` | APPLICATION | SPA-каркас: Vite + React 19 + TS, Tailwind 4, shadcn/ui; вход/регистрация через API |
 | `infra/` | INFRASTRUCTURE | работающая локальная БД: PostgreSQL 16 + pgvector |
 | `.gitignore` | CONFIG | исключения git |
 | `.editorconfig` | CONFIG | единый стиль (UTF-8, LF, отступы) |
@@ -49,7 +49,7 @@ AgentHR/
 │   │       └── 68cf3aa5da9d_create_users_table.py
 │   ├── app/
 │   │   ├── __init__.py
-│   │   ├── main.py            (точка входа FastAPI; роутеры, /health, /health/db)
+│   │   ├── main.py            (точка входа FastAPI; CORS, роутеры, /health, /health/db)
 │   │   ├── api/
 │   │   │   ├── __init__.py
 │   │   │   ├── deps.py        (get_current_user — Bearer)
@@ -83,19 +83,21 @@ AgentHR/
 │   │   ├── test_health_db.py
 │   │   ├── test_user_model.py
 │   │   ├── test_auth.py
+│   │   ├── test_cors.py
 │   │   └── test_llm.py
 │   └── uv.lock                (генерируется, коммитится)
 ├── docs/
 │   ├── ARCHITECTURE.md
 │   └── PROJECT_MAP.md
 ├── frontend/
+│   ├── .env.example           (VITE_API_BASE_URL)
 │   ├── .gitignore             (node_modules, dist, локальные файлы)
 │   ├── .npmrc                 (save-exact=true)
 │   ├── .oxlintrc.json         (конфигурация линтера)
 │   ├── README.md              (команды и соглашения)
 │   ├── components.json        (конфигурация shadcn/ui)
 │   ├── index.html
-│   ├── package.json           (зависимости, зафиксированные версии)
+│   ├── package.json           (зависимости, зафиксированные версии; скрипты)
 │   ├── package-lock.json      (генерируется, коммитится)
 │   ├── tsconfig.json
 │   ├── tsconfig.app.json
@@ -107,11 +109,16 @@ AgentHR/
 │       ├── main.tsx           (QueryClientProvider + BrowserRouter)
 │       ├── App.tsx            (шапка и маршруты /, /login, 404)
 │       ├── index.css          (Tailwind 4 + тема shadcn)
+│       ├── api/
+│       │   ├── client.ts      (fetch-обёртка, типизированные login/register/me)
+│       │   └── schema.d.ts    (типы из OpenAPI, генерируется)
 │       ├── components/ui/     (Button, Card, Input, Label — shadcn/ui)
-│       ├── lib/utils.ts       (cn)
+│       ├── lib/
+│       │   ├── tokens.ts      (сохранение/очистка токенов)
+│       │   └── utils.ts       (cn)
 │       └── pages/
-│           ├── DashboardPage.tsx
-│           ├── LoginPage.tsx  (форма без подключения к API)
+│           ├── DashboardPage.tsx (статус сессии, /me, выход)
+│           ├── LoginPage.tsx     (вход/регистрация через API)
 │           └── NotFoundPage.tsx
 └── infra/
     ├── .env.example
@@ -146,7 +153,7 @@ pgvector.
 **Role:** APPLICATION (backend)
 
 **Назначение:** backend-приложение AgentHR. Реализован каркас: FastAPI-точка входа
-(`app/main.py`: роутеры, `/health`, `/health/db`), JWT-аутентификация (`app/api/`,
+(`app/main.py`: CORS, роутеры, `/health`, `/health/db`), JWT-аутентификация (`app/api/`,
 `app/core/security.py`), слой LLM (`app/llm/`: интерфейс, mock- и OpenAI-провайдеры), настройки
 (`app/core/config.py`), слой БД (`app/db/`), модель `User` (`app/models/`), миграции (`alembic/`),
 тесты (`tests/`), зависимости через uv.
@@ -163,17 +170,19 @@ pgvector.
 
 **Role:** APPLICATION (frontend)
 
-**Назначение:** React SPA AgentHR. Реализован каркас: Vite + React 19 + TypeScript, Tailwind CSS 4,
-shadcn/ui (Base UI: Button, Card, Input, Label), роутинг (react-router 8: `/`, `/login`, 404),
-TanStack Query (провайдер настроен), страницы-заглушки в `src/pages/`.
+**Назначение:** React SPA AgentHR. Реализован каркас с рабочим входом: Vite + React 19 +
+TypeScript, Tailwind CSS 4, shadcn/ui (Base UI), роутинг (react-router 8), TanStack Query;
+типизированный API-клиент (`src/api/client.ts`, типы из OpenAPI в `src/api/schema.d.ts`);
+экран `/login` (регистрация и вход, состояния loading/error, токены в `src/lib/tokens.ts`,
+редирект); дашборд (загрузка `/me`, выход); 404.
 
-**Цель по плану:** подключение экрана входа к API, затем экраны `/vacancies/new`, `/profile`,
-`/plans/:id`, `/interview/:id`, `/reports/:id` ([`AGENTS.md`](../AGENTS.md) §7).
+**Цель по плану:** остальные экраны продукта — `/vacancies/new`, `/profile`, `/plans/:id`,
+`/interview/:id`, `/reports/:id` ([`AGENTS.md`](../AGENTS.md) §7).
 Источник: `frontend/README.md`.
 
-**Содержит сейчас:** `src/` (main, App, pages, components/ui, lib), конфигурации
+**Содержит сейчас:** `src/` (main, App, api, pages, components/ui, lib), конфигурации
 (`package.json`, `vite.config.ts`, `tsconfig*.json`, `components.json`, `.npmrc`,
-`.oxlintrc.json`), `index.html`, `README.md`.
+`.oxlintrc.json`, `.env.example`), `index.html`, `README.md`.
 
 ### `docs/`
 
@@ -237,9 +246,9 @@ healthcheck (`pg_isready`, интервал 5 с, 10 попыток).
 
 **Role:** ENTRYPOINT / API
 
-**Responsibility:** создаёт FastAPI-приложение, подключает роутеры (`auth`, `users`), объявляет
-health-эндпоинты (`/health`, `/health/db` — `SELECT 1`, 503 при недоступной БД), управляет
-ресурсами (lifespan: `engine.dispose()`).
+**Responsibility:** создаёт FastAPI-приложение, настраивает CORS (для frontend dev-сервера),
+подключает роутеры (`auth`, `users`), объявляет health-эндпоинты (`/health`, `/health/db` —
+`SELECT 1`, 503 при недоступной БД), управляет ресурсами (lifespan: `engine.dispose()`).
 
 **Depends on:** `backend/app/api/routes/*`, `backend/app/core/config.py`,
 `backend/app/db/session.py`, `fastapi`.
@@ -256,7 +265,7 @@ health-эндпоинты (`/health`, `/health/db` — `SELECT 1`, 503 при н
 **Responsibility:** настройки приложения (`Settings`) через pydantic-settings; читает переменные
 окружения и `backend/.env`; `get_settings()` кэширует экземпляр. Переменные: `APP_NAME`,
 `ENVIRONMENT`, `DATABASE_URL`, `JWT_*`, `ACCESS_TOKEN_EXPIRE_MINUTES`,
-`REFRESH_TOKEN_EXPIRE_DAYS`, `LLM_PROVIDER`, `OPENAI_API_KEY`, `OPENAI_MODEL`.
+`REFRESH_TOKEN_EXPIRE_DAYS`, `LLM_PROVIDER`, `OPENAI_API_KEY`, `OPENAI_MODEL`, `CORS_ORIGINS`.
 
 **Depends on:** `pydantic-settings`.
 
@@ -407,7 +416,7 @@ dev-группа (pytest, pytest-asyncio, httpx2, ruff), конфигураци�
 **Depends on:** `backend/app/core/security.py`, `backend/app/db/session.py`,
 `backend/app/schemas/auth.py`.
 
-**Used by:** подключается в `backend/app/main.py`.
+**Used by:** подключается в `backend/app/main.py`; вызывается frontend (`src/api/client.ts`).
 
 #### `backend/app/api/routes/users.py`
 
@@ -417,7 +426,7 @@ dev-группа (pytest, pytest-asyncio, httpx2, ruff), конфигураци�
 
 **Depends on:** `backend/app/api/deps.py`, `backend/app/schemas/auth.py`.
 
-**Used by:** подключается в `backend/app/main.py`.
+**Used by:** подключается в `backend/app/main.py`; вызывается frontend (дашборд).
 
 #### `backend/app/schemas/auth.py`
 
@@ -428,7 +437,8 @@ dev-группа (pytest, pytest-asyncio, httpx2, ruff), конфигураци�
 
 **Depends on:** `pydantic`.
 
-**Used by:** `backend/app/api/routes/auth.py`, `backend/app/api/routes/users.py`.
+**Used by:** `backend/app/api/routes/auth.py`, `backend/app/api/routes/users.py`; типы попадают
+в OpenAPI и генерируются во фронтенд.
 
 #### `backend/app/llm/mock.py`
 
@@ -466,6 +476,54 @@ dev-группа (pytest, pytest-asyncio, httpx2, ruff), конфигураци�
 **Depends on:** `backend/app/core/config.py`, `backend/app/llm/*`.
 
 **Used by:** точки сборки приложения/скриптов (в `main.py` пока не подключён).
+
+#### `frontend/src/api/client.ts`
+
+**Role:** API-клиент (frontend)
+
+**Responsibility:** единая точка HTTP-запросов к backend: базовый URL из `VITE_API_BASE_URL`,
+заголовок `Authorization: Bearer`, ошибки `ApiError` со статусом, типизированные функции
+`login`, `register`, `fetchMe` (типы — из OpenAPI).
+
+**Depends on:** `frontend/src/api/schema.d.ts` (типы), backend API.
+
+**Used by:** `frontend/src/pages/LoginPage.tsx`, `frontend/src/pages/DashboardPage.tsx`.
+
+**Important:** новые вызовы API добавлять сюда; при изменении API обновлять типы
+(`npm run generate:api`).
+
+#### `frontend/src/pages/LoginPage.tsx`
+
+**Role:** UI (экран)
+
+**Responsibility:** вход и регистрация: переключение режимов, отправка формы, состояния
+`submitting/error`, сохранение токенов, редирект на дашборд.
+
+**Depends on:** `frontend/src/api/client.ts`, `frontend/src/lib/tokens.ts`, shadcn/ui.
+
+**Used by:** маршрут `/login` в `frontend/src/App.tsx`.
+
+#### `frontend/src/pages/DashboardPage.tsx`
+
+**Role:** UI (экран)
+
+**Responsibility:** показывает состояние сессии: нет токена / загрузка `/me` (TanStack Query) /
+ошибка (401 — очистка токенов) / профиль пользователя с кнопкой «Выйти».
+
+**Depends on:** `frontend/src/api/client.ts`, `frontend/src/lib/tokens.ts`, shadcn/ui.
+
+**Used by:** маршрут `/` в `frontend/src/App.tsx`.
+
+#### `frontend/src/lib/tokens.ts`
+
+**Role:** STATE (клиентское хранилище)
+
+**Responsibility:** сохранение, чтение и очистка access/refresh-токенов в `localStorage`.
+
+**Used by:** `frontend/src/pages/LoginPage.tsx`, `frontend/src/pages/DashboardPage.tsx`.
+
+**Important:** токены в `localStorage` — принятый для MVP компромисс (XSS-риск); refresh-механика
+в UI пока не используется.
 
 #### `backend/tests/test_health.py`
 
@@ -513,6 +571,17 @@ dev-группа (pytest, pytest-asyncio, httpx2, ruff), конфигураци�
 
 **Used by:** `uv run pytest`.
 
+#### `backend/tests/test_cors.py`
+
+**Role:** TEST
+
+**Responsibility:** CORS: ответ содержит `access-control-allow-origin` для origin frontend;
+preflight `OPTIONS /auth/login` разрешён.
+
+**Depends on:** `backend/app/main.py`, `pytest`.
+
+**Used by:** `uv run pytest`.
+
 #### `backend/tests/test_llm.py`
 
 **Role:** TEST
@@ -530,8 +599,8 @@ dev-группа (pytest, pytest-asyncio, httpx2, ruff), конфигураци�
 **Role:** CONFIG (шаблон)
 
 **Responsibility:** шаблон локальных настроек backend: `APP_NAME`, `ENVIRONMENT`, `DATABASE_URL`,
-`JWT_*`, `LLM_PROVIDER`, `OPENAI_API_KEY`, `OPENAI_MODEL`. Копируется в `backend/.env`
-(в git не попадает).
+`JWT_*`, `LLM_PROVIDER`, `OPENAI_API_KEY`, `OPENAI_MODEL`, `CORS_ORIGINS`. Копируется
+в `backend/.env` (в git не попадает).
 
 **Depends on:** —
 
@@ -555,12 +624,21 @@ dev-группа (pytest, pytest-asyncio, httpx2, ruff), конфигураци�
 **Role:** BUILD / CONFIG
 
 **Responsibility:** зависимости frontend (React 19, react-router 8, TanStack Query 5,
-Tailwind 4, shadcn/ui: Base UI, lucide, cn, cva), скрипты `dev` / `build` / `lint` / `preview`.
-Версии зафиксированы (`.npmrc` → `save-exact=true`).
+Tailwind 4, shadcn/ui: Base UI, lucide, cn, cva), скрипты `dev` / `build` / `lint` / `preview` /
+`generate:api`. Версии зафиксированы (`.npmrc` → `save-exact=true`).
 
 **Depends on:** —
 
-**Used by:** npm; сборка — `tsc -b && vite build`.
+**Used by:** npm; сборка — `tsc -b && vite build`; генерация типов — `npm run generate:api`.
+
+#### `frontend/.env.example`
+
+**Role:** CONFIG (шаблон)
+
+**Responsibility:** `VITE_API_BASE_URL` — базовый URL backend (по умолчанию
+`http://127.0.0.1:8000`). Копируется в `frontend/.env` при необходимости.
+
+**Used by:** `frontend/src/api/client.ts`.
 
 ### Уровень 3 — вспомогательные
 
@@ -578,7 +656,8 @@ Tailwind 4, shadcn/ui: Base UI, lucide, cn, cva), скрипты `dev` / `build`
 | `backend/alembic/versions/*` | MIGRATION | файлы миграций (генерируются, коммитятся) |
 | `frontend/README.md` | DOCUMENTATION | команды и соглашения frontend |
 | `frontend/src/main.tsx` | UI | точка входа SPA (QueryClientProvider + BrowserRouter) |
-| `frontend/src/pages/*` | UI | экраны-заглушки (дашборд, вход, 404) |
+| `frontend/src/pages/NotFoundPage.tsx` | UI | страница 404 |
+| `frontend/src/api/schema.d.ts` | GENERATED | типы из OpenAPI (генерируются, не править вручную) |
 | `frontend/src/components/ui/*` | UI | сгенерированные компоненты shadcn/ui |
 | `frontend/src/index.css` | UI | Tailwind 4 + тема shadcn (сгенерирована) |
 | `frontend/vite.config.ts`, `frontend/tsconfig*.json` | BUILD | конфигурация сборки и TS (алиас `@/*`) |
@@ -619,12 +698,20 @@ tests/* ──▶ app.main (TestClient / AsyncClient); /health/db — через
             test_llm.py ──▶ MockProvider (без сети), OpenAI — skip без ключа
 ```
 
-**Frontend** (пока не связан с backend — подключение к API на следующем шаге):
+**Frontend** (запросы к backend через единый клиент; CORS разрешает `http://localhost:5173`):
 
 ```text
 src/main.tsx ──▶ QueryClientProvider + BrowserRouter
-    └──▶ src/App.tsx ──▶ src/pages/* ──▶ src/components/ui/* (shadcn/ui)
+    └──▶ src/App.tsx ──▶ src/pages/*
+              ├── LoginPage ──▶ src/api/client.ts (POST /auth/register, POST /auth/login)
+              │                     └──▶ src/lib/tokens.ts (сохранить токены)
+              └── DashboardPage ──▶ src/api/client.ts (GET /me, Bearer)
+                                    └──▶ src/lib/tokens.ts (чтение/очистка)
+    └──▶ src/components/ui/* (shadcn/ui)
 ```
+
+Типы запросов/ответов frontend берёт из `src/api/schema.d.ts`, который генерируется
+из OpenAPI backend (`npm run generate:api`, нужен запущенный backend).
 
 `Base.metadata` содержит модель `User`; `app/models/__init__.py` импортирует все модели,
 поэтому autogenerate видит полные метаданные. Остальные таблицы
@@ -653,8 +740,9 @@ Backend подключается к БД по `localhost:${POSTGRES_PORT}` (по
 | Запуск инфраструктуры | `infra/docker-compose.yml` | реализовано |
 | Backend-приложение | `backend/app/main.py` (uvicorn) | каркас + auth реализованы |
 | Миграции БД | `backend/alembic/` (`uv run alembic ...`) | 2 миграции: pgvector, users |
-| Прогон тестов backend | `backend/tests/` (pytest) | 28 тестов (1 пропускается без ключа OpenAI) |
-| Frontend dev-сервер | `frontend/` (`npm run dev`) | каркас (страницы-заглушки) |
+| Прогон тестов backend | `backend/tests/` (pytest) | 30 тестов (1 пропускается без ключа OpenAI) |
+| Frontend dev-сервер | `frontend/` (`npm run dev`) | вход/регистрация через API |
+| Генерация типов API | `frontend/` (`npm run generate:api`, нужен backend) | скрипт готов |
 | Сборка frontend | `npm run build` (tsc + vite) | проходит |
 
 ---
@@ -684,6 +772,7 @@ Backend подключается к БД по `localhost:${POSTGRES_PORT}` (по
 | `LLM_PROVIDER` | провайдер LLM: `mock` (по умолчанию) или `openai` | нет |
 | `OPENAI_API_KEY` | ключ OpenAI (нужен для `LLM_PROVIDER=openai`) | да |
 | `OPENAI_MODEL` | модель OpenAI (нужна для `LLM_PROVIDER=openai`) | нет |
+| `CORS_ORIGINS` | браузерные источники (JSON-массив; по умолчанию `["http://localhost:5173"]`) | нет |
 
 ### `backend/pyproject.toml` и `backend/alembic.ini`
 
@@ -692,7 +781,8 @@ Backend подключается к БД по `localhost:${POSTGRES_PORT}` (по
 
 ### `frontend/`
 
-- `package.json` — зависимости и npm-скрипты (`dev`, `build`, `lint`, `preview`).
+- `package.json` — зависимости и npm-скрипты (`dev`, `build`, `lint`, `preview`, `generate:api`).
+- `.env.example` — `VITE_API_BASE_URL` (копируется в `frontend/.env` при необходимости).
 - `.npmrc` — `save-exact=true` (фиксация версий).
 - `vite.config.ts` — React + Tailwind 4 (`@tailwindcss/vite`), алиас `@/*`.
 - `tsconfig.json` / `tsconfig.app.json` / `tsconfig.node.json` — TypeScript (алиас `@/*`).
@@ -753,7 +843,7 @@ Backend подключается к БД по `localhost:${POSTGRES_PORT}` (по
 
 ## 10. Тесты
 
-**Backend.** `backend/tests/` — 28 тестов на pytest (+ `pytest-asyncio`):
+**Backend.** `backend/tests/` — 30 тестов на pytest (+ `pytest-asyncio`):
 
 - `test_health.py` — `/health` (200 + статус) и `/docs` (200);
 - `test_health_db.py` — `/health/db`: 200 и 503 (два случая: `SQLAlchemyError`, `OSError`)
@@ -762,13 +852,15 @@ Backend подключается к БД по `localhost:${POSTGRES_PORT}` (по
   без PostgreSQL;
 - `test_auth.py` — интеграционные тесты auth (register/login/me/refresh + негативные кейсы)
   через `httpx2.AsyncClient` + `ASGITransport`;
+- `test_cors.py` — CORS-заголовки и preflight для frontend-origin;
 - `test_llm.py` — MockProvider и фабрика без сети; живой тест OpenAI пропускается без ключа.
 
 Запуск: `uv run pytest` из `backend/`. Конфигурация — в `backend/pyproject.toml`
 (`testpaths`, `pythonpath`, `asyncio_mode`).
 
-**Frontend.** Тестов пока нет; проверки — `npm run build` (типы + сборка) и `npm run lint`
-(oxlint). Навигация проверена вручную (dev-сервер).
+**Frontend.** Автотестов нет; проверки — `npm run build` (типы + сборка) и `npm run lint`
+(oxlint). Сквозной сценарий (регистрация → вход → `/me` → перезагрузка → выход → ошибка пароля)
+проверен вручную в браузере на dev-сервере.
 
 **План** ([`AGENTS.md`](../AGENTS.md) §9): функциональные тесты, агентские (на мок-LLM),
 сценарные e2e, тесты адаптивности, eval-наборы качества LLM.
@@ -781,7 +873,7 @@ Backend подключается к БД по `localhost:${POSTGRES_PORT}` (по
   [`backend/README.md`](../backend/README.md) (`uv sync`, `uv run uvicorn`, `uv run pytest`,
   `uv run ruff`, `uv run alembic upgrade head`).
 - **Frontend:** npm-скрипты в `frontend/package.json` — `dev`, `build` (`tsc -b && vite build`),
-  `lint` (oxlint), `preview`.
+  `lint` (oxlint), `preview`, `generate:api` (типы из OpenAPI, нужен запущенный backend).
 - **Инфраструктура:** команды `docker compose` из [`infra/README.md`](../infra/README.md).
 
 ---
@@ -791,6 +883,8 @@ Backend подключается к БД по `localhost:${POSTGRES_PORT}` (по
 - `backend/uv.lock` — генерируется uv; коммитится; вручную не редактируется.
 - `backend/alembic/versions/*` — файлы миграций (генерация `alembic revision`); коммитятся;
   применённые ревизии вручную не редактируются.
+- `frontend/src/api/schema.d.ts` — типы из OpenAPI (генерация `npm run generate:api`); коммитится;
+  вручную не редактируется.
 - `frontend/package-lock.json` — генерируется npm; коммитится; вручную не редактируется.
 - `frontend/src/components/ui/*` — генерируются shadcn CLI (править только осознанно).
 - Локальные/игнорируемые: `backend/.venv/`, `__pycache__/`, `.pytest_cache/`, `.ruff_cache/`,

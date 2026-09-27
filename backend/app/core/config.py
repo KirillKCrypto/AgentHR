@@ -31,6 +31,8 @@ class Settings(BaseSettings):
     llm_provider: str = "mock"
     openai_api_key: str | None = None
     openai_model: str | None = None
+    # CORS: браузерные источники, которым разрешены запросы (frontend dev-сервер)
+    cors_origins: list[str] = ["http://localhost:5173"]
 
 
 @lru_cache
