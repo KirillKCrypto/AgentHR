@@ -16,7 +16,7 @@
 | `AGENTS.md` | DOCUMENTATION | контекст проекта, план на 8 недель, архитектурные правила |
 | `INDEX.md` | DOCUMENTATION | главная точка входа для ИИ-агентов |
 | `docs/` | DOCUMENTATION | навигационная документация (PROJECT_MAP, ARCHITECTURE) |
-| `backend/` | APPLICATION | FastAPI-каркас (`/health`, `/health/db`, JWT-auth, модель `User`, миграции); Harness и Tools — план |
+| `backend/` | APPLICATION | FastAPI-каркас (`/health`, `/health/db`, JWT-auth, слой LLM, модель `User`, миграции); Harness — план |
 | `frontend/` | APPLICATION (План) | будущий React SPA; сейчас README-заглушка |
 | `infra/` | INFRASTRUCTURE | работающая локальная БД: PostgreSQL 16 + pgvector |
 | `.gitignore` | CONFIG | исключения git |
@@ -65,6 +65,12 @@ AgentHR/
 │   │   │   ├── __init__.py
 │   │   │   ├── base.py        (Base для моделей)
 │   │   │   └── session.py     (async-движок, get_db)
+│   │   ├── llm/
+│   │   │   ├── __init__.py    (реэкспорт интерфейса и реализаций)
+│   │   │   ├── base.py        (типы и Protocol LLMProvider)
+│   │   │   ├── factory.py     (выбор провайдера по настройкам)
+│   │   │   ├── mock.py        (MockProvider для тестов)
+│   │   │   └── openai.py      (OpenAIProvider, SDK openai)
 │   │   ├── models/
 │   │   │   ├── __init__.py    (импортирует все модели для Alembic)
 │   │   │   └── user.py        (модель User)
@@ -76,7 +82,8 @@ AgentHR/
 │   │   ├── test_health.py
 │   │   ├── test_health_db.py
 │   │   ├── test_user_model.py
-│   │   └── test_auth.py
+│   │   ├── test_auth.py
+│   │   └── test_llm.py
 │   └── uv.lock                (генерируется, коммитится)
 ├── docs/
 │   ├── ARCHITECTURE.md
@@ -117,14 +124,15 @@ pgvector.
 
 **Назначение:** backend-приложение AgentHR. Реализован каркас: FastAPI-точка входа
 (`app/main.py`: роутеры, `/health`, `/health/db`), JWT-аутентификация (`app/api/`,
-`app/core/security.py`), настройки (`app/core/config.py`), слой БД (`app/db/`), модель `User`
-(`app/models/`), миграции (`alembic/`), тесты (`tests/`), зависимости через uv.
+`app/core/security.py`), слой LLM (`app/llm/`: интерфейс, mock- и OpenAI-провайдеры), настройки
+(`app/core/config.py`), слой БД (`app/db/`), модель `User` (`app/models/`), миграции (`alembic/`),
+тесты (`tests/`), зависимости через uv.
 
 **Цель по плану:** остальные модели и схема БД, доменные REST API, Agent Harness (LangGraph),
-реестр Tools, провайдер-агностичный слой LLM.
+реестр Tools.
 Источники: `backend/README.md`, [`AGENTS.md`](../AGENTS.md) §2–3, §6.
 
-**Содержит сейчас:** `app/` (api, core, db, models, schemas), `alembic/`, `alembic.ini`,
+**Содержит сейчас:** `app/` (api, core, db, llm, models, schemas), `alembic/`, `alembic.ini`,
 `tests/`, `pyproject.toml`, `uv.lock`, `.env.example`, `.python-version`, `README.md`.
 Доменных сервисов пока нет.
 
@@ -217,13 +225,13 @@ health-эндпоинты (`/health`, `/health/db` — `SELECT 1`, 503 при н
 
 **Responsibility:** настройки приложения (`Settings`) через pydantic-settings; читает переменные
 окружения и `backend/.env`; `get_settings()` кэширует экземпляр. Переменные: `APP_NAME`,
-`ENVIRONMENT`, `DATABASE_URL`, `JWT_SECRET_KEY`, `JWT_ALGORITHM`, `ACCESS_TOKEN_EXPIRE_MINUTES`,
-`REFRESH_TOKEN_EXPIRE_DAYS`.
+`ENVIRONMENT`, `DATABASE_URL`, `JWT_*`, `ACCESS_TOKEN_EXPIRE_MINUTES`,
+`REFRESH_TOKEN_EXPIRE_DAYS`, `LLM_PROVIDER`, `OPENAI_API_KEY`, `OPENAI_MODEL`.
 
 **Depends on:** `pydantic-settings`.
 
 **Used by:** `backend/app/main.py`, `backend/app/core/security.py`,
-`backend/app/db/session.py`, `backend/alembic/env.py`.
+`backend/app/db/session.py`, `backend/app/llm/factory.py`, `backend/alembic/env.py`.
 
 **Important:** при добавлении переменных обновлять `backend/.env.example`; секреты в репозитории
 не хранить.
@@ -269,6 +277,21 @@ health-эндпоинты (`/health`, `/health/db` — `SELECT 1`, 503 при н
 **Used by:** auth (`login`, `register`, `deps.get_current_user`), Alembic (autogenerate).
 
 **Important:** изменение модели требует новой миграции (`alembic revision --autogenerate`).
+
+#### `backend/app/llm/base.py`
+
+**Role:** LLM (интерфейс)
+
+**Responsibility:** провайдер-агностичные типы (`ChatMessage`, `ToolSpec`, `ToolCall`,
+`LLMResponse`, `StructuredResult`, `LLMUsage`, ошибки `LLMError`/`LLMConfigurationError`)
+и Protocol `LLMProvider` (`generate_with_tools`, `generate_structured`, `close`).
+
+**Depends on:** — (только стандартная библиотека).
+
+**Used by:** `backend/app/llm/mock.py`, `backend/app/llm/openai.py`,
+`backend/app/llm/factory.py`; в будущем — Agent Harness.
+
+**Important:** изменение контракта затронет всех провайдеров и будущий Harness.
 
 ### Уровень 2 — важные
 
@@ -323,9 +346,9 @@ URL намеренно не задаётся здесь (берётся в `env.
 **Role:** BUILD / CONFIG
 
 **Responsibility:** метаданные проекта, зависимости (fastapi, uvicorn, pydantic-settings,
-sqlalchemy[asyncio], asyncpg, alembic, pwdlib[argon2], pyjwt, email-validator), dev-группа
-(pytest, pytest-asyncio, httpx2, ruff), конфигурация pytest (`testpaths`, `pythonpath`,
-`asyncio_mode`) и ruff.
+sqlalchemy[asyncio], asyncpg, alembic, pwdlib[argon2], pyjwt, email-validator, openai),
+dev-группа (pytest, pytest-asyncio, httpx2, ruff), конфигурация pytest (`testpaths`,
+`pythonpath`, `asyncio_mode`) и ruff.
 
 **Depends on:** —
 
@@ -377,6 +400,43 @@ sqlalchemy[asyncio], asyncpg, alembic, pwdlib[argon2], pyjwt, email-validator), 
 
 **Used by:** `backend/app/api/routes/auth.py`, `backend/app/api/routes/users.py`.
 
+#### `backend/app/llm/mock.py`
+
+**Role:** LLM (тестовая реализация)
+
+**Responsibility:** `MockProvider` — отдаёт заранее заданные ответы по порядку и записывает
+вызовы (`MockCall`); работает без сети.
+
+**Depends on:** `backend/app/llm/base.py`.
+
+**Used by:** тесты `backend/tests/test_llm.py`; в будущем — тесты Harness на мок-LLM.
+
+#### `backend/app/llm/openai.py`
+
+**Role:** LLM (интеграция)
+
+**Responsibility:** `OpenAIProvider` на официальном SDK (`AsyncOpenAI`): function calling
+(`generate_with_tools`), структурированный вывод по JSON Schema (`generate_structured`,
+`response_format: json_schema`, `strict`), конвертация сообщений и usage.
+
+**Depends on:** `openai`, `backend/app/llm/base.py`.
+
+**Used by:** `backend/app/llm/factory.py`.
+
+**Important:** секреты — только из настроек; живой вызов проверяется тестом со `skipif`
+без ключа.
+
+#### `backend/app/llm/factory.py`
+
+**Role:** LLM (конфигурация)
+
+**Responsibility:** `create_llm_provider(settings)` — выбор провайдера по `LLM_PROVIDER`
+(`mock` по умолчанию; `openai` требует `OPENAI_API_KEY` и `OPENAI_MODEL`).
+
+**Depends on:** `backend/app/core/config.py`, `backend/app/llm/*`.
+
+**Used by:** точки сборки приложения/скриптов (в `main.py` пока не подключён).
+
 #### `backend/tests/test_health.py`
 
 **Role:** TEST
@@ -423,13 +483,25 @@ sqlalchemy[asyncio], asyncpg, alembic, pwdlib[argon2], pyjwt, email-validator), 
 
 **Used by:** `uv run pytest`.
 
+#### `backend/tests/test_llm.py`
+
+**Role:** TEST
+
+**Responsibility:** тесты слоя LLM без сети (MockProvider: tool calls, structured, ошибки;
+фабрика: mock по умолчанию, требования к openai-конфигурации) + живой тест OpenAI
+со `skipif` без `OPENAI_API_KEY`/`OPENAI_MODEL`.
+
+**Depends on:** `backend/app/llm/*`.
+
+**Used by:** `uv run pytest`.
+
 #### `backend/.env.example`
 
 **Role:** CONFIG (шаблон)
 
 **Responsibility:** шаблон локальных настроек backend: `APP_NAME`, `ENVIRONMENT`, `DATABASE_URL`,
-`JWT_SECRET_KEY`, `JWT_ALGORITHM`, `ACCESS_TOKEN_EXPIRE_MINUTES`, `REFRESH_TOKEN_EXPIRE_DAYS`.
-Копируется в `backend/.env` (в git не попадает).
+`JWT_*`, `LLM_PROVIDER`, `OPENAI_API_KEY`, `OPENAI_MODEL`. Копируется в `backend/.env`
+(в git не попадает).
 
 **Depends on:** —
 
@@ -446,6 +518,7 @@ sqlalchemy[asyncio], asyncpg, alembic, pwdlib[argon2], pyjwt, email-validator), 
 | `backend/.python-version` | CONFIG | пин версии Python (3.13) для uv |
 | `backend/app/db/base.py` | MODEL | базовый класс `Base` для ORM-моделей |
 | `backend/app/models/__init__.py` | MODEL | импорт всех моделей и `Base` (нужен Alembic для autogenerate) |
+| `backend/app/llm/__init__.py` | LLM | реэкспорт интерфейса и реализаций слоя LLM |
 | `backend/app/api/__init__.py`, `backend/app/api/routes/__init__.py`, `backend/app/schemas/__init__.py` | PACKAGE | пакеты-инициализаторы |
 | `backend/alembic/versions/*` | MIGRATION | файлы миграций (генерируются, коммитятся) |
 | `frontend/README.md` | DOCUMENTATION | заглушка: состав будущего frontend и стек |
@@ -472,13 +545,16 @@ app/main.py ──▶ app/core/config.py ──▶ pydantic-settings (backend/.e
     │        │                        ▲
     │        └──▶ app/db/session.py   │
     │                                 │
-    └── app/api/routes/users.py ──▶ app/api/deps.py (get_current_user)
+    ├── app/api/routes/users.py ──▶ app/api/deps.py (get_current_user)
+    │
+    └── (пока не подключён) app/llm/factory.py ──▶ MockProvider / OpenAIProvider (SDK openai)
 
 app/models/* ──▶ Base.metadata
 alembic/env.py ──▶ config (settings) + Base.metadata ──▶ миграции в БД
 
 tests/* ──▶ app.main (TestClient / AsyncClient); /health/db — через dependency_overrides;
-            test_user_model.py и test_auth.py ──▶ реальная БД (skip, если недоступна)
+            test_user_model.py и test_auth.py ──▶ реальная БД (skip, если недоступна);
+            test_llm.py ──▶ MockProvider (без сети), OpenAI — skip без ключа
 ```
 
 `Base.metadata` содержит модель `User`; `app/models/__init__.py` импортирует все модели,
@@ -508,7 +584,7 @@ Backend подключается к БД по `localhost:${POSTGRES_PORT}` (по
 | Запуск инфраструктуры | `infra/docker-compose.yml` | реализовано |
 | Backend-приложение | `backend/app/main.py` (uvicorn) | каркас + auth реализованы |
 | Миграции БД | `backend/alembic/` (`uv run alembic ...`) | 2 миграции: pgvector, users |
-| Прогон тестов backend | `backend/tests/` (pytest) | 20 тестов |
+| Прогон тестов backend | `backend/tests/` (pytest) | 28 тестов (1 пропускается без ключа OpenAI) |
 | Frontend-приложение | — | нет (план: `frontend/`) |
 
 ---
@@ -535,6 +611,9 @@ Backend подключается к БД по `localhost:${POSTGRES_PORT}` (по
 | `JWT_ALGORITHM` | алгоритм подписи (`HS256`) | нет |
 | `ACCESS_TOKEN_EXPIRE_MINUTES` | время жизни access-токена (по умолчанию 30) | нет |
 | `REFRESH_TOKEN_EXPIRE_DAYS` | время жизни refresh-токена (по умолчанию 30) | нет |
+| `LLM_PROVIDER` | провайдер LLM: `mock` (по умолчанию) или `openai` | нет |
+| `OPENAI_API_KEY` | ключ OpenAI (нужен для `LLM_PROVIDER=openai`) | да |
+| `OPENAI_MODEL` | модель OpenAI (нужна для `LLM_PROVIDER=openai`) | нет |
 
 ### `backend/pyproject.toml` и `backend/alembic.ini`
 
@@ -583,25 +662,28 @@ Backend подключается к БД по `localhost:${POSTGRES_PORT}` (по
 
 ## 9. Внешние интеграции
 
-**Реализованных нет.**
+**Факт:** в рантайме внешних вызовов нет. Реализован слой LLM: провайдер-агностичный интерфейс,
+`MockProvider` (по умолчанию, без сети) и `OpenAIProvider` на официальном SDK; живые вызовы
+выполняются только при `LLM_PROVIDER=openai` с ключом и моделью.
 
-**План** ([`AGENTS.md`](../AGENTS.md) §6): LLM-провайдер — OpenAI (запасной вариант — Anthropic)
-через провайдер-агностичный слой; function-calling + структурный JSON. Расположение в коде
-появится в `backend/`.
+**План** ([`AGENTS.md`](../AGENTS.md) §6): использование LLM в продукте — через Agent Harness
+(LLM выбирает инструменты, Harness их исполняет и пишет audit-лог). Данные в LLM: тексты
+заданий/ответов, структурированный JSON (tool-calls, оценки).
 
 ---
 
 ## 10. Тесты
 
-**Факт:** `backend/tests/` — 20 тестов на pytest (+ `pytest-asyncio`):
+**Факт:** `backend/tests/` — 28 тестов на pytest (+ `pytest-asyncio`):
 
 - `test_health.py` — `/health` (200 + статус) и `/docs` (200);
 - `test_health_db.py` — `/health/db`: 200 и 503 (два случая: `SQLAlchemyError`, `OSError`)
   через подмену зависимости `get_db`; реальная БД не требуется;
-- `test_user_model.py` — интеграционный: вставка/чтение `User` в реальной БД, очистка данных;
-  пропускается, если PostgreSQL недоступен;
+- `test_user_model.py` — интеграционный: вставка/чтение `User` в реальной БД; пропускается
+  без PostgreSQL;
 - `test_auth.py` — интеграционные тесты auth (register/login/me/refresh + негативные кейсы)
-  через `httpx2.AsyncClient` + `ASGITransport`; созданные пользователи удаляются.
+  через `httpx2.AsyncClient` + `ASGITransport`;
+- `test_llm.py` — MockProvider и фабрика без сети; живой тест OpenAI пропускается без ключа.
 
 Запуск: `uv run pytest` из `backend/`. Конфигурация — в `backend/pyproject.toml`
 (`testpaths`, `pythonpath`, `asyncio_mode`).

@@ -12,8 +12,9 @@
 
 Стадия проекта — неделя 1 (M0 «Фундамент»). Фактически реализованы: инфраструктура (локальная
 PostgreSQL 16 + pgvector в Docker Compose) и backend-каркас (FastAPI: health-эндпоинты,
-JWT-аутентификация, настройки, async-подключение к БД, модель `User`, миграции Alembic,
-тесты). Агентский цикл, остальные модели данных и внешние интеграции — пока нет.
+JWT-аутентификация, слой LLM с mock- и OpenAI-провайдерами, настройки, async-подключение к БД,
+модель `User`, миграции Alembic, тесты). Агентский цикл, остальные модели данных и внешние
+интеграции в рантайме — пока нет.
 
 Целевая архитектура — агентская система (не чат-бот): `LLM + Agent Harness + Tool Calling +
 граф знаний + персистентная память + адаптивное обучение` ([`AGENTS.md`](../AGENTS.md) §1–2).
@@ -25,8 +26,9 @@ JWT-аутентификация, настройки, async-подключени
 ## 2. Контекст системы
 
 **Факт.** Система сейчас = контейнер базы данных и backend-сервер на машине разработчика.
-Backend подключён к БД (asyncpg), регистрирует и аутентифицирует пользователей (JWT),
-хранит таблицу `users`. Пользовательского взаимодействия извне пока нет.
+Backend подключён к БД (asyncpg), регистрирует и аутентифицирует пользователей (JWT), хранит
+таблицу `users`, имеет готовый слой LLM (по умолчанию mock). Пользовательского взаимодействия
+извне пока нет.
 
 **План.** Пользователь работает с системой через SPA по сценарию из 7 шагов: загрузка вакансии →
 загрузка резюме → анализ уровня → персональный план подготовки → тренировочные интервью →
@@ -51,6 +53,7 @@ Backend подключён к БД (asyncpg), регистрирует и аут
                                                      - GET /health, /health/db
                                                      - POST /auth/register, /auth/login, /auth/refresh
                                                      - GET /me (Bearer access)
+                                                     - слой LLM: MockProvider / OpenAIProvider (app/llm/)
                                                      - модель User (app/models/)
                                                      - Alembic-миграции (pgvector, users)
 ```
@@ -94,21 +97,23 @@ Backend API (FastAPI)          ← auth, бизнес-логика, владел
 **Ограничения:** данные в named volume; удаление — только `docker compose down -v`; порт на хосте
 по умолчанию `5433` (5432 часто занят локальным PostgreSQL).
 
-### Backend (каркас и auth реализованы)
+### Backend (каркас, auth и слой LLM реализованы)
 
 **Location:** `backend/`
 
 **Реализовано:** FastAPI-точка входа `app/main.py` (health-эндпоинты, подключение роутеров),
 JWT-аутентификация (`app/api/`: `register`, `login`, `refresh`, `/me`; `app/core/security.py`:
-argon2id + PyJWT), настройки `app/core/config.py` (pydantic-settings), слой БД `app/db/`
-(async-движок, фабрика сессий, `get_db`, `Base`), модель `User` (`app/models/`), схемы
-(`app/schemas/`), миграции Alembic (`alembic/`), тесты `tests/`.
+argon2id + PyJWT), слой LLM (`app/llm/`: провайдер-агностичный интерфейс `LLMProvider`,
+`MockProvider` для тестов без сети, `OpenAIProvider` — function calling и структурированный
+вывод по JSON Schema; фабрика по `LLM_PROVIDER`), настройки `app/core/config.py`
+(pydantic-settings), слой БД `app/db/` (async-движок, фабрика сессий, `get_db`, `Base`), модель
+`User` (`app/models/`), схемы (`app/schemas/`), миграции Alembic (`alembic/`), тесты `tests/`.
 
 **Ответственность по плану:** остальные модели и схема БД, доменные REST API, сервисный слой,
 запуск агентских сессий, трансляция стрима; владелец БД ([`AGENTS.md`](../AGENTS.md) §2.2).
 
 **Стек:** Python 3.13, FastAPI, SQLAlchemy 2 (async) + asyncpg, Alembic, PyJWT, pwdlib (argon2),
-LangGraph.
+openai, LangGraph (план).
 
 ### Frontend (План)
 
@@ -119,7 +124,7 @@ React + TypeScript + Vite, 7 экранов ([`AGENTS.md`](../AGENTS.md) §7). �
 
 LangGraph-оркестратор: цикл агента, состояние, маршрутизация tool-calls, лимиты, audit-лог.
 Tools — типизированные функции (JSON Schema), единственный способ агента дотянуться до данных
-([`AGENTS.md`](../AGENTS.md) §2.2, §3.2–3.3).
+([`AGENTS.md`](../AGENTS.md) §2.2, §3.2–3.3). Слой LLM для Harness уже готов (`app/llm/`).
 
 ### Граф знаний и векторный слой (План)
 
@@ -155,6 +160,9 @@ Tools — типизированные функции (JSON Schema), единс�
 - `POST /auth/refresh` — проверка refresh-токена → новая пара;
 - `GET /me` — `get_current_user`: Bearer → проверка access-JWT → `SELECT` пользователя → 200/401.
 
+Вне HTTP-запросов: `app/llm/` даёт интерфейс для вызовов LLM (mock по умолчанию; OpenAI —
+при наличии ключа), пока не подключён к агентскому циклу.
+
 **План:** REST + WebSocket между SPA и FastAPI; стриминг ответов агента пользователю
 ([`AGENTS.md`](../AGENTS.md) §2.1, §3.3).
 
@@ -185,7 +193,9 @@ SQLAlchemy 2 (async); `agent_actions` — обязательный audit-лог;
 
 ## 8. Внешние интеграции
 
-**Факт:** отсутствуют.
+**Факт:** в рантайме внешних вызовов нет. Слой LLM реализован и по умолчанию использует
+`MockProvider` (без сети); `OpenAIProvider` (официальный SDK) активируется настройками
+и выполняет живые вызовы только при заданных `OPENAI_API_KEY` и `OPENAI_MODEL`.
 
 **План** ([`AGENTS.md`](../AGENTS.md) §6, §10):
 
@@ -193,8 +203,8 @@ SQLAlchemy 2 (async); `agent_actions` — обязательный audit-лог;
 |---|---|
 | Integration | LLM-провайдер (OpenAI; запасной — Anthropic), провайдер-агностичный слой |
 | Purpose | анализ, планирование, генерация вопросов, оценка ответов |
-| Location | появится в `backend/` (кода нет) |
-| Configuration | API-ключ через переменные окружения (переменная появится вместе с кодом) |
+| Location | `backend/app/llm/` (слой готов; использование в агентском цикле — план) |
+| Configuration | `LLM_PROVIDER`, `OPENAI_API_KEY`, `OPENAI_MODEL` (окружение, `backend/.env`) |
 | Data exchanged | тексты промптов/ответов, структурированный JSON (tool-calls, оценки) |
 | Failure handling | план: лимиты итераций/бюджета, таймауты, fallback-ответ (§10) |
 
@@ -222,6 +232,9 @@ SQLAlchemy 2 (async); `agent_actions` — обязательный audit-лог;
 | `JWT_ALGORITHM` | алгоритм подписи (`HS256`) | нет |
 | `ACCESS_TOKEN_EXPIRE_MINUTES` | время жизни access-токена (по умолчанию 30) | нет |
 | `REFRESH_TOKEN_EXPIRE_DAYS` | время жизни refresh-токена (по умолчанию 30) | нет |
+| `LLM_PROVIDER` | провайдер LLM: `mock` (по умолчанию) или `openai` | нет |
+| `OPENAI_API_KEY` | ключ OpenAI (для `LLM_PROVIDER=openai`) | да |
+| `OPENAI_MODEL` | модель OpenAI (для `LLM_PROVIDER=openai`) | нет |
 
 Значения переменных окружения в документации не приводятся. `.env.example` — шаблоны для
 локальной разработки, они коммитятся. Настройки читает `app/core/config.py` (pydantic-settings).
@@ -264,8 +277,9 @@ Access-TTL — 30 минут, refresh-TTL — 30 дней (настройки). 
 ## 12. Обработка ошибок
 
 **Факт:** `/health/db` отвечает 503 при недоступной БД (`SQLAlchemyError`/`OSError`);
-auth-эндпоинты — 401 (неверные данные/токен), 409 (дубликат email), 422 (валидация Pydantic).
-Другой обработки ошибок нет.
+auth-эндпоинты — 401 (неверные данные/токен), 409 (дубликат email), 422 (валидация Pydantic);
+слой LLM использует исключения `LLMError`/`LLMConfigurationError` (конфигурация, пустой ответ,
+невалидные аргументы tool-call). Другой обработки ошибок нет.
 
 **План** ([`AGENTS.md`](../AGENTS.md) §9–10): валидация схем `tool_call`, откат при ошибке
 инструмента, лимиты/таймауты, fallback-ответ агента.
@@ -274,14 +288,15 @@ auth-эндпоинты — 401 (неверные данные/токен), 409 
 
 ## 13. Тестирование
 
-**Факт:** подключён pytest (+ `pytest-asyncio`); в `backend/tests/` 20 тестов:
+**Факт:** подключён pytest (+ `pytest-asyncio`); в `backend/tests/` 28 тестов:
 
 - `test_health.py` — `/health` и `/docs`;
 - `test_health_db.py` — `/health/db`: 200 и 503 (через подмену `get_db`, без реального Postgres);
 - `test_user_model.py` — вставка/чтение `User` в реальной БД (пропускается, если БД недоступна);
 - `test_auth.py` — register/login/me/refresh и негативные кейсы (дубликат email, неверный пароль,
   отсутствие/битый/просроченный токен, refresh вместо access) через `httpx2.AsyncClient`
-  и `ASGITransport`.
+  и `ASGITransport`;
+- `test_llm.py` — MockProvider и фабрика без сети; живой вызов OpenAI пропускается без ключа.
 
 Запуск: `uv run pytest` из `backend/`; конфигурация — в `backend/pyproject.toml`.
 
@@ -350,6 +365,8 @@ uv run ruff check .                      # линтер
   `alembic upgrade head`.
 - **Аутентификация MVP.** Refresh-токены stateless (отозвать до истечения нельзя); dev-дефолт
   `JWT_SECRET_KEY` нельзя использовать в продакшене.
+- **LLM по умолчанию — mock.** Реальные вызовы требуют ключа и модели; без ключа живые сценарии
+  LLM-слоя не проверяются (тест пропускается).
 - **Стадия проекта.** Значительная часть архитектуры существует только в плане; риск расхождения
   документации и кода снижается правилом обновлять эти три документа при изменениях.
 - **Плановые риски проекта** (точность оценки ответов, качество онтологии, стоимость agent-loop,

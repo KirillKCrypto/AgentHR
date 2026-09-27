@@ -27,6 +27,10 @@ class Settings(BaseSettings):
     jwt_algorithm: str = "HS256"
     access_token_expire_minutes: int = 30
     refresh_token_expire_days: int = 30
+    # LLM: по умолчанию mock (без сети); openai требует ключ и модель
+    llm_provider: str = "mock"
+    openai_api_key: str | None = None
+    openai_model: str | None = None
 
 
 @lru_cache
