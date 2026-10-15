@@ -12,16 +12,17 @@
 
 AgentHR — интеллектуальная агентская система адаптивной подготовки к техническим собеседованиям
 под конкретные вакансии. Это не чат-бот: целевая архитектура строится вокруг агентского цикла —
-`LLM + Agent Harness (LangGraph) + Tool Calling + граф знаний (Postgres) + персистентная память
+`LLM + Agent Harness (Deep Agents) + Tool Calling + граф знаний (Postgres) + персистентная память
 (pgvector) + адаптивное обучение`.
 
 - **Тип:** monorepo — `backend/` + `frontend/` + `infra/`.
-- **Стек (зафиксирован):** Python 3.13 + FastAPI, LangGraph + LangChain core, PostgreSQL 16 +
+- **Стек (зафиксирован):** Python 3.13 + FastAPI, Deep Agents (поверх LangGraph + LangChain core),
+  PostgreSQL 16 +
   pgvector, React + TypeScript + Vite, Docker Compose, Alembic + SQLAlchemy, pytest.
 - **Текущее состояние:** вехи M0 «Фундамент» и M1 «Agent Harness» закрыты. Реализованы:
   инфраструктура (`infra/`); backend — FastAPI (health, JWT-auth, CORS, слой LLM), Agent Harness
-  (`app/agent/`: реестр Tools с JSON Schema, исполнитель tool-calls, граф LangGraph с лимитами
-  и checkpointer, аудит в `agent_actions`), модели `User`/`AgentAction`, миграции, тесты;
+  на Deep Agents (`app/agent/`: реестр Tools с JSON Schema, middleware аудита и лимитов,
+  checkpointer, аудит в `agent_actions`), модели `User`/`AgentAction`, миграции, тесты;
   frontend — вход и регистрация через API (`frontend/`). Из чеклиста старта
   ([`AGENTS.md`](AGENTS.md), §12) выполнены пункты 1–7 и 10; пункт 4 выполняется поэтапно;
   пункты 8, 9, 11 не начаты. Дальше — M2 (недели 3–4): вакансии/резюме → профиль знаний.
@@ -90,7 +91,7 @@ AgentHR/
 ├── backend/             — КАРКАС: FastAPI, JWT-auth, слой LLM, модель User, БД-сессия, Alembic
 │   ├── app/
 │   │   ├── main.py      — точка входа FastAPI (CORS, роутеры, /health, /health/db)
-│   │   ├── agent/       — реестр tools, исполнитель, аудит, граф LangGraph (harness.py)
+│   │   ├── agent/       — harness на Deep Agents: реестр tools, middleware аудита/лимитов, адаптеры LangChain (deep_harness.py)
 │   │   ├── api/         — роутеры (routes/auth.py, routes/users.py), deps.py (get_current_user)
 │   │   ├── core/        — config.py (настройки), security.py (argon2-хеши, JWT)
 │   │   ├── db/          — async-движок (session.py), Base (base.py)
@@ -145,9 +146,10 @@ AgentHR/
 (`POST /auth/register`, `POST /auth/login`, `POST /auth/refresh`, `GET /me`; argon2-хеши паролей
 в `app/core/security.py`), CORS для frontend dev-сервера, слой LLM (`app/llm/`:
 провайдер-агностичный интерфейс, `MockProvider` для тестов без сети, `OpenAIProvider` на
-официальном SDK — function calling и JSON Schema), Agent Harness (`app/agent/`: реестр Tools
-с JSON Schema, исполнитель tool-calls с валидацией, таймаутом и аудит-логом в `agent_actions`,
-граф LangGraph — цикл модель→tools→модель с лимитами шагов/токенов/времени и checkpointer),
+официальном SDK — function calling и JSON Schema), Agent Harness на Deep Agents (`app/agent/`:
+реестр Tools с JSON Schema и валидацией, цикл `create_deep_agent` с middleware — аудит каждого
+вызова модели и инструмента в `agent_actions`, лимиты шагов/токенов, таймаут, ошибки инструментов
+возвращаются модели; checkpointer по `thread_id`),
 настройки через pydantic-settings (`app/core/config.py`), слой БД (async-движок и сессии
 SQLAlchemy в `app/db/`), модели `User` и `AgentAction` (`app/models/`), миграции Alembic
 (pgvector, `users`, `agent_actions`), тесты (`tests/`), зависимости через uv
@@ -240,7 +242,7 @@ Backend API (FastAPI)
 | `infra/docker-compose.yml` | запуск инфраструктуры: БД `agenthr-postgres` и API `agenthr-api` | реализовано |
 | `backend/app/main.py` (uvicorn; в контейнере — `backend/docker/entrypoint.sh`) | основной сервер приложения | каркас + auth + Agent Harness реализованы |
 | `backend/alembic/` (запуск: `uv run alembic upgrade head`) | миграции схемы БД | 3 миграции: pgvector, users, agent_actions |
-| Тесты: `backend/tests/` (`uv run pytest`) | прогон тестов | 47 тестов (1 пропускается без ключа OpenAI) |
+| Тесты: `backend/tests/` (`uv run pytest`) | прогон тестов | 50 тестов (1 пропускается без ключа OpenAI) |
 | `frontend/` (запуск: `npm run dev`) | SPA-разработка | вход/регистрация через API |
 | `frontend/` (`npm run generate:api`) | генерация типов из OpenAPI (нужен backend) | скрипт готов |
 
@@ -260,7 +262,7 @@ Backend API (FastAPI)
 | `backend/app/db/session.py` | async-движок, фабрика сессий, зависимость `get_db` |
 | `backend/app/models/user.py` | ORM-модель `User` |
 | `backend/app/llm/` | слой LLM: интерфейс (`base.py`), `MockProvider`, `OpenAIProvider`, фабрика |
-| `backend/app/agent/` | Agent Harness: реестр Tools (JSON Schema), исполнитель tool-calls, аудит-логгер, граф LangGraph (`harness.py`) с лимитами и checkpointer |
+| `backend/app/agent/` | Agent Harness на Deep Agents: `deep_harness.py` (цикл `create_deep_agent`), `middleware.py` (аудит и лимиты), `langchain_model.py`/`langchain_tools.py` (адаптеры LangChain), `tools.py` (реестр Tools с JSON Schema), `audit.py` (логгер) |
 | `backend/app/models/agent_action.py` | ORM-модель записи аудит-лога (`agent_actions`) |
 | `backend/alembic/` | миграции схемы (async) |
 | `frontend/src/App.tsx` | маршруты и шапка SPA |
@@ -312,9 +314,14 @@ INDEX.md                    — главная точка входа (этот �
   контракта затронет всех провайдеров и будущий Agent Harness.
 - **`backend/app/agent/tools.py`** — контракт инструментов: каждый инструмент обязан иметь
   JSON Schema и async-обработчик, а его вызовы попадают в `agent_actions` (правило проекта).
-- **`backend/app/agent/harness.py`** — цикл агента и лимиты (`AGENT_MAX_STEPS`,
-  `AGENT_TOKEN_BUDGET`, `AGENT_TIMEOUT_SECONDS`); checkpointer пока в памяти (при рестарте
-  процесса состояние сессий теряется — PostgreSQL-checkpointer в плане).
+- **`backend/app/agent/deep_harness.py`** — сборка агента (`create_deep_agent`) и лимиты
+  (`AGENT_MAX_STEPS`, `AGENT_TOKEN_BUDGET`, `AGENT_TIMEOUT_SECONDS`); checkpointer пока в памяти
+  (при рестарте процесса состояние сессий теряется — PostgreSQL-checkpointer в плане).
+- **`backend/app/agent/middleware.py`** — правила проекта в цикле агента: аудит каждого вызова
+  модели/инструмента в `agent_actions` и остановка по лимитам. Ломать этот порядок нельзя:
+  без middleware агент перестаёт быть аудируемым.
+- **`backend/app/agent/langchain_model.py`** — мост «наш `LLMProvider` → LangChain-модель»
+  (нужен, чтобы Deep Agents работал на нашем провайдер-агностичном слое, включая мок).
 - **`backend/app/models/`** — ORM-модели: изменение модели требует новой миграции
   (`alembic revision --autogenerate`).
 - **`backend/alembic/versions/`** — уже применённые миграции не редактировать; новые — только
@@ -387,11 +394,11 @@ INDEX.md                    — главная точка входа (этот �
 | Где API? | Роутеры — `backend/app/api/routes/` (auth, users); health — `backend/app/main.py`; остальное — план ([`AGENTS.md`](AGENTS.md) §2–3) |
 | Где аутентификация? | Backend: `backend/app/core/security.py` + `backend/app/api/deps.py`; frontend: `frontend/src/pages/LoginPage.tsx` + `frontend/src/lib/tokens.ts` |
 | Где LLM-слой? | `backend/app/llm/` (`base.py` — интерфейс, `mock.py` / `openai.py` — реализации, `factory.py` — выбор по `LLM_PROVIDER`) |
-| Где Agent Harness? | `backend/app/agent/` (`harness.py` — граф LangGraph и лимиты; `tools.py` — реестр; `executor.py` — исполнение; `audit.py` — аудит); записи — в таблице `agent_actions` |
+| Где Agent Harness? | `backend/app/agent/` (`deep_harness.py` — цикл на Deep Agents; `middleware.py` — аудит и лимиты; `tools.py` — реестр; `langchain_model.py` — адаптер модели); записи — в таблице `agent_actions` |
 | Где фронтенд? | `frontend/` (каркас + вход: маршруты — `src/App.tsx`, экраны — `src/pages/`, запуск — `npm run dev`) |
 | Где API-клиент frontend / типы API? | `frontend/src/api/client.ts`; типы — `frontend/src/api/schema.d.ts` (`npm run generate:api`) |
 | Где UI-компоненты? | `frontend/src/components/ui/` (shadcn/ui, Base UI); новые — `npx shadcn@latest add <name>` |
-| Где агент, Harness и Tools? | Пока нет; план — `backend/` ([`AGENTS.md`](AGENTS.md) §3) |
+| Где агент, Harness и Tools? | Агент и Tools — `backend/app/agent/` (реестр — `tools.py`, цикл — `deep_harness.py`); доступ LLM к данным — только через Tools ([`AGENTS.md`](AGENTS.md) §3) |
 | Где работа с БД (модели, сессии, миграции)? | Модели — `backend/app/models/`; сессии — `backend/app/db/`; миграции — `backend/alembic/` |
 | Где конфигурация окружения? | `backend/.env.example` (backend), `infra/.env.example` (БД), `frontend/.env.example` (VITE_API_BASE_URL) |
 | Где тесты? | `backend/tests/` → `uv run pytest`; frontend — `npm run build` + `npm run lint` ([`AGENTS.md`](AGENTS.md) §9 — план расширения) |

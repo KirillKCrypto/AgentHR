@@ -30,7 +30,7 @@ LLM + Agent Harness + Tool Calling + Knowledge Graph + Persistent Memory + Adapt
 | Слой | Стек |
 |---|---|
 | Backend | Python 3.13, FastAPI |
-| Agent Harness | LangGraph, LangChain core |
+| Agent Harness | Deep Agents (LangGraph, LangChain core) |
 | LLM | OpenAI (провайдер-агностичный слой) |
 | Database | PostgreSQL 16 + pgvector |
 | Knowledge Graph | Реляционная модель в Postgres |
@@ -53,6 +53,6 @@ LLM + Agent Harness + Tool Calling + Knowledge Graph + Persistent Memory + Adapt
 
 Проект в разработке. M0 «Фундамент» (неделя 1) и M1 «Agent Harness» (неделя 2) закрыты:
 инфраструктура (PostgreSQL + pgvector и backend API в Docker Compose), база данных,
-аутентификация, слой LLM, Agent Harness (граф LangGraph с лимитами и аудитом в `agent_actions`),
+аутентификация, слой LLM, Agent Harness на Deep Agents (лимиты и аудит в `agent_actions`),
 frontend со входом через UI. Для живого ответа LLM нужен ключ OpenAI.
 Дальше — M2: вакансии/резюме → профиль знаний.

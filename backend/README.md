@@ -4,7 +4,7 @@ Backend-приложение AgentHR на FastAPI. Реализованы: ка�
 JWT-аутентификация, слой LLM (mock/OpenAI), подключение к БД, модель User и миграции.
 
 Стек: Python 3.13, FastAPI, SQLAlchemy 2 (async) + asyncpg, Alembic, PyJWT, pwdlib (argon2),
-openai, LangGraph. Образ контейнера — `python:3.13-slim` + uv.
+openai, Deep Agents (LangGraph + LangChain core). Образ контейнера — `python:3.13-slim` + uv.
 
 ## Запуск
 
@@ -47,9 +47,14 @@ docker compose up -d --build    # agenthr-api на http://127.0.0.1:8000
 
 ## Agent Harness
 
-- `app/agent/harness.py` — граф LangGraph: цикл «модель → tools → модель», лимиты
-  (`AGENT_MAX_STEPS`, `AGENT_TOKEN_BUDGET`, `AGENT_TIMEOUT_SECONDS`), checkpointer по `thread_id`.
-- Каждый вызов LLM и инструмента пишется в таблицу `agent_actions` (аудит-лог).
+- `app/agent/deep_harness.py` — основной harness: `deepagents.create_deep_agent` (цикл агента),
+  лимиты (`AGENT_MAX_STEPS`, `AGENT_TOKEN_BUDGET`, `AGENT_TIMEOUT_SECONDS`), checkpointer по `thread_id`.
+- `app/agent/middleware.py` — наши правила в цикле: аудит каждого вызова LLM и инструмента
+  в таблицу `agent_actions`, остановка по лимитам, возврат ошибок инструментов модели.
+- `app/agent/langchain_model.py` / `langchain_tools.py` — адаптеры: наш `LLMProvider` и реестр
+  Tools (JSON Schema) для LangChain/Deep Agents.
+- Агент получает дефолтный состав Deep Agents: инструменты файловой системы (управление
+  контекстом) и сабагента `task`.
 
 ## Тесты и линтер
 
@@ -76,8 +81,7 @@ URL БД берётся из настроек (`backend/.env`, переменн�
 - `app/api/` — роутеры (`routes/auth.py`, `routes/users.py`) и зависимости (`deps.py`)
 - `app/core/config.py` — настройки (pydantic-settings, читает `.env`)
 - `app/core/security.py` — argon2-хеши паролей, выпуск/проверка JWT
-- `app/agent/` — реестр Tools (JSON Schema), исполнитель tool-calls, аудит-логгер,
-  граф LangGraph (`harness.py`)
+- `app/agent/` — harness на Deep Agents, реестр Tools (JSON Schema), middleware аудита/лимитов
 - `Dockerfile` — образ backend (uv, без dev-зависимостей)
 - `docker/entrypoint.sh` — старт контейнера: `alembic upgrade head` → uvicorn
 - `app/db/session.py` — async-движок, фабрика сессий, зависимость `get_db`

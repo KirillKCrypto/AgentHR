@@ -12,7 +12,7 @@
 
 M0 «Фундамент» (неделя 1) и M1 «Agent Harness» (неделя 2) закрыты: реализованы инфраструктура
 (PostgreSQL 16 + pgvector в Docker Compose), backend (FastAPI: health, JWT-аутентификация,
-слой LLM, Agent Harness — реестр Tools, исполнитель, граф LangGraph с лимитами и checkpointer,
+слой LLM, Agent Harness на Deep Agents — реестр Tools, middleware аудита и лимитов, checkpointer,
 аудит в `agent_actions`; миграции, тесты) и frontend (SPA со входом и регистрацией через API).
 Для живого ответа LLM нужен ключ OpenAI; доменные модели данных и внешние интеграции
 в рантайме — в плане (дальше — M2: вакансии/резюме → профиль знаний).
@@ -57,7 +57,7 @@ mock). CORS разрешает запросы с dev-сервера frontend.
    │                                                 - GET /me (Bearer access)
    │                                                 - CORS: http://localhost:5173
    │                                                 - слой LLM: MockProvider / OpenAIProvider (app/llm/)
-   │                                                 - Agent Harness: граф LangGraph с лимитами и checkpointer (app/agent/)
+   │                                                 - Agent Harness: Deep Agents + middleware аудита/лимитов (app/agent/)
    │                                                 - модели User, AgentAction (app/models/)
    │                                                 - Alembic-миграции (pgvector, users, agent_actions)
    └── npm run dev (frontend/) ──▶ Vite dev-сервер (SPA)
@@ -77,7 +77,7 @@ Frontend (React SPA)
     │ REST + WebSocket
 Backend API (FastAPI)          ← auth, бизнес-логика, владелец БД, запуск сессий
     │
-    ├── Agent Harness (LangGraph) ──► LLM Agent
+    ├── Agent Harness (Deep Agents) ──► LLM Agent
     │        │ Tool Calls                 │
     │        ▼                            │
     │   Tools (реестр) ◄──────────────────┘   ← только tools трогают данные
@@ -128,7 +128,7 @@ Backend API (FastAPI)          ← auth, бизнес-логика, владел
 запуск агентских сессий, трансляция стрима; владелец БД ([`AGENTS.md`](../AGENTS.md) §2.2).
 
 **Стек:** Python 3.13, FastAPI, SQLAlchemy 2 (async) + asyncpg, Alembic, PyJWT, pwdlib (argon2),
-openai, LangGraph; образ — `python:3.13-slim` + uv.
+openai, Deep Agents (LangGraph + LangChain core); образ — `python:3.13-slim` + uv.
 
 ### Frontend (каркас и вход через API реализованы)
 
@@ -150,17 +150,28 @@ openai, LangGraph; образ — `python:3.13-slim` + uv.
 
 ### Agent Harness и Tools (реализовано)
 
-**Реализовано:** реестр Tools с JSON Schema (`app/agent/tools.py`), исполнитель tool-calls
-(`app/agent/executor.py`: валидация аргументов, таймаут, перехват ошибок, аудит-записи),
-аудит-логгер (`app/agent/audit.py` → таблица `agent_actions`, включая LLM-шаги и токены)
-и граф LangGraph (`app/agent/harness.py`: цикл модель→tools→модель, лимиты шагов/токенов/
-времени, checkpointer `InMemorySaver` по `thread_id`, статусы `completed` / `max_steps` /
-`token_budget` / `timeout` / `llm_error`).
+**Реализовано:** реестр Tools с JSON Schema и валидацией (`app/agent/tools.py`); основной цикл
+агента — на **Deep Agents** (`app/agent/deep_harness.py`: `create_deep_agent` поверх LangGraph,
+checkpointer `InMemorySaver` по `thread_id`, статусы `completed` / `max_steps` / `token_budget` /
+`timeout` / `llm_error`); наши правила встроены middleware (`app/agent/middleware.py`):
+
+- `AuditMiddleware` — каждый вызов модели (шаг, токены) и каждый вызов инструмента (аргументы,
+  результат, длительность, статус) пишется в `agent_actions` (`app/agent/audit.py`);
+- `LimitsMiddleware` — остановка цикла по числу шагов (`AGENT_MAX_STEPS`) и бюджету токенов
+  (`AGENT_TOKEN_BUDGET`) с понятным сообщением; таймаут прогона — `AGENT_TIMEOUT_SECONDS`;
+- ошибка инструмента (валидация, таймаут, исключение обработчика) возвращается модели как
+  `ToolMessage(status="error")` — цикл не прерывается.
+
+Инструменты реестра попадают в агент через адаптер `app/agent/langchain_tools.py` (JSON Schema
+передаётся модели дословно), а наш провайдер-агностичный слой LLM — через `app/agent/langchain_model.py`
+(`BaseChatModel` поверх `LLMProvider`, включая `MockProvider` в тестах). Контракт результата прогона —
+`app/agent/result.py`.
 
 **Ограничение:** checkpointer пока в памяти — при рестарте процесса состояние потоков теряется
-(PostgreSQL-checkpointer — отдельный шаг).
+(PostgreSQL-checkpointer — отдельный шаг). Агент работает с дефолтным составом Deep Agents:
+файловая система (управление контекстом) и сабагент `task` включены (решение команды от окт. 2026).
 
-Целевая роль: LangGraph-оркестратор — состояние, маршрутизация tool-calls, лимиты, audit-лог;
+Целевая роль: harness — состояние, маршрутизация tool-calls, лимиты, audit-лог;
 Tools — типизированные функции, единственный способ агента дотянуться до данных
 ([`AGENTS.md`](../AGENTS.md) §2.2, §3.2–3.3). Слой LLM готов (`app/llm/`).
 
@@ -370,7 +381,7 @@ auth-эндпоинты — 401 (неверные данные/токен), 409 
 
 ## 13. Тестирование
 
-**Backend (факт):** подключён pytest (+ `pytest-asyncio`); в `backend/tests/` 47 тестов:
+**Backend (факт):** подключён pytest (+ `pytest-asyncio`); в `backend/tests/` 50 тестов:
 
 - `test_health.py` — `/health` и `/docs`;
 - `test_health_db.py` — `/health/db`: 200 и 503 (через подмену `get_db`, без реального Postgres);
@@ -380,10 +391,11 @@ auth-эндпоинты — 401 (неверные данные/токен), 409 
   и `ASGITransport`;
 - `test_cors.py` — CORS-заголовок и preflight для frontend-origin;
 - `test_llm.py` — MockProvider и фабрика без сети; живой вызов OpenAI пропускается без ключа;
-- `test_agent_tools.py` — реестр инструментов и исполнитель: валидация аргументов, ошибки
-  обработчика, таймаут, аудит-записи (без БД);
-- `test_agent_harness.py` — граф на мок-LLM: полный цикл с инструментом, лимиты
-  шагов/токенов, таймаут, ошибки LLM и инструмента, продолжение истории по `thread_id`;
+- `test_agent_tools.py` — реестр инструментов и адаптер для LangChain: валидация аргументов,
+  дословная JSON Schema, исполнение обработчика, ошибки и таймаут (без БД);
+- `test_agent_deep_harness.py` — основной harness (Deep Agents) на мок-LLM: полный цикл
+  с инструментом и аудитом, передача JSON Schema, лимиты шагов/токенов, таймаут, ошибки LLM
+  и инструмента, продолжение истории по `thread_id`;
 - `test_agent_audit.py` — запись/чтение аудит-лога в реальной БД; пропускается без PostgreSQL.
 
 Запуск: `uv run pytest` из `backend/`; конфигурация — в `backend/pyproject.toml`.

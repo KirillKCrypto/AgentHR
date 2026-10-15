@@ -54,10 +54,13 @@ AgentHR/
 │   │   ├── __init__.py
 │   │   ├── main.py            (точка входа FastAPI; CORS, роутеры, /health, /health/db)
 │   │   ├── agent/
-│   │   │   ├── __init__.py    (реэкспорт реестра, исполнителя, аудита, harness)
+│   │   │   ├── __init__.py    (реэкспорт реестра, аудита, harness'ов)
 │   │   │   ├── audit.py       (AgentActionRecord, AuditLogger, InMemory/Db)
-│   │   │   ├── executor.py    (ToolExecutor: валидация, таймаут, аудит)
-│   │   │   ├── harness.py     (AgentHarness: граф LangGraph, лимиты, checkpointer)
+│   │   │   ├── deep_harness.py (DeepAgentHarness: create_deep_agent, лимиты, checkpointer)
+│   │   │   ├── langchain_model.py (ProviderChatModel: наш LLMProvider → LangChain)
+│   │   │   ├── langchain_tools.py (RegistryTool: ToolRegistry → инструменты LangChain)
+│   │   │   ├── middleware.py  (AuditMiddleware, LimitsMiddleware, текст ошибок инструментов)
+│   │   │   ├── result.py      (AgentRunResult — общий контракт результата)
 │   │   │   └── tools.py       (ToolDefinition, ToolRegistry, JSON Schema)
 │   │   ├── api/
 │   │   │   ├── __init__.py
@@ -98,7 +101,7 @@ AgentHR/
 │   │   ├── test_cors.py
 │   │   ├── test_llm.py
 │   │   ├── test_agent_tools.py
-│   │   ├── test_agent_harness.py
+│   │   ├── test_agent_deep_harness.py
 │   │   └── test_agent_audit.py
 │   └── uv.lock                (генерируется, коммитится)
 ├── docs/
@@ -173,7 +176,7 @@ AgentHR/
 **Назначение:** backend-приложение AgentHR. Реализован каркас: FastAPI-точка входа
 (`app/main.py`: CORS, роутеры, `/health`, `/health/db`), JWT-аутентификация (`app/api/`,
 `app/core/security.py`), слой LLM (`app/llm/`: интерфейс, mock- и OpenAI-провайдеры), агентский
-слой (`app/agent/`: реестр Tools, исполнитель tool-calls, аудит-логгер, граф LangGraph), настройки
+слой (`app/agent/`: реестр Tools, middleware аудита и лимитов, harness на Deep Agents), настройки
 (`app/core/config.py`), слой БД (`app/db/`), модели `User` и `AgentAction` (`app/models/`),
 миграции (`alembic/`), тесты (`tests/`), зависимости через uv.
 
@@ -392,25 +395,85 @@ AI-агента и его Tools, граф знаний, план на 8 неде
 
 **Depends on:** `backend/app/llm/base.py` (`ToolSpec`), `jsonschema`.
 
-**Used by:** `backend/app/agent/executor.py`; в будущем — Harness и конкретные инструменты.
+**Used by:** `backend/app/agent/langchain_tools.py` (адаптер для Deep Agents);
+в будущем — конкретные инструменты.
 
 **Important:** каждый инструмент обязан иметь JSON Schema; повторная регистрация имени запрещена.
 
-#### `backend/app/agent/harness.py`
+#### `backend/app/agent/deep_harness.py`
 
-**Role:** AGENT (оркестратор)
+**Role:** AGENT (оркестратор — основной harness проекта)
 
-**Responsibility:** `AgentHarness` — граф LangGraph «модель → tools → модель»: лимиты
-(`max_steps`, `token_budget`, `timeout_seconds`), checkpointer (`InMemorySaver`, `thread_id`),
-аудит LLM-шагов и вызовов инструментов; `AgentRunResult` (статус, сообщения, токены, шаги).
+**Responsibility:** `DeepAgentHarness` — сборка агента через `deepagents.create_deep_agent`
+(файловая система и суммаризация контекста из коробки, checkpoint по `thread_id`), подключение
+middleware аудита/лимитов и обработчика ошибок инструментов, возврат результата в общем контракте
+`AgentRunResult` (статус, сообщения, шаги, токены). Лимиты — `AGENT_MAX_STEPS`,
+`AGENT_TOKEN_BUDGET`, `AGENT_TIMEOUT_SECONDS`; таймаут — на весь прогон.
 
-**Depends on:** `app/agent/tools.py`, `app/agent/executor.py`, `app/agent/audit.py`,
-`app/llm/base.py`, `langgraph`.
+**Depends on:** `app/agent/langchain_model.py`, `app/agent/langchain_tools.py`,
+`app/agent/middleware.py`, `app/agent/audit.py`, `app/agent/result.py`, `deepagents`.
 
-**Used by:** будущие агентские сценарии (M2+); тесты `backend/tests/test_agent_harness.py`.
+**Used by:** будущие агентские сценарии (M2+); тесты `backend/tests/test_agent_deep_harness.py`.
 
-**Important:** конфигурация лимитов — `AGENT_*` в настройках; checkpointer в памяти (рестарт
-процесса теряет состояние потока).
+**Important:** агент обязан собираться с нашими middleware — иначе вызовы не попадут в аудит
+и цикл не будет ограничен. `deepagents` ставит `recursion_limit=9999`, поэтому лимит шагов
+держим в `LimitsMiddleware` (она останавливает цикл раньше).
+
+#### `backend/app/agent/middleware.py`
+
+**Role:** AGENT (правила проекта в цикле агента)
+
+**Responsibility:** `AuditMiddleware` — запись в `agent_actions` каждого вызова модели
+(шаг, токены) и каждого вызова инструмента (аргументы, результат, длительность, статус);
+`LimitsMiddleware` — остановка цикла по числу шагов и бюджету токенов с понятным сообщением;
+`tool_error_text` — текст ошибки инструмента, который возвращается модели (цикл не прерывается).
+
+**Depends on:** `app/agent/audit.py`, `app/agent/tools.py`, `langchain.agents.middleware`.
+
+**Used by:** `backend/app/agent/deep_harness.py`.
+
+**Important:** состояние прогона (`audit_step`, `run_model_calls`, токены) — untracked, то есть
+не сохраняется в checkpoint; в checkpoint попадает только `run_status` (причина остановки).
+
+#### `backend/app/agent/langchain_model.py`
+
+**Role:** AGENT (адаптер LLM-слоя)
+
+**Responsibility:** `ProviderChatModel` — LangChain-модель (`BaseChatModel`) поверх нашего
+`LLMProvider`: конвертация сообщений в обе стороны, передача JSON Schema инструментов
+и `usage_metadata` с токенами. Нужен, чтобы Deep Agents работал на нашем провайдер-агностичном
+слое (включая `MockProvider` в тестах).
+
+**Depends on:** `app/llm/base.py`, `langchain-core`.
+
+**Used by:** `backend/app/agent/deep_harness.py`.
+
+**Important:** поддерживается только async-путь (`_agenerate`) — обработчики инструментов и
+провайдеры асинхронные; синхронный вызов бросает `NotImplementedError`.
+
+#### `backend/app/agent/langchain_tools.py`
+
+**Role:** AGENT (адаптер инструментов)
+
+**Responsibility:** `RegistryTool` — инструмент LangChain из записи `ToolRegistry`: модель
+получает нашу JSON Schema дословно (`tool_call_schema`), аргументы валидируются реестром,
+обработчик вызывается с таймаутом; `build_registry_tools` собирает список для Deep Agents.
+
+**Depends on:** `app/agent/tools.py`, `langchain-core`.
+
+**Used by:** `backend/app/agent/deep_harness.py`.
+
+**Important:** схема инструмента не пересобирается в pydantic-модель — так JSON Schema
+описаний остаётся единственным источником правды для LLM.
+
+#### `backend/app/agent/result.py`
+
+**Role:** AGENT (контракт результата)
+
+**Responsibility:** `AgentRunResult` — статус, сообщения, финальный текст, шаги, токены, ошибка.
+Единый контракт результата прогона агента.
+
+**Used by:** `backend/app/agent/deep_harness.py`, тесты.
 
 ### Уровень 2 — важные
 
@@ -557,18 +620,6 @@ dev-группа (pytest, pytest-asyncio, httpx2, ruff), конфигураци�
 
 **Used by:** точки сборки приложения/скриптов (в `main.py` пока не подключён).
 
-#### `backend/app/agent/executor.py`
-
-**Role:** AGENT (исполнение tool-calls)
-
-**Responsibility:** `ToolExecutor` — валидирует аргументы, вызывает обработчик с таймаутом
-(`asyncio.wait_for`), перехватывает ошибки (агент получает текст ошибки, цикл не падает),
-пишет запись в аудит-лог; возвращает `ToolExecutionResult` для контекста LLM.
-
-**Depends on:** `backend/app/agent/tools.py`, `backend/app/agent/audit.py`, `backend/app/llm/base.py`.
-
-**Used by:** в будущем — Harness; тесты `backend/tests/test_agent_tools.py`.
-
 #### `backend/app/agent/audit.py`
 
 **Role:** AGENT (аудит)
@@ -578,7 +629,7 @@ dev-группа (pytest, pytest-asyncio, httpx2, ruff), конфигураци�
 
 **Depends on:** `backend/app/models/agent_action.py`.
 
-**Used by:** `backend/app/agent/executor.py`; в будущем — Harness.
+**Used by:** `backend/app/agent/middleware.py` (аудит текущего цикла).
 
 #### `backend/app/models/agent_action.py`
 
@@ -723,15 +774,16 @@ preflight `OPTIONS /auth/login` разрешён.
 
 **Used by:** `uv run pytest`.
 
-#### `backend/tests/test_agent_harness.py`
+#### `backend/tests/test_agent_deep_harness.py`
 
 **Role:** TEST
 
-**Responsibility:** тесты графа на мок-LLM: полный цикл с инструментом и аудитом, лимит шагов,
-бюджет токенов, таймаут, ошибка LLM, ошибка инструмента (возврат в модель), продолжение
-истории по `thread_id` (checkpoint).
+**Responsibility:** тесты основного harness (Deep Agents) на мок-LLM: полный цикл с инструментом
+и аудитом (шаги и токены), дословная передача JSON Schema инструмента модели, лимит шагов, бюджет
+токенов, таймаут, ошибка LLM, ошибка инструмента и невалидные аргументы (возврат в модель),
+продолжение истории по `thread_id` (checkpoint).
 
-**Depends on:** `backend/app/agent/harness.py`, `app/llm` (MockProvider).
+**Depends on:** `backend/app/agent/deep_harness.py`, `app/llm` (MockProvider).
 
 **Used by:** `uv run pytest`.
 
@@ -842,8 +894,10 @@ app/main.py ──▶ app/core/config.py ──▶ pydantic-settings (backend/.e
     │
     └── (пока не подключён) app/llm/factory.py ──▶ MockProvider / OpenAIProvider (SDK openai)
 
-app/agent/executor.py ──▶ app/agent/tools.py (JSON Schema) + app/agent/audit.py ──▶ agent_actions
-app/agent/harness.py ──▶ LangGraph (граф, InMemorySaver) ──▶ LLMProvider + ToolExecutor
+app/agent/deep_harness.py ──▶ deepagents.create_deep_agent ──▶ ProviderChatModel (наш LLMProvider)
+app/agent/deep_harness.py ──▶ middleware.py (AuditMiddleware ──▶ audit.py ──▶ agent_actions;
+                                             LimitsMiddleware — шаги/токены)
+app/agent/deep_harness.py ──▶ langchain_tools.py ──▶ tools.py (JSON Schema + валидация)
 
 app/models/* ──▶ Base.metadata
 alembic/env.py ──▶ config (settings) + Base.metadata ──▶ миграции в БД
@@ -900,7 +954,7 @@ API доступен снаружи по `localhost:${API_PORT}` (по умол�
 | Backend-приложение (локально) | `backend/app/main.py` (uvicorn) | каркас + auth + Agent Harness реализованы |
 | Backend-приложение (контейнер) | `backend/docker/entrypoint.sh` → uvicorn | миграции + API, healthy |
 | Миграции БД | `backend/alembic/` (`uv run alembic ...`) | 3 миграции: pgvector, users, agent_actions |
-| Прогон тестов backend | `backend/tests/` (pytest) | 47 тестов (1 пропускается без ключа OpenAI) |
+| Прогон тестов backend | `backend/tests/` (pytest) | 50 тестов (1 пропускается без ключа OpenAI) |
 | Frontend dev-сервер | `frontend/` (`npm run dev`) | вход/регистрация через API |
 | Генерация типов API | `frontend/` (`npm run generate:api`, нужен backend) | скрипт готов |
 | Сборка frontend | `npm run build` (tsc + vite) | проходит |
@@ -1016,7 +1070,7 @@ API доступен снаружи по `localhost:${API_PORT}` (по умол�
 
 ## 10. Тесты
 
-**Backend.** `backend/tests/` — 47 тестов на pytest (+ `pytest-asyncio`):
+**Backend.** `backend/tests/` — 50 тестов на pytest (+ `pytest-asyncio`):
 
 - `test_health.py` — `/health` (200 + статус) и `/docs` (200);
 - `test_health_db.py` — `/health/db`: 200 и 503 (два случая: `SQLAlchemyError`, `OSError`)
@@ -1027,10 +1081,11 @@ API доступен снаружи по `localhost:${API_PORT}` (по умол�
   через `httpx2.AsyncClient` + `ASGITransport`;
 - `test_cors.py` — CORS-заголовки и preflight для frontend-origin;
 - `test_llm.py` — MockProvider и фабрика без сети; живой тест OpenAI пропускается без ключа;
-- `test_agent_tools.py` — реестр инструментов и исполнитель: валидация аргументов, ошибки
-  обработчика, таймаут, аудит-записи (без БД);
-- `test_agent_harness.py` — граф LangGraph на мок-LLM: полный цикл с инструментом, лимиты
-  шагов/токенов, таймаут, ошибки LLM и инструмента, продолжение истории по `thread_id`;
+- `test_agent_tools.py` — реестр инструментов и адаптер для LangChain: дубликаты имён, `specs()`,
+  валидация аргументов, дословная JSON Schema, исполнение обработчика, ошибки и таймаут (без БД);
+- `test_agent_deep_harness.py` — основной harness (Deep Agents) на мок-LLM: полный цикл
+  с инструментом и аудитом, передача JSON Schema, лимиты шагов/токенов, таймаут, ошибки LLM
+  и инструмента, продолжение истории по `thread_id`;
 - `test_agent_audit.py` — запись/чтение аудит-лога в реальной БД; пропускается без PostgreSQL.
 
 Запуск: `uv run pytest` из `backend/`. Конфигурация — в `backend/pyproject.toml`
