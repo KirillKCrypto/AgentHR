@@ -1,19 +1,18 @@
-"""Тесты реестра инструментов и исполнителя tool-calls (без БД)."""
+"""Тесты реестра инструментов и адаптера инструментов для LangChain (без БД)."""
 
 import asyncio
+import json
 from typing import Any
 
 import pytest
 
 from app.agent import (
-    InMemoryAuditLogger,
     ToolArgumentsError,
     ToolDefinition,
-    ToolExecutor,
     ToolNotFoundError,
     ToolRegistry,
 )
-from app.llm import ToolCall
+from app.agent.langchain_tools import RegistryTool, build_registry_tools
 
 WEATHER_SCHEMA: dict[str, Any] = {
     "type": "object",
@@ -83,26 +82,24 @@ def test_validate_arguments_rejects_unknown_tool() -> None:
         registry.validate_arguments("unknown", {})
 
 
-async def test_executor_runs_tool_and_logs_success() -> None:
-    audit = InMemoryAuditLogger()
-    executor = ToolExecutor(_registry_with_weather(), audit_logger=audit)
+def test_langchain_tool_exposes_registry_schema() -> None:
+    tools = build_registry_tools(_registry_with_weather(), timeout_seconds=5.0)
 
-    result = await executor.execute(
-        ToolCall(id="call-1", name="get_weather", arguments={"city": "Москва"}),
-        step=1,
-    )
-
-    assert result.status == "success"
-    assert "sunny" in result.content
-    assert len(audit.records) == 1
-    record = audit.records[0]
-    assert record.status == "success"
-    assert record.tool_name == "get_weather"
-    assert record.arguments == {"city": "Москва"}
-    assert record.step == 1
+    assert len(tools) == 1
+    assert isinstance(tools[0], RegistryTool)
+    assert tools[0].name == "get_weather"
+    assert tools[0].tool_call_schema == WEATHER_SCHEMA
 
 
-async def test_executor_rejects_invalid_arguments_without_calling_handler() -> None:
+async def test_langchain_tool_runs_handler() -> None:
+    tool = build_registry_tools(_registry_with_weather(), timeout_seconds=5.0)[0]
+
+    content = await tool.ainvoke({"city": "Москва"})
+
+    assert json.loads(content) == {"city": "Москва", "weather": "sunny"}
+
+
+async def test_langchain_tool_rejects_invalid_arguments_without_calling_handler() -> None:
     called = False
 
     async def handler(city: str) -> str:
@@ -112,21 +109,18 @@ async def test_executor_rejects_invalid_arguments_without_calling_handler() -> N
 
     registry = ToolRegistry()
     registry.register(
-        ToolDefinition(name="strict_tool", description="", parameters=WEATHER_SCHEMA, handler=handler)
+        ToolDefinition(
+            name="strict_tool", description="", parameters=WEATHER_SCHEMA, handler=handler
+        )
     )
-    audit = InMemoryAuditLogger()
-    executor = ToolExecutor(registry, audit_logger=audit)
+    tool = build_registry_tools(registry, timeout_seconds=5.0)[0]
 
-    result = await executor.execute(
-        ToolCall(id="call-1", name="strict_tool", arguments={"nope": 1})
-    )
-
-    assert result.status == "error"
+    with pytest.raises(ToolArgumentsError):
+        await tool.ainvoke({"nope": 1})
     assert not called
-    assert audit.records[0].status == "error"
 
 
-async def test_executor_catches_handler_error() -> None:
+async def test_langchain_tool_propagates_handler_error() -> None:
     async def failing(city: str) -> str:
         raise RuntimeError("boom")
 
@@ -134,17 +128,13 @@ async def test_executor_catches_handler_error() -> None:
     registry.register(
         ToolDefinition(name="failing", description="", parameters=WEATHER_SCHEMA, handler=failing)
     )
-    executor = ToolExecutor(registry)
+    tool = build_registry_tools(registry, timeout_seconds=5.0)[0]
 
-    result = await executor.execute(
-        ToolCall(id="call-1", name="failing", arguments={"city": "X"})
-    )
-
-    assert result.status == "error"
-    assert "boom" in result.content
+    with pytest.raises(RuntimeError, match="boom"):
+        await tool.ainvoke({"city": "X"})
 
 
-async def test_executor_applies_timeout() -> None:
+async def test_langchain_tool_applies_timeout() -> None:
     async def slow(city: str) -> str:
         await asyncio.sleep(1)
         return city
@@ -153,9 +143,7 @@ async def test_executor_applies_timeout() -> None:
     registry.register(
         ToolDefinition(name="slow", description="", parameters=WEATHER_SCHEMA, handler=slow)
     )
-    executor = ToolExecutor(registry, timeout_seconds=0.05)
+    tool = build_registry_tools(registry, timeout_seconds=0.05)[0]
 
-    result = await executor.execute(ToolCall(id="call-1", name="slow", arguments={"city": "X"}))
-
-    assert result.status == "error"
-    assert "Таймаут" in result.content
+    with pytest.raises(TimeoutError, match="Таймаут"):
+        await tool.ainvoke({"city": "X"})
