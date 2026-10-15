@@ -16,9 +16,9 @@
 | `AGENTS.md` | DOCUMENTATION | контекст проекта, план на 8 недель, архитектурные правила |
 | `INDEX.md` | DOCUMENTATION | главная точка входа для ИИ-агентов |
 | `docs/` | DOCUMENTATION | навигационная документация (PROJECT_MAP, ARCHITECTURE) |
-| `backend/` | APPLICATION | FastAPI-каркас (`/health`, `/health/db`, JWT-auth, слой LLM, агентский слой, миграции); Harness-граф — в работе |
+| `backend/` | APPLICATION | FastAPI (`/health`, `/health/db`, JWT-auth, слой LLM, Agent Harness, миграции, тесты) + Dockerfile |
 | `frontend/` | APPLICATION | SPA-каркас: Vite + React 19 + TS, Tailwind 4, shadcn/ui; вход/регистрация через API |
-| `infra/` | INFRASTRUCTURE | работающая локальная БД: PostgreSQL 16 + pgvector |
+| `infra/` | INFRASTRUCTURE | локальная инфраструктура в Docker Compose: PostgreSQL 16 + pgvector и backend API в контейнере |
 | `.gitignore` | CONFIG | исключения git |
 | `.editorconfig` | CONFIG | единый стиль (UTF-8, LF, отступы) |
 | `.gitattributes` | CONFIG | нормализация переводов строк |
@@ -36,9 +36,11 @@ AgentHR/
 ├── INDEX.md
 ├── README.md
 ├── backend/
+│   ├── .dockerignore          (исключения контекста сборки образа)
 │   ├── .env.example
 │   ├── .env                   (локальный, в git не попадает)
 │   ├── .python-version        (пин Python 3.13)
+│   ├── Dockerfile             (образ backend: uv, без dev-зависимостей)
 │   ├── README.md
 │   ├── alembic.ini
 │   ├── alembic/
@@ -85,6 +87,8 @@ AgentHR/
 │   │   └── schemas/
 │   │       ├── __init__.py
 │   │       └── auth.py        (Pydantic-схемы auth)
+│   ├── docker/
+│   │   └── entrypoint.sh      (миграции + uvicorn в контейнере)
 │   ├── pyproject.toml
 │   ├── tests/
 │   │   ├── test_health.py
@@ -146,18 +150,21 @@ AgentHR/
 
 **Role:** INFRASTRUCTURE / DEPLOYMENT
 
-**Назначение:** локальная инфраструктура разработки — один сервис: PostgreSQL 16 с расширением
-pgvector.
+**Назначение:** локальная инфраструктура разработки — два сервиса: `postgres` (PostgreSQL 16
++ pgvector) и `api` (backend-приложение в контейнере, образ собирается из `backend/Dockerfile`).
 
 **Содержит:** `docker-compose.yml`, `.env.example`, `.env` (локальный), `README.md`.
 
-**Зависит от:** Docker Desktop; значений переменных из `infra/.env`.
+**Зависит от:** Docker Desktop; `backend/Dockerfile` (для сервиса `api`); значений переменных
+из `infra/.env` (в том числе `API_PORT`, `LLM_*`, `JWT_SECRET_KEY` — передаются в контейнер API).
 
-**Используется:** разработчиками (команды `docker compose`); backend подключается к БД
-по `localhost:${POSTGRES_PORT}` (`DATABASE_URL`).
+**Используется:** разработчиками (команды `docker compose`); backend-приложение обращается
+к БД внутри compose-сети по имени сервиса (`postgres:5432`), снаружи БД доступна
+по `localhost:${POSTGRES_PORT}` (для локального запуска backend и инструментов).
 
 **Важно:** данные хранятся в named volume `agenthr_postgres_data`; удаляются только
-`docker compose down -v`.
+`docker compose down -v`. Порт `POSTGRES_PORT` может занимать другой проект
+(например, стек Airflow) — при конфликте освободить порт или сменить значение.
 
 ### `backend/`
 
@@ -228,14 +235,16 @@ AI-агента и его Tools, граф знаний, план на 8 неде
 
 **Role:** DEPLOYMENT
 
-**Responsibility:** описывает единственный сервис `postgres` (проект `agenthr`):
-образ `pgvector/pgvector:pg16`, контейнер `agenthr-postgres`, `restart: unless-stopped`,
-переменные окружения из `.env`, порт `${POSTGRES_PORT}:5432`, volume `postgres_data`,
-healthcheck (`pg_isready`, интервал 5 с, 10 попыток).
+**Responsibility:** описывает два сервиса проекта `agenthr`: `postgres` (образ
+`pgvector/pgvector:pg16`, контейнер `agenthr-postgres`, порт `${POSTGRES_PORT}:5432`, volume
+`postgres_data`, healthcheck `pg_isready`) и `api` (сборка из `../backend`, контейнер
+`agenthr-api`, порт `${API_PORT:-8000}:8000`, `depends_on` healthy-БД, `DATABASE_URL`
+на `postgres:5432`, healthcheck через `/health`).
 
-**Depends on:** `infra/.env` (подстановка переменных), Docker Desktop.
+**Depends on:** `infra/.env` (подстановка переменных), Docker Desktop, `backend/Dockerfile`.
 
-**Used by:** локальный запуск БД для всей команды; backend (подключение к БД).
+**Used by:** локальный запуск БД и API для всей команды; frontend обращается к API
+по `localhost:${API_PORT}`.
 
 **Important:** изменение порта/volume/healthcheck затрагивает `infra/.env`, `infra/README.md`
 и `DATABASE_URL` в `backend/.env`. `docker compose down -v` удаляет данные.
@@ -253,6 +262,35 @@ healthcheck (`pg_isready`, интервал 5 с, 10 попыток).
 
 **Important:** реальный `.env` не коммитится (см. `.gitignore`). Значения из файла в документации
 не приводятся (кроме дефолтов шаблона, предназначенного для локальной разработки).
+
+#### `backend/Dockerfile`
+
+**Role:** DEPLOYMENT
+
+**Responsibility:** образ backend-приложения: `python:3.13-slim`, uv зафиксированной версии
+(из `ghcr.io/astral-sh/uv`), зависимости из `uv.lock` (`uv sync --frozen --no-dev`), код
+и миграции внутри образа, `ENTRYPOINT /app/docker/entrypoint.sh`, `EXPOSE 8000`.
+
+**Depends on:** `backend/pyproject.toml`, `backend/uv.lock`, `backend/docker/entrypoint.sh`.
+
+**Used by:** сервис `api` в `infra/docker-compose.yml`.
+
+**Important:** dev-зависимости (тесты, ruff) в образ не входят; после изменения кода нужна
+пересборка (`docker compose up -d --build`).
+
+#### `backend/docker/entrypoint.sh`
+
+**Role:** DEPLOYMENT
+
+**Responsibility:** запуск backend в контейнере: `alembic upgrade head`, затем
+`uvicorn app.main:app --host 0.0.0.0 --port 8000` (число воркеров — `UVICORN_WORKERS`).
+
+**Depends on:** `backend/alembic/`, `backend/app/`.
+
+**Used by:** `backend/Dockerfile` (`ENTRYPOINT`).
+
+**Important:** миграции применяются автоматически при старте контейнера; неудачная миграция
+останавливает контейнер, а не поднимает приложение с устаревшей схемой.
 
 #### `backend/app/main.py`
 
@@ -837,12 +875,16 @@ src/main.tsx ──▶ QueryClientProvider + BrowserRouter
 Текущие инфраструктурные связи:
 
 ```text
-infra/.env ──(подстановка ${...})──▶ infra/docker-compose.yml ──(запускает)──▶ контейнер agenthr-postgres
-                                                                                       │
-                                                                             named volume postgres_data
-```
+infra/.env ──(подстановка ${...})──▶ infra/docker-compose.yml
+                                        ├──(запускает)──▶ контейнер agenthr-postgres
+                                        │                        │ named volume postgres_data
+                                        └──(собирает backend/Dockerfile)──▶ контейнер agenthr-api
+                                                                                 │
+                                                              DATABASE_URL ──▶ postgres:5432 (внутри сети)
 
-Backend подключается к БД по `localhost:${POSTGRES_PORT}` (порт на хосте, по умолчанию `5433`).
+Backend подключается к БД по `localhost:${POSTGRES_PORT}` (порт на хосте, по умолчанию `5433`) —
+при локальном запуске; в контейнере `api` — по имени сервиса `postgres:5432` внутри compose-сети.
+API доступен снаружи по `localhost:${API_PORT}` (по умолчанию `8000`).
 
 **План** ([`AGENTS.md`](../AGENTS.md) §2): `Frontend → Backend API → Agent Harness → Tools →
 БД / граф знаний / vector store`. Прямой доступ LLM к данным запрещён — только через Tools (§2.3).
@@ -854,8 +896,9 @@ Backend подключается к БД по `localhost:${POSTGRES_PORT}` (по
 
 | Точка входа | Файл | Статус |
 |---|---|---|
-| Запуск инфраструктуры | `infra/docker-compose.yml` | реализовано |
-| Backend-приложение | `backend/app/main.py` (uvicorn) | каркас + auth реализованы |
+| Запуск инфраструктуры и API | `infra/docker-compose.yml` (сервисы `postgres`, `api`) | реализовано |
+| Backend-приложение (локально) | `backend/app/main.py` (uvicorn) | каркас + auth + Agent Harness реализованы |
+| Backend-приложение (контейнер) | `backend/docker/entrypoint.sh` → uvicorn | миграции + API, healthy |
 | Миграции БД | `backend/alembic/` (`uv run alembic ...`) | 3 миграции: pgvector, users, agent_actions |
 | Прогон тестов backend | `backend/tests/` (pytest) | 47 тестов (1 пропускается без ключа OpenAI) |
 | Frontend dev-сервер | `frontend/` (`npm run dev`) | вход/регистрация через API |
@@ -874,6 +917,12 @@ Backend подключается к БД по `localhost:${POSTGRES_PORT}` (по
 | `POSTGRES_PASSWORD` | пароль | да |
 | `POSTGRES_DB` | имя базы, создаваемой при инициализации | нет |
 | `POSTGRES_PORT` | порт БД на хосте (по умолчанию `5433`; 5432 часто занят локальным PostgreSQL) | нет |
+| `API_PORT` | порт API-контейнера на хосте (по умолчанию `8000`) | нет |
+| `JWT_SECRET_KEY` | секрет JWT для контейнера API (пусто → dev-дефолт кода) | да |
+| `LLM_PROVIDER` | провайдер LLM в контейнере: `mock` (по умолчанию) или `openai` | нет |
+| `OPENAI_API_KEY` | ключ OpenAI для контейнера API | да |
+| `OPENAI_MODEL` | модель OpenAI для контейнера API | нет |
+| `CORS_ORIGINS` | браузерные источники (JSON-массив) для контейнера API | нет |
 
 ### `backend/.env.example` (и локальный `backend/.env`)
 
@@ -919,7 +968,7 @@ Backend подключается к БД по `localhost:${POSTGRES_PORT}` (по
 
 ### Отсутствуют (План)
 
-`Dockerfile` приложений, CI-конфигурация — появятся вместе с кодом.
+`Dockerfile` frontend и CI-конфигурация — появятся вместе с кодом (`backend/Dockerfile` уже есть).
 
 ---
 
@@ -1003,7 +1052,8 @@ Backend подключается к БД по `localhost:${POSTGRES_PORT}` (по
   `uv run ruff`, `uv run alembic upgrade head`).
 - **Frontend:** npm-скрипты в `frontend/package.json` — `dev`, `build` (`tsc -b && vite build`),
   `lint` (oxlint), `preview`, `generate:api` (типы из OpenAPI, нужен запущенный backend).
-- **Инфраструктура:** команды `docker compose` из [`infra/README.md`](../infra/README.md).
+- **Инфраструктура:** команды `docker compose` из [`infra/README.md`](../infra/README.md)
+  (подъём БД и API — `docker compose up -d`, пересборка образа API — `docker compose up -d --build`).
 
 ---
 

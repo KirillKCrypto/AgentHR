@@ -4,7 +4,7 @@ Backend-приложение AgentHR на FastAPI. Реализованы: ка�
 JWT-аутентификация, слой LLM (mock/OpenAI), подключение к БД, модель User и миграции.
 
 Стек: Python 3.13, FastAPI, SQLAlchemy 2 (async) + asyncpg, Alembic, PyJWT, pwdlib (argon2),
-openai, LangGraph (план).
+openai, LangGraph. Образ контейнера — `python:3.13-slim` + uv.
 
 ## Запуск
 
@@ -14,6 +14,21 @@ Copy-Item .env.example .env              # один раз, локальные �
 uv run alembic upgrade head              # применить миграции (нужна запущенная БД из infra/)
 uv run uvicorn app.main:app --reload     # http://127.0.0.1:8000, документация — /docs
 ```
+
+## Запуск в контейнере
+
+```powershell
+cd ../infra
+docker compose up -d --build    # agenthr-api на http://127.0.0.1:8000
+```
+
+- Образ — `backend/Dockerfile`: `python:3.13-slim` + uv, зависимости из `uv.lock`
+  (`uv sync --frozen --no-dev`).
+- `docker/entrypoint.sh` при старте применяет миграции (`alembic upgrade head`) и запускает
+  uvicorn на `0.0.0.0:8000`.
+- Настройки контейнера — в `infra/.env`; `DATABASE_URL` внутри compose-сети указывает на
+  `postgres:5432` (задаётся в `infra/docker-compose.yml`).
+- Тесты и ruff в образ не входят (dev-зависимости) — запускайте их локально через `uv run`.
 
 ## Эндпоинты
 
@@ -63,6 +78,8 @@ URL БД берётся из настроек (`backend/.env`, переменн�
 - `app/core/security.py` — argon2-хеши паролей, выпуск/проверка JWT
 - `app/agent/` — реестр Tools (JSON Schema), исполнитель tool-calls, аудит-логгер,
   граф LangGraph (`harness.py`)
+- `Dockerfile` — образ backend (uv, без dev-зависимостей)
+- `docker/entrypoint.sh` — старт контейнера: `alembic upgrade head` → uvicorn
 - `app/db/session.py` — async-движок, фабрика сессий, зависимость `get_db`
 - `app/db/base.py` — базовый класс моделей (`Base`)
 - `app/llm/` — слой LLM: `base.py` (интерфейс), `mock.py`, `openai.py`, `factory.py`

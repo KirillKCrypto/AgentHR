@@ -42,7 +42,7 @@ LLM + Agent Harness + Tool Calling + Knowledge Graph + Persistent Memory + Adapt
 
 - `backend/` — FastAPI-приложение, Agent Harness и инструменты
 - `frontend/` — React SPA
-- `infra/` — Docker Compose и окружение разработки
+- `infra/` — Docker Compose: PostgreSQL 16 + pgvector и backend API
 
 ## Документация
 
@@ -51,6 +51,8 @@ LLM + Agent Harness + Tool Calling + Knowledge Graph + Persistent Memory + Adapt
 
 ## Статус
 
-Проект в разработке. M0 «Фундамент» (неделя 1) закрыт: инфраструктура, база данных,
-аутентификация, слой LLM и frontend со входом через UI. Для живого ответа LLM нужен ключ OpenAI.
-Дальше — неделя 2: Agent Harness.
+Проект в разработке. M0 «Фундамент» (неделя 1) и M1 «Agent Harness» (неделя 2) закрыты:
+инфраструктура (PostgreSQL + pgvector и backend API в Docker Compose), база данных,
+аутентификация, слой LLM, Agent Harness (граф LangGraph с лимитами и аудитом в `agent_actions`),
+frontend со входом через UI. Для живого ответа LLM нужен ключ OpenAI.
+Дальше — M2: вакансии/резюме → профиль знаний.

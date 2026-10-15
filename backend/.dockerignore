@@ -1,0 +1,14 @@
+# Контекст сборки backend-образа — только то, что нужно внутри контейнера.
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+.env
+*.log
+# Тесты и dev-зависимости (uv sync --no-dev) в образ не входят
+tests/
+# Документация образа не требует
+README.md
+Dockerfile
+.dockerignore

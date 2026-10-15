@@ -49,7 +49,9 @@ mock). CORS разрешает запросы с dev-сервера frontend.
    │                                     postgres_data (данные переживают перезапуск)
    │                                         ▲
    │                                         │ asyncpg
-   ├── uv run uvicorn app.main:app (backend/) ──▶ FastAPI (backend/app)
+   ├── docker compose up -d (infra/) ──▶ agenthr-api (образ из backend/Dockerfile) ──▶ FastAPI (backend/app)
+   │        (альтернатива: uv run uvicorn app.main:app в backend/ — локальный запуск)
+   │                                                 - entrypoint контейнера: alembic upgrade head → uvicorn
    │                                                 - GET /health, /health/db
    │                                                 - POST /auth/register, /auth/login, /auth/refresh
    │                                                 - GET /me (Bearer access)
@@ -93,19 +95,22 @@ Backend API (FastAPI)          ← auth, бизнес-логика, владел
 
 **Location:** `infra/`
 
-**Ответственность:** предоставить локальную БД для разработки и backend.
+**Ответственность:** предоставить локальные БД и API для разработки.
 
-**Основные компоненты:** `docker-compose.yml` (сервис `postgres`), `.env.example` / `.env`
-(параметры подключения), `README.md` (инструкции).
+**Основные компоненты:** `docker-compose.yml` (сервисы `postgres` и `api`), `.env.example` /
+`.env` (параметры подключения и настройки API), `README.md` (инструкции); образ API собирается
+из `backend/Dockerfile`.
 
-**Зависимости:** Docker Desktop; внешних сервисов нет.
+**Зависимости:** Docker Desktop; `backend/Dockerfile` для сервиса `api`; внешних сервисов нет.
 
-**Потребители:** разработчики; backend (подключение к `localhost:${POSTGRES_PORT}`).
+**Потребители:** разработчики; backend (в контейнере — через `postgres:5432`, локально —
+через `localhost:${POSTGRES_PORT}`); frontend (API по `localhost:${API_PORT}`).
 
 **Ограничения:** данные в named volume; удаление — только `docker compose down -v`; порт на хосте
-по умолчанию `5433` (5432 часто занят локальным PostgreSQL).
+по умолчанию `5433` (5432 часто занят локальным PostgreSQL) и может конфликтовать с другими
+проектами Docker; образ API пересобирается после изменения кода (`up -d --build`).
 
-### Backend (каркас, auth и слой LLM реализованы)
+### Backend (каркас, auth, слой LLM и Agent Harness реализованы)
 
 **Location:** `backend/`
 
@@ -116,13 +121,14 @@ Backend API (FastAPI)          ← auth, бизнес-логика, владел
 и структурированный вывод по JSON Schema; фабрика по `LLM_PROVIDER`), настройки
 `app/core/config.py` (pydantic-settings), слой БД `app/db/` (async-движок, фабрика сессий,
 `get_db`, `Base`), модель `User` (`app/models/`), схемы (`app/schemas/`), миграции Alembic
-(`alembic/`), тесты `tests/`.
+(`alembic/`), тесты `tests/`; контейнеризация — `backend/Dockerfile` и
+`backend/docker/entrypoint.sh` (миграции применяются при старте контейнера).
 
 **Ответственность по плану:** остальные модели и схема БД, доменные REST API, сервисный слой,
 запуск агентских сессий, трансляция стрима; владелец БД ([`AGENTS.md`](../AGENTS.md) §2.2).
 
 **Стек:** Python 3.13, FastAPI, SQLAlchemy 2 (async) + asyncpg, Alembic, PyJWT, pwdlib (argon2),
-openai, LangGraph (план).
+openai, LangGraph; образ — `python:3.13-slim` + uv.
 
 ### Frontend (каркас и вход через API реализованы)
 
@@ -269,6 +275,12 @@ Frontend и backend связаны по REST (CORS-разрешение для d
 | `POSTGRES_PASSWORD` | пароль | да |
 | `POSTGRES_DB` | имя базы, создаваемой при инициализации | нет |
 | `POSTGRES_PORT` | порт БД на хосте (по умолчанию `5433`) | нет |
+| `API_PORT` | порт API-контейнера на хосте (по умолчанию `8000`) | нет |
+| `JWT_SECRET_KEY` | секрет JWT для контейнера API (пусто → dev-дефолт кода) | да |
+| `LLM_PROVIDER` | провайдер LLM в контейнере (`mock` по умолчанию) | нет |
+| `OPENAI_API_KEY` | ключ OpenAI для контейнера API | да |
+| `OPENAI_MODEL` | модель OpenAI для контейнера API | нет |
+| `CORS_ORIGINS` | браузерные источники (JSON-массив) для контейнера API | нет |
 
 **Backend** — `backend/.env` (копия `backend/.env.example`):
 
@@ -388,15 +400,19 @@ e2e, тесты адаптивности на синтетических пол�
 
 ## 14. Сборка и запуск
 
-**Факт.** Инфраструктура (из [`infra/README.md`](../infra/README.md)):
+**Факт.** Инфраструктура (из [`infra/README.md`](../infra/README.md)): `docker compose up -d`
+поднимает БД `agenthr-postgres` и API `agenthr-api` (образ собирается из `backend/Dockerfile`);
+entrypoint контейнера сам применяет миграции.
 
 ```powershell
 cd infra
-Copy-Item .env.example .env   # один раз
-docker compose up -d          # запуск БД
-docker compose ps             # проверка статуса (healthy)
-docker compose down           # остановка (данные сохраняются)
-docker compose down -v        # остановка + удаление данных
+Copy-Item .env.example .env       # один раз
+docker compose up -d              # БД + API (первый раз соберёт образ)
+docker compose up -d --build      # после изменений кода backend
+docker compose ps                 # статус (healthy)
+docker compose logs -f api        # логи API (миграции + uvicorn)
+docker compose down               # остановка (данные сохраняются)
+docker compose down -v            # остановка + удаление данных
 ```
 
 Backend (из [`backend/README.md`](../backend/README.md)):
@@ -422,8 +438,9 @@ npm run lint             # oxlint
 npm run generate:api     # обновить типы из OpenAPI (нужен запущенный backend)
 ```
 
-Миграции применяются вручную (`alembic upgrade head`); автоматического применения при старте
-приложения нет. Dockerfile приложений и CI нет. Платформа разработки — Windows + Docker Desktop + uv + Node.js.
+При локальном запуске backend миграции применяются вручную (`alembic upgrade head`);
+в контейнере `api` — автоматически на старте. `Dockerfile` backend есть, `Dockerfile` frontend
+и CI отсутствуют. Платформа разработки — Windows + Docker Desktop + uv + Node.js.
 
 ---
 
@@ -450,9 +467,12 @@ npm run generate:api     # обновить типы из OpenAPI (нужен з
 - **Порт БД.** 5432 часто занят локальным PostgreSQL; проект использует 5433. При смене порта
   синхронизировать `infra/.env` и `DATABASE_URL` в `backend/.env`.
 - **Зависимость от Docker Desktop.** При выключенном движке команды `docker compose` не работают,
-  а `/health/db` отвечает 503.
-- **Миграции вручную.** Автоприменения миграций при старте нет — перед запуском нужен
-  `alembic upgrade head`.
+  контейнеры `agenthr-postgres` и `agenthr-api` недоступны, а `/health/db` отвечает 503.
+- **Конфликт портов с другими проектами.** `5433` (БД) и `8000` (API) — общие для машины;
+  другие compose-проекты могут их занимать (встречалось со стеком Airflow). При конфликте
+  освободить порт или изменить `POSTGRES_PORT` / `API_PORT` в `infra/.env`.
+- **Миграции.** Локальный запуск требует `alembic upgrade head` вручную; в контейнере `api`
+  миграции применяются entrypoint'ом на старте (неудачная миграция останавливает контейнер).
 - **Аутентификация MVP.** Refresh-токены stateless (отозвать до истечения нельзя); токены
   в `localStorage` (XSS-риск, принятый для MVP); refresh-механика в UI не используется;
   dev-дефолт `JWT_SECRET_KEY` нельзя использовать в продакшене.

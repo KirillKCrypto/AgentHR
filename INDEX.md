@@ -31,21 +31,24 @@ AgentHR — интеллектуальная агентская система �
 
 ## 2. Быстрый старт
 
-Запускаются три компонента: база данных, backend (FastAPI) и frontend (Vite). Требования:
-Docker Desktop с запущенным движком, [uv](https://docs.astral.sh/uv/), Node.js 20+.
+Запускаются: база данных и backend (FastAPI) — в Docker Compose (`infra/`) или локально,
+и frontend (Vite). Требования: Docker Desktop с запущенным движком,
+[uv](https://docs.astral.sh/uv/), Node.js 20+.
 
-**1. База данных** (`infra/`):
+**1. БД и backend в Docker** (`infra/`, предпочтительно):
 
 ```powershell
 cd infra
 Copy-Item .env.example .env   # один раз: локальные креды, в git не попадают
-docker compose up -d
-docker compose ps             # agenthr-postgres должен перейти в healthy
+docker compose up -d          # agenthr-postgres + agenthr-api (первый раз соберёт образ)
+docker compose ps             # оба контейнера должны быть healthy
 ```
 
-Проверка БД и расширения `vector`, остановка — команды в [`infra/README.md`](infra/README.md).
+Контейнер `api` при старте сам применяет миграции и слушает `http://127.0.0.1:8000`
+(+ `/docs`). После изменения кода backend — пересборка: `docker compose up -d --build`.
+Проверка БД, логи и остановка — команды в [`infra/README.md`](infra/README.md).
 
-**2. Backend** (`backend/`):
+**2. Backend локально** (альтернатива контейнеру, нужна запущенная БД):
 
 ```powershell
 cd backend
@@ -57,7 +60,8 @@ uv run pytest                                 # тесты
 ```
 
 По умолчанию `LLM_PROVIDER=mock` — сеть не нужна. Для реального вызова задайте
-`LLM_PROVIDER=openai`, `OPENAI_API_KEY`, `OPENAI_MODEL` в `backend/.env`.
+`LLM_PROVIDER=openai`, `OPENAI_API_KEY`, `OPENAI_MODEL` (в `backend/.env` при локальном запуске
+или в `infra/.env` для контейнера).
 
 **3. Frontend** (`frontend/`, нужен запущенный backend):
 
@@ -79,10 +83,10 @@ AgentHR/
 ├── docs/                — навигационная документация
 │   ├── PROJECT_MAP.md   — карта каталогов и файлов
 │   └── ARCHITECTURE.md  — архитектура и связи компонентов
-├── infra/               — РЕАЛИЗОВАНО: PostgreSQL 16 + pgvector в Docker Compose
-│   ├── docker-compose.yml
+├── infra/               — РЕАЛИЗОВАНО: PostgreSQL 16 + pgvector и backend API в Docker Compose
+│   ├── docker-compose.yml — сервисы postgres и api
 │   ├── .env.example     — шаблон окружения (.env — локальный, в git не попадает)
-│   └── README.md        — запуск и проверка БД
+│   └── README.md        — запуск, проверка БД, логи API
 ├── backend/             — КАРКАС: FastAPI, JWT-auth, слой LLM, модель User, БД-сессия, Alembic
 │   ├── app/
 │   │   ├── main.py      — точка входа FastAPI (CORS, роутеры, /health, /health/db)
@@ -95,6 +99,8 @@ AgentHR/
 │   │   └── schemas/     — Pydantic-схемы (auth.py)
 │   ├── alembic/         — миграции (async; pgvector, users, agent_actions)
 │   ├── alembic.ini      — конфигурация Alembic
+│   ├── docker/          — entrypoint.sh (миграции + uvicorn в контейнере)
+│   ├── Dockerfile       — образ backend (uv, без dev-зависимостей)
 │   ├── tests/           — тесты (pytest)
 │   ├── pyproject.toml   — зависимости и конфигурация инструментов (uv)
 │   ├── uv.lock          — зафиксированные версии (генерируется, коммитится)
@@ -123,8 +129,10 @@ AgentHR/
 
 **Path:** `infra/`
 
-Локальная база данных для всей разработки: PostgreSQL 16 с расширением pgvector, healthcheck,
-именованный volume. Параметры подключения — через `infra/.env` (порт на хосте по умолчанию `5433`).
+Локальная инфраструктура для всей разработки: PostgreSQL 16 с расширением pgvector и backend API
+в контейнере (образ из `backend/Dockerfile`; миграции применяются автоматически при старте).
+Контейнеры — `agenthr-postgres` (порт на хосте `5433`) и `agenthr-api` (порт `8000`), оба
+с healthcheck; данные БД — в именованном volume. Параметры — через `infra/.env`.
 
 Подробнее: [`docs/PROJECT_MAP.md`](docs/PROJECT_MAP.md) → раздел `infra/`;
 [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) → «Слой данных».
@@ -185,7 +193,9 @@ loading/error, сохранение токенов (`src/lib/tokens.ts`), ред
    ├── docker compose up -d (infra/) ──▶ agenthr-postgres (PostgreSQL 16 + pgvector)
    │                                         │ named volume postgres_data
    │                                         ▼ данные переживают перезапуск
-   ├── uv run uvicorn app.main:app (backend/) ──▶ FastAPI (backend/app)
+   ├── docker compose up -d (infra/) ──▶ agenthr-api (образ из backend/Dockerfile)
+   │        (альтернатива: uv run uvicorn app.main:app в backend/ — локальный запуск)
+   │                                                 - entrypoint: alembic upgrade head → uvicorn
    │                                                 - GET /health, /health/db
    │                                                 - POST /auth/register, /auth/login, /auth/refresh
    │                                                 - GET /me (Bearer access-токен)
@@ -199,7 +209,8 @@ loading/error, сохранение токенов (`src/lib/tokens.ts`), ред
                                      - токены в localStorage
 ```
 
-Backend подключается к БД по `localhost:5433` (asyncpg; пароли — argon2id-хеши, токены — JWT).
+Backend подключается к БД по `localhost:5433` (локальный запуск) или `postgres:5432`
+(в контейнере) — asyncpg; пароли — argon2id-хеши, токены — JWT.
 LLM по умолчанию — mock (сеть не нужна); OpenAI включается настройками.
 
 **Целевая архитектура (план, не реализована)** — [`AGENTS.md`](AGENTS.md) §2:
@@ -226,8 +237,8 @@ Backend API (FastAPI)
 
 | Точка входа | Роль | Статус |
 |---|---|---|
-| `infra/docker-compose.yml` | запуск БД и инфраструктуры | реализовано |
-| `backend/app/main.py` (запуск: `uvicorn app.main:app`) | основной сервер приложения | каркас + auth реализованы |
+| `infra/docker-compose.yml` | запуск инфраструктуры: БД `agenthr-postgres` и API `agenthr-api` | реализовано |
+| `backend/app/main.py` (uvicorn; в контейнере — `backend/docker/entrypoint.sh`) | основной сервер приложения | каркас + auth + Agent Harness реализованы |
 | `backend/alembic/` (запуск: `uv run alembic upgrade head`) | миграции схемы БД | 3 миграции: pgvector, users, agent_actions |
 | Тесты: `backend/tests/` (`uv run pytest`) | прогон тестов | 47 тестов (1 пропускается без ключа OpenAI) |
 | `frontend/` (запуск: `npm run dev`) | SPA-разработка | вход/регистрация через API |
@@ -258,9 +269,11 @@ Backend API (FastAPI)
 | `frontend/src/lib/tokens.ts` | сохранение/очистка токенов (localStorage) |
 | `frontend/src/components/ui/` | компоненты shadcn/ui (Button, Card, Input, Label) |
 | `frontend/package.json` | зависимости frontend (зафиксированные версии) и скрипты |
-| `infra/docker-compose.yml` | описание контейнера с БД |
-| `infra/.env.example` | шаблон локального окружения (креды, порт) |
-| `infra/README.md` | команды запуска/проверки/остановки БД |
+| `infra/docker-compose.yml` | описание контейнеров: БД `agenthr-postgres` и API `agenthr-api` |
+| `backend/Dockerfile` | образ backend-приложения (uv, без dev-зависимостей) |
+| `backend/docker/entrypoint.sh` | старт контейнера API: миграции → uvicorn |
+| `infra/.env.example` | шаблон локального окружения (креды БД, порт `5433`, порт API, LLM-настройки) |
+| `infra/README.md` | команды запуска/проверки/остановки БД и API |
 | `.gitignore` | исключения git (`.env`, `.venv`, `node_modules` и др.) |
 | `backend/README.md`, `frontend/README.md` | README подсистем |
 
@@ -285,8 +298,12 @@ INDEX.md                    — главная точка входа (этот �
 
 - **`AGENTS.md`** — источник правил и плана. При изменениях проверять согласованность
   `INDEX.md` / `docs/PROJECT_MAP.md` / `docs/ARCHITECTURE.md` и что план не выдан за факт.
-- **`infra/docker-compose.yml`** — от него зависит БД всей команды. Изменение порта, volume или
-  healthcheck затрагивает: `infra/.env`, `infra/README.md`, настройки backend (`DATABASE_URL`).
+- **`infra/docker-compose.yml`** — от него зависят БД и API всей команды. Изменение портов
+  (`POSTGRES_PORT`, `API_PORT`), volume или healthcheck затрагивает: `infra/.env`,
+  `infra/README.md`, настройки backend (`DATABASE_URL`), адрес API для frontend.
+- **`backend/Dockerfile` / `backend/docker/entrypoint.sh`** — образ и старт API в контейнере.
+  Entrypoint отвечает за применение миграций при запуске; после правок кода нужна пересборка
+  (`docker compose up -d --build`).
 - **`backend/app/core/config.py`** — настройки backend. При добавлении переменных обновлять
   `backend/.env.example`; секреты — только через локальный `.env`.
 - **`backend/app/core/security.py`** — хеширование и токены. Смена формата claims/TTL затрагивает
@@ -366,6 +383,7 @@ INDEX.md                    — главная точка входа (этот �
 | Вопрос | Ответ |
 |---|---|
 | Где инфраструктура / запуск БД? | `infra/` → [`infra/README.md`](infra/README.md) |
+| Где запуск API в Docker? | `infra/docker-compose.yml` (сервис `api`) + `backend/Dockerfile` и `backend/docker/entrypoint.sh` |
 | Где API? | Роутеры — `backend/app/api/routes/` (auth, users); health — `backend/app/main.py`; остальное — план ([`AGENTS.md`](AGENTS.md) §2–3) |
 | Где аутентификация? | Backend: `backend/app/core/security.py` + `backend/app/api/deps.py`; frontend: `frontend/src/pages/LoginPage.tsx` + `frontend/src/lib/tokens.ts` |
 | Где LLM-слой? | `backend/app/llm/` (`base.py` — интерфейс, `mock.py` / `openai.py` — реализации, `factory.py` — выбор по `LLM_PROVIDER`) |
