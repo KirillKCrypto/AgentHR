@@ -78,6 +78,12 @@ AgentHR/
 │   │   │   ├── __init__.py
 │   │   │   ├── base.py        (Base для моделей)
 │   │   │   └── session.py     (async-движок, get_db)
+│   │   ├── embeddings/
+│   │   │   ├── __init__.py    (реэкспорт слоя эмбеддингов)
+│   │   │   ├── base.py        (EmbeddingProvider, косинусная близость, заглушка)
+│   │   │   ├── factory.py     (выбор провайдера по настройкам)
+│   │   │   ├── local.py       (локальная ONNX-модель через fastembed)
+│   │   │   └── mock.py        (детерминированный провайдер для тестов)
 │   │   ├── llm/
 │   │   │   ├── __init__.py    (реэкспорт интерфейса и реализаций)
 │   │   │   ├── base.py        (типы и Protocol LLMProvider)
@@ -97,9 +103,15 @@ AgentHR/
 │   │   │   ├── graph.py       (циклы, топологический порядок, пререквизиты)
 │   │   │   ├── seed.py        (идемпотентный сид + CLI)
 │   │   │   └── topics.py      (онтология v1: 8 тем, алиасы, зависимости)
-│   │   └── schemas/
-│   │       ├── __init__.py
-│   │       └── auth.py        (Pydantic-схемы auth)
+│   │   ├── schemas/
+│   │   │   ├── __init__.py
+│   │   │   └── auth.py        (Pydantic-схемы auth)
+│   │   └── services/
+│   │       ├── __init__.py    (реэкспорт сервисного слоя)
+│   │       ├── analysis.py    (извлечение навыков вакансии и резюме)
+│   │       ├── evaluation.py  (precision / recall / F1)
+│   │       ├── normalization.py (сопоставление навыка с темой онтологии)
+│   │       └── topics.py      (индекс тем из БД и из пакета онтологии)
 │   ├── docker/
 │   │   └── entrypoint.sh      (миграции + uvicorn в контейнере)
 │   ├── pyproject.toml
@@ -115,7 +127,17 @@ AgentHR/
 │   │   ├── test_agent_audit.py
 │   │   ├── test_ontology.py
 │   │   ├── test_ontology_graph.py
-│   │   └── test_ontology_seed.py
+│   │   ├── test_ontology_seed.py
+│   │   ├── test_analysis.py
+│   │   ├── test_embeddings.py
+│   │   ├── test_embeddings_local.py
+│   │   ├── test_extraction_golden.py
+│   │   ├── test_normalization.py
+│   │   └── fixtures/
+│   │       ├── __init__.py
+│   │       └── extraction_golden.py (golden-набор извлечения навыков)
+│   ├── scripts/
+│   │   └── eval_extraction.py     (eval качества извлечения на живой модели)
 │   └── uv.lock                (генерируется, коммитится)
 ├── docs/
 │   ├── ARCHITECTURE.md
@@ -194,13 +216,14 @@ v1 с сидом (`app/ontology/`), настройки (`app/core/config.py`), �
 (`app/models/`: пользователь, аудит-лог, граф знаний, документы, срез профиля), миграции
 (`alembic/`), тесты (`tests/`), зависимости через uv.
 
-**Цель по плану:** сервисный слой анализа (извлечение и нормализация навыков), доменные
-REST API, агентские tools поверх этих функций.
+**Цель по плану:** доменные REST API и агентские tools поверх сервисного слоя
+(извлечение, нормализация, gap-анализ).
 Источники: `backend/README.md`, [`AGENTS.md`](../AGENTS.md) §2–3, §6.
 
-**Содержит сейчас:** `app/` (agent, api, core, db, llm, models, ontology, schemas), `alembic/`,
-`alembic.ini`, `tests/`, `pyproject.toml`, `uv.lock`, `.env.example`, `.python-version`, `README.md`.
-Доменных сервисов и REST API пока нет.
+**Содержит сейчас:** `app/` (agent, api, core, db, embeddings, llm, models, ontology, schemas,
+services), `alembic/`, `alembic.ini`, `scripts/`, `tests/`, `pyproject.toml`, `uv.lock`,
+`.env.example`, `.python-version`, `README.md`.
+Доменных REST API пока нет; сервисный слой (извлечение и нормализация) — готов.
 
 ### `frontend/`
 
@@ -974,6 +997,91 @@ Tailwind 4, shadcn/ui: Base UI, lucide, cn, cva), скрипты `dev` / `build`
 **Important:** повторный запуск не меняет количество строк — сид можно гонять в контейнере
 и в тестах.
 
+#### `backend/app/services/analysis.py`
+
+**Role:** SERVICE (извлечение навыков)
+
+**Responsibility:** `extract_vacancy_requirements` и `extract_resume_skills` — извлечение
+требований вакансии и навыков резюме через структурированный вывод LLM (жёсткая JSON Schema,
+совместимая со `strict`-режимом OpenAI). Значения вне 0..100 обрезаются, навыки без названия
+отбрасываются, пустой текст — понятная ошибка.
+
+**Depends on:** `backend/app/llm/base.py`.
+
+**Used by:** агентские tools (спринт C), REST API профиля, `backend/scripts/eval_extraction.py`.
+
+**Important:** сервисный слой не обращается к БД — доступ к данным у агента остаётся
+только через инструменты.
+
+#### `backend/app/services/normalization.py`
+
+**Role:** SERVICE (нормализация)
+
+**Responsibility:** сопоставление навыка с темой онтологии в четыре шага: `exact` → `alias` →
+нечёткое совпадение (SequenceMatcher) → косинусная близость (`embedding`). Нормализация
+имени учитывает регистр, пунктуацию и кириллические омоглифы («ООП» = «OOP»).
+`TopicMatch` фиксирует тему, способ и оценку совпадения.
+
+**Depends on:** `backend/app/embeddings/base.py`.
+
+**Used by:** `backend/app/services/topics.py`, агентские tools, API профиля.
+
+**Important:** несопоставленный навык не отбрасывается — он сохраняется как есть
+(`raw_name`) и попадает в кандидаты на новые темы.
+
+#### `backend/app/services/topics.py`
+
+**Role:** SERVICE (доступ к онтологии)
+
+**Responsibility:** `load_topic_index` — индекс тем из БД; `load_packaged_topic_index` —
+индекс из пакета онтологии с детерминированными id (тесты и офлайн-режим);
+`create_skill_matcher` — сборка сопоставителя с порогами из настроек.
+
+**Depends on:** `backend/app/models/topic.py`, `backend/app/ontology/topics.py`,
+`backend/app/services/normalization.py`.
+
+**Used by:** сервис анализа, агентские tools.
+
+#### `backend/app/services/evaluation.py`
+
+**Role:** SERVICE (метрики качества)
+
+**Responsibility:** precision / recall / F1 по нормализованным названиям навыков —
+единая метрика для тестов и для eval-скрипта.
+
+**Depends on:** `backend/app/services/normalization.py`.
+
+#### `backend/app/embeddings/base.py`, `local.py`, `mock.py`, `factory.py`
+
+**Role:** SERVICE (эмбеддинги)
+
+**Responsibility:** `EmbeddingProvider` (протокол) и реализации: `LocalEmbeddingProvider` —
+локальная ONNX-модель через fastembed (без внешних сервисов, кэш в
+`EMBEDDING_CACHE_DIR`), `MockEmbeddingProvider` — детерминированный для тестов,
+`NullEmbeddingProvider` — заглушка; `create_embedding_provider` — выбор по настройкам.
+`cosine_similarity` — косинусная близость.
+
+**Depends on:** `backend/app/core/config.py`; `fastembed` — опциональная экстра-группа
+(`uv sync --extra embeddings`).
+
+**Used by:** `backend/app/services/normalization.py`.
+
+**Important:** без `fastembed` провайдер сообщает `available = False`, и нормализация
+продолжает работать по алиасам и нечёткому совпадению.
+
+#### `backend/scripts/eval_extraction.py`
+
+**Role:** TOOL (eval)
+
+**Responsibility:** прогоняет golden-набор через живой LLM-провайдер, печатает precision /
+recall / F1 и точность сопоставления с темами; `--min-f1` задаёт порог, при котором
+скрипт завершается с ошибкой.
+
+**Depends on:** `backend/app/services/analysis.py`, `backend/app/services/evaluation.py`,
+`backend/tests/fixtures/extraction_golden.py`.
+
+**Used by:** разработчики (нужен `LLM_PROVIDER=openai` с ключом).
+
 ### Уровень 3 — вспомогательные
 
 | Файл | Роль | Назначение |
@@ -1034,6 +1142,12 @@ app/ontology/seed.py ──▶ app/ontology/topics.py (онтология v1)
                      ──▶ app/models/topic.py ──▶ topics, topic_prerequisites, topic_candidates
 app/ontology/graph.py ──▶ только стандартная библиотека (не зависит от ORM)
 
+app/services/analysis.py ──▶ app/llm/base.py (структурированный вывод)
+app/services/normalization.py ──▶ app/embeddings/base.py (косинусная близость)
+app/services/topics.py ──▶ app/models/topic.py + app/ontology/topics.py (индекс тем)
+app/embeddings/factory.py ──▶ app/embeddings/{local,mock}.py; local ──▶ fastembed (экстра-группа)
+app/embeddings/local.py ──▶ только стандартная библиотека + fastembed (опционально)
+
 app/models/* ──▶ Base.metadata
 alembic/env.py ──▶ config (settings) + Base.metadata ──▶ миграции в БД
 
@@ -1092,7 +1206,8 @@ API доступен снаружи по `localhost:${API_PORT}` (по умол�
 | Backend-приложение (контейнер) | `backend/docker/entrypoint.sh` → uvicorn | миграции + API, healthy |
 | Миграции БД | `backend/alembic/` (`uv run alembic ...`) | 4 миграции: pgvector, users, agent_actions, граф знаний и документы |
 | Сид онтологии | `backend/app/ontology/seed.py` (`uv run python -m app.ontology.seed`) | 8 тем + 3 ребра `REQUIRES`, идемпотентно |
-| Прогон тестов backend | `backend/tests/` (pytest) | 71 тест (1 пропускается без ключа OpenAI) |
+| Eval качества извлечения | `backend/scripts/eval_extraction.py` | golden-набор из 5 кейсов; требует живого LLM |
+| Прогон тестов backend | `backend/tests/` (pytest) | 117 тестов (1 пропускается без ключа OpenAI) |
 | Frontend dev-сервер | `frontend/` (`npm run dev`) | вход/регистрация через API |
 | Генерация типов API | `frontend/` (`npm run generate:api`, нужен backend) | скрипт готов |
 | Сборка frontend | `npm run build` (tsc + vite) | проходит |

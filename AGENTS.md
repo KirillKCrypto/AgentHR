@@ -377,7 +377,8 @@ spaced repetition · мультиагентность · голос и тайм�
 6. [x] Слой LLM-провайдера: структурный вывод + function-calling
 7. [x] Agent Harness: цикл + реестр tools + `agent_actions` (на мок-LLM) — на Deep Agents
 8. [x] Онтология v1 (8 тем с зависимостями) + идемпотентный сид (`app/ontology/`)
-9. [ ] `extract_vacancy_requirements` + `extract_resume_skills`
+9. [~] `extract_vacancy_requirements` + `extract_resume_skills` — сервисный слой готов
+   (`app/services/analysis.py`), регистрация их как tools агента — в спринте C
 10. [x] Frontend-каркас: React + TS + Vite, роутинг, shadcn/ui, `/login`
 11. [ ] E2E-скелет сквозного сценария
 
