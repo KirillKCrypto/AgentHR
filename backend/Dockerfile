@@ -15,13 +15,17 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 WORKDIR /app
 
+# Опциональные экстра-группы: embeddings — локальный ONNX-эмбеддер.
+# Сборка с эмбеддингами: docker build --build-arg UV_EXTRAS="--extra embeddings" .
+ARG UV_EXTRAS=""
+
 # Слой зависимостей: манифесты копируются отдельно, чтобы кэш не сбрасывался при правках кода
 COPY pyproject.toml uv.lock ./
-RUN uv sync --frozen --no-dev --no-install-project
+RUN uv sync --frozen --no-dev --no-install-project $UV_EXTRAS
 
 # Код приложения (миграции Alembic тоже нужны в образе — применяются на старте)
 COPY . .
-RUN uv sync --frozen --no-dev && chmod +x /app/docker/entrypoint.sh
+RUN uv sync --frozen --no-dev $UV_EXTRAS && chmod +x /app/docker/entrypoint.sh
 
 EXPOSE 8000
 

@@ -10,6 +10,9 @@ venv/
 .coverage
 htmlcov/
 
+# --- Кэш моделей эмбеддеров ---
+.cache/
+
 # --- Node ---
 node_modules/
 dist/

@@ -34,7 +34,15 @@ services:
       LLM_PROVIDER: ${LLM_PROVIDER:-mock}
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       OPENAI_MODEL: ${OPENAI_MODEL:-}
+      # Эмбеддинги: none (по умолчанию) или local (нужен образ с --extra embeddings)
+      EMBEDDING_PROVIDER: ${EMBEDDING_PROVIDER:-none}
+      EMBEDDING_MODEL: ${EMBEDDING_MODEL:-sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2}
+      EMBEDDING_THRESHOLD: ${EMBEDDING_THRESHOLD:-0.35}
+      EMBEDDING_CACHE_DIR: /app/.cache/fastembed
       CORS_ORIGINS: '${CORS_ORIGINS:-["http://localhost:5173"]}'
+    volumes:
+      # Кэш локальных моделей эмбеддеров: переживает пересборку образа
+      - fastembed_cache:/app/.cache/fastembed
     ports:
       - "${API_PORT:-8000}:8000"
     healthcheck:
@@ -52,3 +60,4 @@ services:
 
 volumes:
   postgres_data:
+  fastembed_cache:

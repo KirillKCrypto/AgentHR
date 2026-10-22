@@ -38,6 +38,14 @@ class Settings(BaseSettings):
     agent_token_budget: int = 50000
     agent_timeout_seconds: float = 120
     agent_tool_timeout_seconds: float = 30
+    # Эмбеддинги для нормализации навыков: none (по умолчанию, только alias + нечёткое
+    # совпадение), local (локальная ONNX-модель), mock (тесты)
+    embedding_provider: str = "none"
+    embedding_model: str = "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2"
+    # Порог косинусной близости, при котором навык сопоставляется с темой
+    embedding_threshold: float = 0.35
+    # Каталог кэша моделей (не коммитится)
+    embedding_cache_dir: str = ".cache/fastembed"
 
 
 @lru_cache
