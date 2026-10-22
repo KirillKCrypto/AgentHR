@@ -1,7 +1,7 @@
 # PROJECT_MAP — карта репозитория AgentHR
 
 > Навигация: [`INDEX.md`](../INDEX.md) → **PROJECT_MAP.md** (этот файл) → [`ARCHITECTURE.md`](ARCHITECTURE.md).
-> Составлено по состоянию на 27.09.2026.
+> Составлено по состоянию на 22.10.2026.
 >
 > Документ описывает **фактическое** состояние репозитория. Всё, что пока не реализовано,
 > помечено «План» со ссылкой на источник — [`AGENTS.md`](../AGENTS.md).
@@ -49,6 +49,7 @@ AgentHR/
 │   │   └── versions/
 │   │       ├── 6d7c8a1b787e_enable_pgvector_extension.py
 │   │       ├── 22cd6bbf10ed_create_agent_actions_table.py
+│   │       ├── 40b5a867f0dc_create_knowledge_graph_and_documents.py
 │   │       └── 68cf3aa5da9d_create_users_table.py
 │   ├── app/
 │   │   ├── __init__.py
@@ -86,7 +87,16 @@ AgentHR/
 │   │   ├── models/
 │   │   │   ├── __init__.py    (импортирует все модели для Alembic)
 │   │   │   ├── agent_action.py (модель AgentAction)
-│   │   │   └── user.py        (модель User)
+│   │   │   ├── resume.py      (модели Resume, ResumeSkill)
+│   │   │   ├── topic.py       (модели Topic, TopicPrerequisite, TopicCandidate)
+│   │   │   ├── user.py        (модель User)
+│   │   │   ├── user_skill_state.py (модель UserSkillState)
+│   │   │   └── vacancy.py     (модели Vacancy, VacancySkill)
+│   │   ├── ontology/
+│   │   │   ├── __init__.py    (реэкспорт онтологии и операций над графом)
+│   │   │   ├── graph.py       (циклы, топологический порядок, пререквизиты)
+│   │   │   ├── seed.py        (идемпотентный сид + CLI)
+│   │   │   └── topics.py      (онтология v1: 8 тем, алиасы, зависимости)
 │   │   └── schemas/
 │   │       ├── __init__.py
 │   │       └── auth.py        (Pydantic-схемы auth)
@@ -102,7 +112,10 @@ AgentHR/
 │   │   ├── test_llm.py
 │   │   ├── test_agent_tools.py
 │   │   ├── test_agent_deep_harness.py
-│   │   └── test_agent_audit.py
+│   │   ├── test_agent_audit.py
+│   │   ├── test_ontology.py
+│   │   ├── test_ontology_graph.py
+│   │   └── test_ontology_seed.py
 │   └── uv.lock                (генерируется, коммитится)
 ├── docs/
 │   ├── ARCHITECTURE.md
@@ -176,17 +189,18 @@ AgentHR/
 **Назначение:** backend-приложение AgentHR. Реализован каркас: FastAPI-точка входа
 (`app/main.py`: CORS, роутеры, `/health`, `/health/db`), JWT-аутентификация (`app/api/`,
 `app/core/security.py`), слой LLM (`app/llm/`: интерфейс, mock- и OpenAI-провайдеры), агентский
-слой (`app/agent/`: реестр Tools, middleware аудита и лимитов, harness на Deep Agents), настройки
-(`app/core/config.py`), слой БД (`app/db/`), модели `User` и `AgentAction` (`app/models/`),
-миграции (`alembic/`), тесты (`tests/`), зависимости через uv.
+слой (`app/agent/`: реестр Tools, middleware аудита и лимитов, harness на Deep Agents), онтология
+v1 с сидом (`app/ontology/`), настройки (`app/core/config.py`), слой БД (`app/db/`), модели
+(`app/models/`: пользователь, аудит-лог, граф знаний, документы, срез профиля), миграции
+(`alembic/`), тесты (`tests/`), зависимости через uv.
 
-**Цель по плану:** остальные модели и схема БД, доменные REST API, Agent Harness (LangGraph),
-реестр Tools.
+**Цель по плану:** сервисный слой анализа (извлечение и нормализация навыков), доменные
+REST API, агентские tools поверх этих функций.
 Источники: `backend/README.md`, [`AGENTS.md`](../AGENTS.md) §2–3, §6.
 
-**Содержит сейчас:** `app/` (agent, api, core, db, llm, models, schemas), `alembic/`, `alembic.ini`,
-`tests/`, `pyproject.toml`, `uv.lock`, `.env.example`, `.python-version`, `README.md`.
-Доменных сервисов пока нет.
+**Содержит сейчас:** `app/` (agent, api, core, db, llm, models, ontology, schemas), `alembic/`,
+`alembic.ini`, `tests/`, `pyproject.toml`, `uv.lock`, `.env.example`, `.python-version`, `README.md`.
+Доменных сервисов и REST API пока нет.
 
 ### `frontend/`
 
@@ -369,6 +383,52 @@ AI-агента и его Tools, граф знаний, план на 8 неде
 **Used by:** auth (`login`, `register`, `deps.get_current_user`), Alembic (autogenerate).
 
 **Important:** изменение модели требует новой миграции (`alembic revision --autogenerate`).
+
+#### `backend/app/models/topic.py`
+
+**Role:** MODEL (граф знаний)
+
+**Responsibility:** ORM-модели `Topic` (тема онтологии: `key`, `name`, `description` — текст
+для эмбеддингов, `category`, `aliases`, `ontology_version`, `is_auto_generated`),
+`TopicPrerequisite` (ребро `REQUIRES`, запрет саморебра) и `TopicCandidate` (навык вне
+онтологии: `normalized_name` уникален, `occurrences`, `sources`, `status`).
+
+**Depends on:** `backend/app/db/base.py`.
+
+**Used by:** `backend/app/ontology/seed.py`, Alembic (autogenerate); далее — сервис анализа.
+
+**Important:** онтология — словарь, а не фильтр: `topic_candidates` не даёт потерять навыки
+без темы.
+
+#### `backend/app/models/vacancy.py`, `backend/app/models/resume.py`
+
+**Role:** MODEL (документы пользователя)
+
+**Responsibility:** `Vacancy` и `Resume` (текст, заголовок, владелец) + `VacancySkill`
+(`required_level` 0–100, `weight`, `confidence`, `evidence`, `match_method`) и `ResumeSkill`
+(`proficiency` 0–100, `confidence`, `evidence`, `match_method`). У навыка `topic_id` может
+быть NULL — навык не сопоставлен ни с одной темой и сохраняется как есть.
+
+**Depends on:** `backend/app/db/base.py`.
+
+**Used by:** сервис анализа (M2), REST API (M2), Alembic (autogenerate).
+
+**Important:** при удалении темы `topic_id` обнуляется (ON DELETE SET NULL) — данные не теряются.
+
+#### `backend/app/models/user_skill_state.py`
+
+**Role:** MODEL (срез профиля)
+
+**Responsibility:** `UserSkillState` — материализованный срез графа для пользователя:
+уникальная пара `(user_id, topic_id)`, `proficiency` 0–100, `confidence`, `source`,
+`evidence` (JSONB), `last_assessed`.
+
+**Depends on:** `backend/app/db/base.py`.
+
+**Used by:** сервис анализа и gap-анализ (M2), REST API профиля (M2), Alembic (autogenerate).
+
+**Important:** источник оценки (`source`) разделяет резюме, интервью и ручную правку —
+на него опирается взвешенное обновление профиля.
 
 #### `backend/app/llm/base.py`
 
@@ -798,6 +858,30 @@ preflight `OPTIONS /auth/login` разрешён.
 
 **Used by:** `uv run pytest`.
 
+#### `backend/tests/test_ontology.py`, `backend/tests/test_ontology_graph.py`
+
+**Role:** TEST
+
+**Responsibility:** состав онтологии v1 (уникальные ключи, заполненные описания и алиасы,
+пререквизиты ссылаются на существующие темы, граф ацикличен) и операции над графом
+(поиск циклов, топологический порядок, транзитивные пререквизиты). Без БД.
+
+**Depends on:** `backend/app/ontology/`.
+
+**Used by:** `uv run pytest`.
+
+#### `backend/tests/test_ontology_seed.py`
+
+**Role:** TEST
+
+**Responsibility:** интеграционный тест сида: темы и связи созданы, повторный сид
+идемпотентен, изменённое описание восстанавливается, автосозданные темы сохраняются.
+Пропускается без PostgreSQL.
+
+**Depends on:** `backend/app/ontology/seed.py`, `backend/app/models/`, `backend/app/db/session.py`.
+
+**Used by:** `uv run pytest`.
+
 #### `backend/.env.example`
 
 **Role:** CONFIG (шаблон)
@@ -843,6 +927,52 @@ Tailwind 4, shadcn/ui: Base UI, lucide, cn, cva), скрипты `dev` / `build`
 `http://127.0.0.1:8000`). Копируется в `frontend/.env` при необходимости.
 
 **Used by:** `frontend/src/api/client.ts`.
+
+#### `backend/app/ontology/topics.py`
+
+**Role:** DOMAIN (онтология)
+
+**Responsibility:** онтология v1 — 8 тем (`OntologyTopic`: ключ, название, описание,
+категория, алиасы, пререквизиты) и версия `ONTOLOGY_VERSION`. Описания тем используются
+как текст для эмбеддингов при нормализации навыков.
+
+**Depends on:** — (только стандартная библиотека).
+
+**Used by:** `backend/app/ontology/seed.py`, тесты; далее — сервис нормализации.
+
+**Important:** онтология — стартовое ядро, а не whitelist: навыки вне словаря не теряются,
+а попадают в кандидаты на новые темы.
+
+#### `backend/app/ontology/graph.py`
+
+**Role:** DOMAIN (операции над графом)
+
+**Responsibility:** работа с рёбрами `REQUIRES` без привязки к ORM: поиск циклов
+(`detect_cycles`), топологический порядок (`topological_order`), прямые и транзитивные
+пререквизиты.
+
+**Depends on:** — (только стандартная библиотека).
+
+**Used by:** тесты; далее — планировщик (M3) и gap-анализ (M2).
+
+**Important:** при цикле `topological_order` выбрасывает `ValueError` — маршрут не должен
+строиться на некорректном графе.
+
+#### `backend/app/ontology/seed.py`
+
+**Role:** DOMAIN (сид онтологии)
+
+**Responsibility:** `seed_ontology(session)` — идемпотентная синхронизация онтологии в БД:
+темы создаются/обновляются по ключу, рёбра синхронизируются точно (только между
+засеянными темами), автосозданные темы не трогаются. CLI: `uv run python -m app.ontology.seed`.
+
+**Depends on:** `backend/app/models/topic.py`, `backend/app/ontology/topics.py`,
+`backend/app/db/session.py`.
+
+**Used by:** `backend/README.md`, тесты `backend/tests/test_ontology_seed.py`.
+
+**Important:** повторный запуск не меняет количество строк — сид можно гонять в контейнере
+и в тестах.
 
 ### Уровень 3 — вспомогательные
 
@@ -899,6 +1029,11 @@ app/agent/deep_harness.py ──▶ middleware.py (AuditMiddleware ──▶ aud
                                              LimitsMiddleware — шаги/токены)
 app/agent/deep_harness.py ──▶ langchain_tools.py ──▶ tools.py (JSON Schema + валидация)
 
+app/ontology/seed.py ──▶ app/ontology/topics.py (онтология v1)
+                     ──▶ app/ontology/graph.py (проверки графа зависимостей)
+                     ──▶ app/models/topic.py ──▶ topics, topic_prerequisites, topic_candidates
+app/ontology/graph.py ──▶ только стандартная библиотека (не зависит от ORM)
+
 app/models/* ──▶ Base.metadata
 alembic/env.py ──▶ config (settings) + Base.metadata ──▶ миграции в БД
 
@@ -922,9 +1057,11 @@ src/main.tsx ──▶ QueryClientProvider + BrowserRouter
 Типы запросов/ответов frontend берёт из `src/api/schema.d.ts`, который генерируется
 из OpenAPI backend (`npm run generate:api`, нужен запущенный backend).
 
-`Base.metadata` содержит модель `User`; `app/models/__init__.py` импортирует все модели,
+`Base.metadata` содержит модели `User`, `AgentAction` и модели графа знаний
+(`Topic`, `TopicPrerequisite`, `TopicCandidate`, `Vacancy`, `VacancySkill`, `Resume`,
+`ResumeSkill`, `UserSkillState`); `app/models/__init__.py` импортирует все модели,
 поэтому autogenerate видит полные метаданные. Остальные таблицы
-([`AGENTS.md`](../AGENTS.md) §5) — по плану недель 3–4.
+([`AGENTS.md`](../AGENTS.md) §5) — по плану вех M3+.
 
 Текущие инфраструктурные связи:
 
@@ -953,8 +1090,9 @@ API доступен снаружи по `localhost:${API_PORT}` (по умол�
 | Запуск инфраструктуры и API | `infra/docker-compose.yml` (сервисы `postgres`, `api`) | реализовано |
 | Backend-приложение (локально) | `backend/app/main.py` (uvicorn) | каркас + auth + Agent Harness реализованы |
 | Backend-приложение (контейнер) | `backend/docker/entrypoint.sh` → uvicorn | миграции + API, healthy |
-| Миграции БД | `backend/alembic/` (`uv run alembic ...`) | 3 миграции: pgvector, users, agent_actions |
-| Прогон тестов backend | `backend/tests/` (pytest) | 50 тестов (1 пропускается без ключа OpenAI) |
+| Миграции БД | `backend/alembic/` (`uv run alembic ...`) | 4 миграции: pgvector, users, agent_actions, граф знаний и документы |
+| Сид онтологии | `backend/app/ontology/seed.py` (`uv run python -m app.ontology.seed`) | 8 тем + 3 ребра `REQUIRES`, идемпотентно |
+| Прогон тестов backend | `backend/tests/` (pytest) | 71 тест (1 пропускается без ключа OpenAI) |
 | Frontend dev-сервер | `frontend/` (`npm run dev`) | вход/регистрация через API |
 | Генерация типов API | `frontend/` (`npm run generate:api`, нужен backend) | скрипт готов |
 | Сборка frontend | `npm run build` (tsc + vite) | проходит |

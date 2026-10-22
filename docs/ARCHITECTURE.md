@@ -58,8 +58,9 @@ mock). CORS разрешает запросы с dev-сервера frontend.
    │                                                 - CORS: http://localhost:5173
    │                                                 - слой LLM: MockProvider / OpenAIProvider (app/llm/)
    │                                                 - Agent Harness: Deep Agents + middleware аудита/лимитов (app/agent/)
-   │                                                 - модели User, AgentAction (app/models/)
-   │                                                 - Alembic-миграции (pgvector, users, agent_actions)
+   │                                                 - модели User, AgentAction, Topic, Vacancy, Resume, UserSkillState (app/models/)
+   │                                                 - Alembic-миграции (pgvector, users, agent_actions, граф знаний и документы)
+   │                                                 - онтология v1 + идемпотентный сид (app/ontology/)
    └── npm run dev (frontend/) ──▶ Vite dev-сервер (SPA)
                                      - /login: регистрация и вход через REST API
                                      - /: дашборд — /me через TanStack Query, выход
@@ -175,10 +176,17 @@ checkpointer `InMemorySaver` по `thread_id`, статусы `completed` / `max
 Tools — типизированные функции, единственный способ агента дотянуться до данных
 ([`AGENTS.md`](../AGENTS.md) §2.2, §3.2–3.3). Слой LLM готов (`app/llm/`).
 
-### Граф знаний и векторный слой (План)
+### Граф знаний и векторный слой (частично реализовано)
 
-Онтология тем + зависимости + пользовательский срез (`topics`, `topic_prerequisites`,
-`user_skill_states`); эмбеддинги — в pgvector ([`AGENTS.md`](../AGENTS.md) §4).
+**Факт:** созданы таблицы `topics` (ключ, название, описание, алиасы, версия онтологии,
+флаг автосозданной темы), `topic_prerequisites` (ребро `REQUIRES`), `topic_candidates`
+(навыки вне онтологии — пул тем на ревью) и `user_skill_states` (срез профиля по
+паре «пользователь × тема»). Онтология v1 — 8 тем с зависимостями, сид идемпотентен
+(`app/ontology/`). Эмбеддинги пока не подключены: нормализация будет опираться на
+alias + нечёткое совпадение, локальный ONNX-эмбеддер — с деградацией (см. decision log).
+
+**План:** эмбеддинги — в pgvector ([`AGENTS.md`](../AGENTS.md) §4); извлечение навыков,
+нормализация и gap-анализ — M2.
 
 ---
 
@@ -243,14 +251,27 @@ Tools — типизированные функции, единственный 
 - Таблица `agent_actions` (миграция `22cd6bbf10ed`) — аудит-лог действий агента: шаг, tool,
   аргументы/результат (JSONB), статус, токены, длительность; `session_id` без FK (до недели 5).
   ORM-модель — `backend/app/models/agent_action.py`.
+- Миграция `40b5a867f0dc` — граф знаний и документы:
+  - `topics` — тема онтологии: `key` (уникальный), `name`, `description` (текст для эмбеддингов),
+    `category`, `aliases` (JSONB), `ontology_version`, `is_auto_generated`;
+  - `topic_prerequisites` — ребро `REQUIRES` (`topic_id` → `prerequisite_id`), запрет саморебра;
+  - `topic_candidates` — навык вне онтологии: уникальный `normalized_name`, `occurrences`,
+    `sources` (JSONB), `status` (new/approved/rejected/merged);
+  - `vacancies` / `vacancy_skills` — вакансия пользователя и её навыки (`required_level` 0–100,
+    `weight`, `confidence`, `match_method`; `topic_id` — NULL, если навык не сопоставлен);
+  - `resumes` / `resume_skills` — резюме пользователя и его навыки (`proficiency` 0–100,
+    `confidence`, `evidence`, `match_method`);
+  - `user_skill_states` — срез профиля: уникальная пара `(user_id, topic_id)`, `proficiency` 0–100,
+    `confidence`, `source`, `evidence` (JSONB), `last_assessed`.
+  ORM-модели — `backend/app/models/topic.py`, `vacancy.py`, `resume.py`, `user_skill_state.py`.
 - Подключение: `DATABASE_URL` из `backend/.env` (локальный дефолт в `app/core/config.py`);
   движок и сессии — `backend/app/db/session.py` (asyncpg, `pool_pre_ping`).
 - Миграции: Alembic (async-шаблон), URL берётся в `alembic/env.py` из настроек;
   команды — `uv run alembic upgrade head` / `downgrade base` / `current`.
   Цикл upgrade → downgrade → upgrade проверен на локальной БД.
 
-**План** ([`AGENTS.md`](../AGENTS.md) §4–5): остальные таблицы схемы (`vacancies`, `resumes`,
-`topics`, `user_skill_states`, `interview_sessions`, `agent_actions` и др.); ORM-модели
+**План** ([`AGENTS.md`](../AGENTS.md) §4–5): остальные таблицы схемы (`interview_sessions`,
+`interview_turns`, `learning_plans`, `plan_items`, `embeddings` и др.); ORM-модели
 SQLAlchemy 2 (async); `agent_actions` — обязательный audit-лог; граф знаний — реляционная
 модель в Postgres с репозиторием-границей (без Neo4j в MVP).
 

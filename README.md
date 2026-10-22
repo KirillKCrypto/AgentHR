@@ -55,4 +55,6 @@ LLM + Agent Harness + Tool Calling + Knowledge Graph + Persistent Memory + Adapt
 инфраструктура (PostgreSQL + pgvector и backend API в Docker Compose), база данных,
 аутентификация, слой LLM, Agent Harness на Deep Agents (лимиты и аудит в `agent_actions`),
 frontend со входом через UI. Для живого ответа LLM нужен ключ OpenAI.
-Дальше — M2: вакансии/резюме → профиль знаний.
+M2 «Понимание кандидата» в работе: схема графа знаний и документов, онтология v1
+(8 тем с зависимостями) и идемпотентный сид — готовы; дальше извлечение навыков,
+нормализация, профиль знаний и доменные REST API.

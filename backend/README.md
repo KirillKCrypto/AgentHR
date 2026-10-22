@@ -1,7 +1,8 @@
 # Backend
 
 Backend-приложение AgentHR на FastAPI. Реализованы: каркас, health-эндпоинты,
-JWT-аутентификация, слой LLM (mock/OpenAI), подключение к БД, модель User и миграции.
+JWT-аутентификация, слой LLM (mock/OpenAI), подключение к БД, Agent Harness на Deep Agents,
+модели User/AgentAction/граф знаний и онтология v1 с идемпотентным сидом.
 
 Стек: Python 3.13, FastAPI, SQLAlchemy 2 (async) + asyncpg, Alembic, PyJWT, pwdlib (argon2),
 openai, Deep Agents (LangGraph + LangChain core). Образ контейнера — `python:3.13-slim` + uv.
@@ -56,6 +57,22 @@ docker compose up -d --build    # agenthr-api на http://127.0.0.1:8000
 - Агент получает дефолтный состав Deep Agents: инструменты файловой системы (управление
   контекстом) и сабагента `task`.
 
+## Онтология и граф знаний
+
+- `app/ontology/topics.py` — онтология v1: 8 тем с описаниями, алиасами и пререквизитами
+  (`REQUIRES`); описания используются как текст для эмбеддингов при нормализации навыков.
+- `app/ontology/graph.py` — операции над графом: поиск циклов, топологический порядок,
+  транзитивные пререквизиты.
+- `app/ontology/seed.py` — идемпотентный сид: темы обновляются по ключу, рёбра синхронизируются
+  точно; автосозданные темы (из кандидатов) сид не трогает.
+
+```powershell
+uv run python -m app.ontology.seed    # засеять онтологию (нужна запущенная БД)
+```
+
+Онтология — словарь верхнего уровня, а не фильтр: навыки без темы сохраняются как есть
+(`raw_name`) и попадают в `topic_candidates` — пул тем на ревью.
+
 ## Тесты и линтер
 
 ```powershell
@@ -87,7 +104,9 @@ URL БД берётся из настроек (`backend/.env`, переменн�
 - `app/db/session.py` — async-движок, фабрика сессий, зависимость `get_db`
 - `app/db/base.py` — базовый класс моделей (`Base`)
 - `app/llm/` — слой LLM: `base.py` (интерфейс), `mock.py`, `openai.py`, `factory.py`
-- `app/models/` — ORM-модели (`User`, `AgentAction`)
+- `app/models/` — ORM-модели (`User`, `AgentAction`, `Topic`, `TopicPrerequisite`, `TopicCandidate`,
+  `Vacancy`, `VacancySkill`, `Resume`, `ResumeSkill`, `UserSkillState`)
+- `app/ontology/` — онтология v1, операции над графом зависимостей, идемпотентный сид
 - `app/schemas/` — Pydantic-схемы (сейчас `auth.py`)
 - `alembic/` — миграции (async), `alembic/versions/`
 - `tests/` — тесты (pytest + httpx2, интеграционные требуют запущенную БД)
@@ -99,4 +118,4 @@ Refresh-токены stateless: отзыв до истечения не подд
 Ключ `OPENAI_API_KEY` — только через окружение.
 
 Дальше по плану (см. `AGENTS.md`): M2 — извлечение требований вакансии и навыков резюме,
-онтология v1, профиль знаний; затем доменные REST API.
+нормализация к онтологии, профиль знаний и доменные REST API.
