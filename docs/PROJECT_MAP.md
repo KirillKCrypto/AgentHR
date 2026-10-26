@@ -56,6 +56,7 @@ AgentHR/
 │   │   ├── main.py            (точка входа FastAPI; CORS, роутеры, /health, /health/db)
 │   │   ├── agent/
 │   │   │   ├── __init__.py    (реэкспорт реестра, аудита, harness'ов)
+│   │   │   ├── analysis_tools.py (7 доменных инструментов, привязанных к пользователю)
 │   │   │   ├── audit.py       (AgentActionRecord, AuditLogger, InMemory/Db)
 │   │   │   ├── deep_harness.py (DeepAgentHarness: create_deep_agent, лимиты, checkpointer)
 │   │   │   ├── langchain_model.py (ProviderChatModel: наш LLMProvider → LangChain)
@@ -65,11 +66,16 @@ AgentHR/
 │   │   │   └── tools.py       (ToolDefinition, ToolRegistry, JSON Schema)
 │   │   ├── api/
 │   │   │   ├── __init__.py
-│   │   │   ├── deps.py        (get_current_user — Bearer)
+│   │   │   ├── deps.py        (get_current_user, LLM/эмбеддер, алиасы зависимостей)
+│   │   │   ├── mappers.py     (доменные объекты → Pydantic-схемы)
 │   │   │   └── routes/
 │   │   │       ├── __init__.py
+│   │   │       ├── analysis.py (POST /analysis)
 │   │   │       ├── auth.py    (register, login, refresh)
-│   │   │       └── users.py   (/me)
+│   │   │       ├── profile.py (/profile, /profile/gaps)
+│   │   │       ├── resumes.py (/resumes, /resumes/{id})
+│   │   │       ├── users.py   (/me)
+│   │   │       └── vacancies.py (/vacancies, /vacancies/{id})
 │   │   ├── core/
 │   │   │   ├── __init__.py
 │   │   │   ├── config.py      (настройки, pydantic-settings)
@@ -105,17 +111,20 @@ AgentHR/
 │   │   │   └── topics.py      (онтология v1: 8 тем, алиасы, зависимости)
 │   │   ├── schemas/
 │   │   │   ├── __init__.py
+│   │   │   ├── analysis.py    (схемы вакансий, резюме, профиля и gap-анализа)
 │   │   │   └── auth.py        (Pydantic-схемы auth)
 │   │   └── services/
 │   │       ├── __init__.py    (реэкспорт сервисного слоя)
 │   │       ├── analysis.py    (извлечение навыков вакансии и резюме)
 │   │       ├── evaluation.py  (precision / recall / F1)
 │   │       ├── normalization.py (сопоставление навыка с темой онтологии)
+│   │       ├── profile.py     (запись документов, профиль, gap-анализ)
 │   │       └── topics.py      (индекс тем из БД и из пакета онтологии)
 │   ├── docker/
 │   │   └── entrypoint.sh      (миграции + uvicorn в контейнере)
 │   ├── pyproject.toml
 │   ├── tests/
+│   │   ├── conftest.py        (фикстуры: БД, пользователь API, заглушка LLM по схеме)
 │   │   ├── test_health.py
 │   │   ├── test_health_db.py
 │   │   ├── test_user_model.py
@@ -129,6 +138,9 @@ AgentHR/
 │   │   ├── test_ontology_graph.py
 │   │   ├── test_ontology_seed.py
 │   │   ├── test_analysis.py
+│   │   ├── test_analysis_api.py   (доменные эндпоинты, изоляция по пользователю)
+│   │   ├── test_analysis_tools.py (инструменты агента и их схемы)
+│   │   ├── test_profile_service.py (взвешивание оценок, источники истины)
 │   │   ├── test_embeddings.py
 │   │   ├── test_embeddings_local.py
 │   │   ├── test_extraction_golden.py
@@ -208,22 +220,23 @@ AgentHR/
 
 **Role:** APPLICATION (backend)
 
-**Назначение:** backend-приложение AgentHR. Реализован каркас: FastAPI-точка входа
-(`app/main.py`: CORS, роутеры, `/health`, `/health/db`), JWT-аутентификация (`app/api/`,
-`app/core/security.py`), слой LLM (`app/llm/`: интерфейс, mock- и OpenAI-провайдеры), агентский
-слой (`app/agent/`: реестр Tools, middleware аудита и лимитов, harness на Deep Agents), онтология
-v1 с сидом (`app/ontology/`), настройки (`app/core/config.py`), слой БД (`app/db/`), модели
-(`app/models/`: пользователь, аудит-лог, граф знаний, документы, срез профиля), миграции
-(`alembic/`), тесты (`tests/`), зависимости через uv.
+**Назначение:** backend-приложение AgentHR. Реализованы: FastAPI-точка входа
+(`app/main.py`: CORS, роутеры, `/health`, `/health/db`, обработчик `LLMError`), JWT-аутентификация
+(`app/api/`, `app/core/security.py`), слой LLM (`app/llm/`: интерфейс, mock- и OpenAI-провайдеры),
+агентский слой (`app/agent/`: реестр Tools, middleware аудита и лимитов, harness на Deep Agents,
+доменные инструменты), онтология v1 с сидом (`app/ontology/`), сервисный слой
+(`app/services/`: извлечение, нормализация, профиль и gap-анализ), доменные REST-эндпоинты
+(`/vacancies`, `/resumes`, `/profile`, `/analysis`), настройки (`app/core/config.py`), слой БД
+(`app/db/`), модели (`app/models/`: пользователь, аудит-лог, граф знаний, документы, срез профиля),
+миграции (`alembic/`), тесты (`tests/`), зависимости через uv.
 
-**Цель по плану:** доменные REST API и агентские tools поверх сервисного слоя
-(извлечение, нормализация, gap-анализ).
-Источники: `backend/README.md`, [`AGENTS.md`](../AGENTS.md) §2–3, §6.
+**Цель по плану:** планировщик подготовки, сессии интервью с адаптацией сложности, отчёты
+([`AGENTS.md`](../AGENTS.md) §2–3, §6, §8).
 
 **Содержит сейчас:** `app/` (agent, api, core, db, embeddings, llm, models, ontology, schemas,
 services), `alembic/`, `alembic.ini`, `scripts/`, `tests/`, `pyproject.toml`, `uv.lock`,
 `.env.example`, `.python-version`, `README.md`.
-Доменных REST API пока нет; сервисный слой (извлечение и нормализация) — готов.
+Поток A (вакансия + резюме → профиль знаний → gap-анализ) реализован и покрыт тестами.
 
 ### `frontend/`
 
@@ -625,11 +638,14 @@ dev-группа (pytest, pytest-asyncio, httpx2, ruff), конфигураци�
 
 **Responsibility:** `get_current_user` — извлекает Bearer-токен, проверяет access-JWT, загружает
 `User` из БД; при любой проблеме — 401 с заголовком `WWW-Authenticate: Bearer`.
+`get_llm_provider` — провайдер на время запроса с закрытием клиента; `get_embedder` —
+единый кэшированный провайдер эмбеддингов; алиасы `CurrentUser`, `DbSession`, `LlmProvider`,
+`Embedder` для аннотаций роутеров.
 
 **Depends on:** `backend/app/core/security.py`, `backend/app/db/session.py`,
-`backend/app/models/`.
+`backend/app/models/`, `app/llm/factory.py`, `app/embeddings/factory.py`.
 
-**Used by:** `backend/app/api/routes/users.py` (и будущие защищённые роутеры).
+**Used by:** все защищённые роутеры (`/me`, `/vacancies`, `/resumes`, `/profile`, `/analysis`).
 
 #### `backend/app/api/routes/auth.py`
 
@@ -653,6 +669,94 @@ dev-группа (pytest, pytest-asyncio, httpx2, ruff), конфигураци�
 **Depends on:** `backend/app/api/deps.py`, `backend/app/schemas/auth.py`.
 
 **Used by:** подключается в `backend/app/main.py`; вызывается frontend (дашборд).
+
+#### `backend/app/api/routes/vacancies.py`, `resumes.py`
+
+**Role:** API (документы)
+
+**Responsibility:** `POST /vacancies` — извлечение требований LLM и запись вакансии с навыками;
+`GET /vacancies` — список без навыков; `GET /vacancies/{id}` — карточка с навыками.
+`POST /resumes` — извлечение навыков, запись и пересборка профиля; `GET /resumes`,
+`GET /resumes/{id}` — список и карточка. Ошибки: 422 — нечитаемый ответ модели,
+404 — чужой/несуществующий документ, 502 — LLM недоступна (глобальный обработчик).
+
+**Depends on:** `app/services/profile.py`, `app/api/mappers.py`, `app/api/deps.py`.
+
+**Used by:** подключаются в `backend/app/main.py`; далее — экраны загрузки и профиля.
+
+#### `backend/app/api/routes/profile.py`, `analysis.py`
+
+**Role:** API (профиль и анализ)
+
+**Responsibility:** `GET /profile` — срез профиля знаний и навыки вне онтологии;
+`GET /profile/gaps?vacancy_id=...` — разрывы и готовность к вакансии; `POST /analysis` —
+документы, профиль и gap-анализ одним ответом. `POST /analysis` LLM не вызывает:
+извлечение выполняется при загрузке документов.
+
+**Depends on:** `app/services/profile.py`, `app/api/mappers.py`.
+
+**Used by:** подключаются в `backend/app/main.py`; дашборд и экран профиля.
+
+#### `backend/app/api/mappers.py`
+
+**Role:** API (маппинг)
+
+**Responsibility:** преобразование доменных dataclass-объектов сервисного слоя
+(`SkillEntry`, `ProfileSnapshot`, `GapReport`, `Vacancy`, `Resume`) в Pydantic-схемы API.
+Единая точка, чтобы сервисы не зависели от схем транспорта.
+
+**Depends on:** `app/schemas/analysis.py`, `app/services/profile.py`.
+
+**Used by:** доменные роутеры.
+
+#### `backend/app/schemas/analysis.py`
+
+**Role:** SCHEMA (DTO)
+
+**Responsibility:** схемы `VacancyCreate/Read/Summary`, `ResumeCreate/Read/Summary`, `SkillRead`,
+`TopicBrief`, `ProfileRead`/`ProfileTopicRead`, `UnmatchedSkillRead`, `GapAnalysisRead`/`GapItemRead`,
+`AnalysisRequest/Response`. Ограничение текста документа — 50 000 символов.
+
+**Depends on:** `pydantic`.
+
+**Used by:** доменные роутеры, `app/api/mappers.py`; типы попадают в OpenAPI и генерируются
+во frontend.
+
+#### `backend/app/services/profile.py`
+
+**Role:** SERVICE (документы, профиль, gap-анализ)
+
+**Responsibility:** `analyze_vacancy` / `save_vacancy_analysis`, `analyze_resume` /
+`save_resume_analysis` — извлечение и запись документов с нормализацией навыков;
+`rebuild_profile` — пересчёт среза по резюме без занижения более сильных источников;
+`get_profile`, `compute_gaps`, `update_skill_proficiency`, `weighted_estimate` — профиль,
+разрывы и взвешенное слияние оценок; upsert кандидатов на новые темы через
+`pg_insert(...).on_conflict_do_update`. `NotFoundError` — изоляция по владельцу.
+
+**Depends on:** `app/services/analysis.py`, `app/services/topics.py`,
+`app/models/`, `app/llm/base.py`, `app/embeddings/base.py`.
+
+**Used by:** доменные роутеры, `app/agent/analysis_tools.py`, тесты.
+
+**Important:** веса источников — `manual 1.0 / interview 0.9 / assessment 0.8 / resume 0.6`;
+потолок уверенности `0.95`; готовность считается только по навыкам, сопоставленным
+с онтологией.
+
+#### `backend/app/agent/analysis_tools.py`
+
+**Role:** AGENT (доменные инструменты)
+
+**Responsibility:** 7 инструментов с JSON Schema: `extract_vacancy_requirements`,
+`extract_resume_skills`, `get_vacancy_requirements`, `get_user_skill_state`,
+`query_skill_dependencies`, `update_skill_proficiency`, `compute_vacancy_gaps`.
+`build_analysis_tools` / `register_analysis_tools` собирают их под пользователя и сессию БД.
+
+**Depends on:** `app/agent/tools.py`, `app/services/analysis.py`, `app/services/profile.py`,
+`app/models/topic.py`.
+
+**Used by:** агентские сценарии (M3–M4), тесты `test_analysis_tools.py`.
+
+**Important:** `user_id` не приходит от модели — агент физически не может обратиться к чужим данным.
 
 #### `backend/app/schemas/auth.py`
 
@@ -683,14 +787,16 @@ dev-группа (pytest, pytest-asyncio, httpx2, ruff), конфигураци�
 
 **Responsibility:** `OpenAIProvider` на официальном SDK (`AsyncOpenAI`): function calling
 (`generate_with_tools`), структурированный вывод по JSON Schema (`generate_structured`,
-`response_format: json_schema`, `strict`), конвертация сообщений и usage.
+`response_format: json_schema`, `strict`), конвертация сообщений и usage. При отказе шлюза
+от strict-схемы или сбое запроса — один резервный запрос с описанием схемы в промпте.
+Таймаут и повторы — из настроек; ошибки SDK оборачиваются в `LLMError`.
 
 **Depends on:** `openai`, `backend/app/llm/base.py`.
 
 **Used by:** `backend/app/llm/factory.py`.
 
 **Important:** секреты — только из настроек; живой вызов проверяется тестом со `skipif`
-без ключа.
+без ключа (`RUN_LIVE_LLM_TESTS=1`).
 
 #### `backend/app/llm/factory.py`
 
@@ -878,6 +984,55 @@ preflight `OPTIONS /auth/login` разрешён.
 из `agent_actions` в реальной БД; пропускается без PostgreSQL.
 
 **Depends on:** `backend/app/agent/audit.py`, `backend/app/db/session.py`.
+
+**Used by:** `uv run pytest`.
+
+#### `backend/tests/conftest.py`
+
+**Role:** TEST (фикстуры)
+
+**Responsibility:** общие фикстуры интеграционных тестов: `seeded_db` (пропуск без PostgreSQL +
+засеянная онтология), `api_user` (регистрация, логин, подмена `get_llm_provider` и `get_embedder`),
+`second_user` (проверка изоляции), `SchemaStubProvider` — LLM-заглушка, отдающая ответ
+по имени JSON-схемы; тексты вакансии и резюме для тестов.
+
+**Depends on:** `app.main`, `app.db.session`, `app.api.deps`, `app.ontology.seed`.
+
+**Used by:** `test_analysis_api.py`, `test_analysis_tools.py` и другие интеграционные тесты.
+
+#### `backend/tests/test_analysis_api.py`
+
+**Role:** TEST
+
+**Responsibility:** доменные эндпоинты: создание вакансии с извлечением и сопоставлением навыков,
+резюме и пересборка профиля, `/analysis` с разрывами и готовностью, списки документов,
+изоляция по пользователю (404 на чужое), 401 без токена, 422 на пустой текст, 502 при сбое LLM.
+
+**Depends on:** `tests/conftest.py`, `app.main`.
+
+**Used by:** `uv run pytest`.
+
+#### `backend/tests/test_analysis_tools.py`
+
+**Role:** TEST
+
+**Responsibility:** инструменты агента: набор имён и JSON Schema, валидация аргументов,
+извлечение без записи в БД, изоляция по владельцу, чтение профиля, пререквизиты графа,
+обновление оценки, ошибка невалидного UUID.
+
+**Depends on:** `app.agent.analysis_tools`, `app.services.profile`, `tests/conftest.py`.
+
+**Used by:** `uv run pytest`.
+
+#### `backend/tests/test_profile_service.py`
+
+**Role:** TEST
+
+**Responsibility:** взвешивание оценок (`weighted_estimate`: среднее по уверенности, потолок
+`0.95`, нулевая уверенность), сохранение оценки интервью при пересборке по резюме, слияние
+ручной оценки с резюме, ошибка на неизвестной теме.
+
+**Depends on:** `app.services.profile`, `app.db.session`.
 
 **Used by:** `uv run pytest`.
 
@@ -1130,7 +1285,15 @@ app/main.py ──▶ app/core/config.py ──▶ pydantic-settings (backend/.e
     │                                 │
     ├── app/api/routes/users.py ──▶ app/api/deps.py (get_current_user)
     │
-    └── (пока не подключён) app/llm/factory.py ──▶ MockProvider / OpenAIProvider (SDK openai)
+    ├── app/api/routes/vacancies.py ──┐
+    ├── app/api/routes/resumes.py ────┼──▶ app/services/profile.py ──▶ app/services/analysis.py ──▶ LLMProvider
+    ├── app/api/routes/profile.py ────┤                              ──▶ app/services/topics.py ──▶ онтология
+    ├── app/api/routes/analysis.py ───┘                              ──▶ app/models/* (vacancies, resumes, user_skill_states)
+    │        └──▶ app/api/mappers.py ──▶ app/schemas/analysis.py
+    │
+    └── app/api/deps.py ──▶ app/llm/factory.py ──▶ MockProvider / OpenAIProvider (SDK openai)
+
+app/agent/analysis_tools.py ──▶ app/services/{analysis,profile}.py (tools привязаны к user_id)
 
 app/agent/deep_harness.py ──▶ deepagents.create_deep_agent ──▶ ProviderChatModel (наш LLMProvider)
 app/agent/deep_harness.py ──▶ middleware.py (AuditMiddleware ──▶ audit.py ──▶ agent_actions;
@@ -1202,12 +1365,12 @@ API доступен снаружи по `localhost:${API_PORT}` (по умол�
 | Точка входа | Файл | Статус |
 |---|---|---|
 | Запуск инфраструктуры и API | `infra/docker-compose.yml` (сервисы `postgres`, `api`) | реализовано |
-| Backend-приложение (локально) | `backend/app/main.py` (uvicorn) | каркас + auth + Agent Harness реализованы |
+| Backend-приложение (локально) | `backend/app/main.py` (uvicorn) | каркас, auth, Agent Harness и доменные API реализованы |
 | Backend-приложение (контейнер) | `backend/docker/entrypoint.sh` → uvicorn | миграции + API, healthy |
 | Миграции БД | `backend/alembic/` (`uv run alembic ...`) | 4 миграции: pgvector, users, agent_actions, граф знаний и документы |
 | Сид онтологии | `backend/app/ontology/seed.py` (`uv run python -m app.ontology.seed`) | 8 тем + 3 ребра `REQUIRES`, идемпотентно |
 | Eval качества извлечения | `backend/scripts/eval_extraction.py` | golden-набор из 5 кейсов; требует живого LLM |
-| Прогон тестов backend | `backend/tests/` (pytest) | 117 тестов (1 пропускается без ключа OpenAI) |
+| Прогон тестов backend | `backend/tests/` (pytest) | 141 тест (1 пропускается без флага живого LLM) |
 | Frontend dev-сервер | `frontend/` (`npm run dev`) | вход/регистрация через API |
 | Генерация типов API | `frontend/` (`npm run generate:api`, нужен backend) | скрипт готов |
 | Сборка frontend | `npm run build` (tsc + vite) | проходит |
@@ -1227,8 +1390,9 @@ API доступен снаружи по `localhost:${API_PORT}` (по умол�
 | `API_PORT` | порт API-контейнера на хосте (по умолчанию `8000`) | нет |
 | `JWT_SECRET_KEY` | секрет JWT для контейнера API (пусто → dev-дефолт кода) | да |
 | `LLM_PROVIDER` | провайдер LLM в контейнере: `mock` (по умолчанию) или `openai` | нет |
-| `OPENAI_API_KEY` | ключ OpenAI для контейнера API | да |
+| `OPENAI_API_KEY` | ключ OpenAI (или совместимого шлюза) для контейнера API | да |
 | `OPENAI_MODEL` | модель OpenAI для контейнера API | нет |
+| `OPENAI_BASE_URL` | базовый URL OpenAI-совместимого шлюза (пусто — `api.openai.com`) | нет |
 | `CORS_ORIGINS` | браузерные источники (JSON-массив) для контейнера API | нет |
 
 ### `backend/.env.example` (и локальный `backend/.env`)
@@ -1243,8 +1407,11 @@ API доступен снаружи по `localhost:${API_PORT}` (по умол�
 | `ACCESS_TOKEN_EXPIRE_MINUTES` | время жизни access-токена (по умолчанию 30) | нет |
 | `REFRESH_TOKEN_EXPIRE_DAYS` | время жизни refresh-токена (по умолчанию 30) | нет |
 | `LLM_PROVIDER` | провайдер LLM: `mock` (по умолчанию) или `openai` | нет |
-| `OPENAI_API_KEY` | ключ OpenAI (нужен для `LLM_PROVIDER=openai`) | да |
+| `OPENAI_API_KEY` | ключ OpenAI (или совместимого шлюза; нужен для `LLM_PROVIDER=openai`) | да |
 | `OPENAI_MODEL` | модель OpenAI (нужна для `LLM_PROVIDER=openai`) | нет |
+| `OPENAI_BASE_URL` | базовый URL OpenAI-совместимого шлюза (пусто — `api.openai.com`) | нет |
+| `OPENAI_TIMEOUT_SECONDS` | таймаут одного запроса к LLM, сек (по умолчанию 30) | нет |
+| `OPENAI_MAX_RETRIES` | повторы SDK (по умолчанию 0; резервный запрос делает сам провайдер) | нет |
 | `CORS_ORIGINS` | браузерные источники (JSON-массив; по умолчанию `["http://localhost:5173"]`) | нет |
 | `AGENT_MAX_STEPS` | максимум шагов агентского цикла (по умолчанию 10) | нет |
 | `AGENT_TOKEN_BUDGET` | бюджет токенов на цикл (по умолчанию 50000) | нет |
@@ -1299,10 +1466,13 @@ API доступен снаружи по `localhost:${API_PORT}` (по умол�
   аргументы и результат (JSONB), статус, токены, длительность; `session_id` — свободная ссылка
   без FK (сессии появятся на неделе 5).
 
+**Факт (дополнение, спринт C):** доменные таблицы используются API — вакансии и резюме
+с навыками, срез `user_skill_states` обновляется при загрузке резюме и ручной оценке;
+навыки вне онтологии попадают в `topic_candidates` (upsert по `normalized_name`).
+
 **План** ([`AGENTS.md`](../AGENTS.md) §4–5):
 
-- Остальные таблицы схемы: `resumes`, `vacancies`, `topics`, `topic_prerequisites`,
-  `user_skill_states`, `interview_sessions` / `interview_turns`, `agent_actions`,
+- Остальные таблицы схемы: `interview_sessions` / `interview_turns`,
   `learning_plans` / `plan_items`, `embeddings` (pgvector).
 - ORM-модели (SQLAlchemy 2) — от `Base` в `backend/app/db/base.py`; миграции — autogenerate.
 - Граф знаний на MVP — реляционная модель в Postgres, доступ через репозиторий-границу.
@@ -1311,9 +1481,12 @@ API доступен снаружи по `localhost:${API_PORT}` (по умол�
 
 ## 9. Внешние интеграции
 
-**Факт:** в рантайме внешних вызовов нет. Реализован слой LLM: провайдер-агностичный интерфейс,
-`MockProvider` (по умолчанию, без сети) и `OpenAIProvider` на официальном SDK; живые вызовы
-выполняются только при `LLM_PROVIDER=openai` с ключом и моделью.
+**Факт:** слой LLM реализован: провайдер-агностичный интерфейс, `MockProvider`
+(по умолчанию, без сети) и `OpenAIProvider` на официальном SDK; живые вызовы выполняются
+при `LLM_PROVIDER=openai` с ключом и моделью, в том числе через OpenAI-совместимый шлюз
+(`OPENAI_BASE_URL`). Модель вызывается из HTTP-контура при загрузке вакансии и резюме;
+`POST /analysis` работает без LLM. При недоступности модели API отвечает 502, причина
+пишется в лог. Frontend и backend связаны по REST (CORS для dev-сервера).
 
 **План** ([`AGENTS.md`](../AGENTS.md) §6): использование LLM в продукте — через Agent Harness
 (LLM выбирает инструменты, Harness их исполняет и пишет audit-лог). Данные в LLM: тексты
@@ -1323,7 +1496,8 @@ API доступен снаружи по `localhost:${API_PORT}` (по умол�
 
 ## 10. Тесты
 
-**Backend.** `backend/tests/` — 50 тестов на pytest (+ `pytest-asyncio`):
+**Backend.** `backend/tests/` — 141 тест на pytest (+ `pytest-asyncio`; 1 пропускается
+без `RUN_LIVE_LLM_TESTS=1`):
 
 - `test_health.py` — `/health` (200 + статус) и `/docs` (200);
 - `test_health_db.py` — `/health/db`: 200 и 503 (два случая: `SQLAlchemyError`, `OSError`)
@@ -1339,7 +1513,15 @@ API доступен снаружи по `localhost:${API_PORT}` (по умол�
 - `test_agent_deep_harness.py` — основной harness (Deep Agents) на мок-LLM: полный цикл
   с инструментом и аудитом, передача JSON Schema, лимиты шагов/токенов, таймаут, ошибки LLM
   и инструмента, продолжение истории по `thread_id`;
-- `test_agent_audit.py` — запись/чтение аудит-лога в реальной БД; пропускается без PostgreSQL.
+- `test_agent_audit.py` — запись/чтение аудит-лога в реальной БД; пропускается без PostgreSQL;
+- `test_analysis_api.py` — доменные эндпоинты (вакансии, резюме, профиль, `/analysis`),
+  изоляция по пользователю, коды 401/404/422/502; LLM подменена заглушкой;
+- `test_analysis_tools.py` — 7 инструментов агента: схемы, валидация, изоляция по владельцу,
+  чтение профиля и графа, обновление оценки;
+- `test_profile_service.py` — взвешенное слияние оценок, потолок уверенности, приоритет
+  источников, ошибка на неизвестной теме;
+- `test_analysis.py`, `test_normalization.py`, `test_extraction_golden.py`, `test_embeddings*.py` —
+  извлечение, нормализация и golden-набор (без сети).
 
 Запуск: `uv run pytest` из `backend/`. Конфигурация — в `backend/pyproject.toml`
 (`testpaths`, `pythonpath`, `asyncio_mode`).

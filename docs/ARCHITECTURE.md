@@ -116,13 +116,16 @@ Backend API (FastAPI)          ← auth, бизнес-логика, владел
 **Location:** `backend/`
 
 **Реализовано:** FastAPI-точка входа `app/main.py` (health-эндпоинты, CORS, подключение
-роутеров), JWT-аутентификация (`app/api/`: `register`, `login`, `refresh`, `/me`;
-`app/core/security.py`: argon2id + PyJWT), слой LLM (`app/llm/`: провайдер-агностичный интерфейс
-`LLMProvider`, `MockProvider` для тестов без сети, `OpenAIProvider` — function calling
-и структурированный вывод по JSON Schema; фабрика по `LLM_PROVIDER`), настройки
+роутеров, обработчик `LLMError` → 502), JWT-аутентификация (`app/api/`: `register`, `login`,
+`refresh`, `/me`; `app/core/security.py`: argon2id + PyJWT), слой LLM (`app/llm/`:
+провайдер-агностичный интерфейс `LLMProvider`, `MockProvider` для тестов без сети,
+`OpenAIProvider` — function calling и структурированный вывод по JSON Schema с резервным
+режимом «схема в промпте»; фабрика по `LLM_PROVIDER`), доменные REST-эндпоинты
+(`/vacancies`, `/resumes`, `/profile`, `/profile/gaps`, `/analysis`), сервисный слой
+(`app/services/`: извлечение, нормализация, профиль знаний и gap-анализ), настройки
 `app/core/config.py` (pydantic-settings), слой БД `app/db/` (async-движок, фабрика сессий,
-`get_db`, `Base`), модель `User` (`app/models/`), схемы (`app/schemas/`), миграции Alembic
-(`alembic/`), тесты `tests/`; контейнеризация — `backend/Dockerfile` и
+`get_db`, `Base`), модели графа знаний и документов (`app/models/`), схемы (`app/schemas/`),
+миграции Alembic (`alembic/`), тесты `tests/`; контейнеризация — `backend/Dockerfile` и
 `backend/docker/entrypoint.sh` (миграции применяются при старте контейнера).
 
 **Ответственность по плану:** остальные модели и схема БД, доменные REST API, сервисный слой,
@@ -186,28 +189,37 @@ Tools — типизированные функции, единственный 
 (multilingual MiniLM, 384 измерения) без внешних сервисов, с деградацией к alias и
 нечёткому совпадению, если пакет не установлен.
 
-**План:** таблица `embeddings` — на неделе 7 ([`AGENTS.md`](../AGENTS.md) §4); извлечение
-навыков и gap-анализ — M2.
+Профиль знаний материализуется в `user_skill_states`: оценки объединяются взвешенно по
+источнику (`manual` > `interview` > `assessment` > `resume`), уверенность считается по
+независимым свидетельствам и ограничена `0.95`. Gap-анализ (`compute_gaps`) считает разрывы
+«требуется − есть» и общую готовность только по навыкам, сопоставленным с онтологией;
+навыки вне словаря показываются отдельно (`unmatched_count`).
+
+**План:** таблица `embeddings` — на неделе 7 ([`AGENTS.md`](../AGENTS.md) §4); планировщик
+маршрута по графу и адаптация интервью — M3–M4.
 
 ---
 
 ## 5. Потоки данных
 
-**Факт:** доменные потоки пока без записи в БД и без API. Реализована середина потока A:
-извлечение навыков (`app/services/analysis.py`, структурированный вывод LLM) и сопоставление
-с онтологией (`app/services/normalization.py`: exact → alias → нечёткое → косинус);
-golden-набор и eval-скрипт меряют качество. Есть поток аутентификации:
-регистрация → argon2-хеш → `users`; логин → проверка хеша → пара JWT-токенов в SPA;
-дашборд → `GET /me` с access-токеном.
+**Факт:** поток A (onboarding) реализован по M2: загрузка вакансии → `extract_vacancy_requirements`
+(структурированный вывод LLM) → нормализация к онтологии (`exact → alias → fuzzy → embedding`)
+→ запись `vacancies` / `vacancy_skills`; загрузка резюме → `extract_resume_skills` → запись
+`resumes` / `resume_skills` → пересборка профиля (`user_skill_states`); gap-анализ считает
+разрывы и готовность к вакансии. Навыки вне онтологии сохраняются с `topic_id = NULL` и
+попадают в `topic_candidates`. Golden-набор и eval-скрипт меряют качество извлечения.
+Поток аутентификации: регистрация → argon2-хеш → `users`; логин → проверка хеша → пара
+JWT-токенов в SPA; дашборд → `GET /me` с access-токеном.
 
 **План** ([`AGENTS.md`](../AGENTS.md) §2.4):
 
-- **A. Onboarding:** вакансия + резюме → `extract_vacancy_requirements` / `extract_resume_skills`
-  → нормализация к онтологии → обновление профиля знаний (запись в БД и API — M2).
-- **B. Планирование:** «требуется вакансией − текущий уровень» → gap-анализ → приоритизированный план.
+- **A. Onboarding:** расширение онтологии по кандидатам и ревью новых тем — по мере накопления данных.
+- **B. Планирование:** «требуется вакансией − текущий уровень» → gap-анализ → приоритизированный
+  план (gap-анализ готов, план — M3).
 - **C. Интервью (реалтайм):** генерация вопроса → ответ → `evaluate_answer` → обновление графа →
   `adjust_difficulty` → следующий вопрос → `save_interview_result` + отчёт.
-- **D. Память:** старт с `load_user_profile`; накопленный профиль переиспользуется между вакансиями.
+- **D. Память:** старт с `load_user_profile`; накопленный профиль переиспользуется между вакансиями
+  (профиль и инструмент `get_user_skill_state` готовы, агентский цикл — M3–M4).
 
 ---
 
@@ -220,7 +232,19 @@ golden-набор и eval-скрипт меряют качество. Есть �
 - `POST /auth/register` — валидация → argon2-хеш → `INSERT` (409 при занятом email);
 - `POST /auth/login` — проверка пароля (401 при ошибке) → пара access/refresh-токенов;
 - `POST /auth/refresh` — проверка refresh-токена → новая пара;
-- `GET /me` — `get_current_user`: Bearer → проверка access-JWT → `SELECT` пользователя → 200/401.
+- `GET /me` — `get_current_user`: Bearer → проверка access-JWT → `SELECT` пользователя → 200/401;
+- `POST /vacancies` — LLM извлекает требования → нормализация к онтологии → запись
+  `vacancies` / `vacancy_skills` → 201; 422 при нечитаемом ответе модели, 502 при недоступной LLM;
+- `GET /vacancies`, `GET /vacancies/{id}` — список (без навыков) и карточка с навыками;
+- `POST /resumes` — извлечение навыков → запись `resumes` / `resume_skills` → пересборка профиля;
+- `GET /resumes`, `GET /resumes/{id}` — список и карточка резюме;
+- `GET /profile` — срез `user_skill_states` + навыки вне онтологии;
+- `GET /profile/gaps?vacancy_id=...` — разрывы и готовность к вакансии;
+- `POST /analysis` — документы, профиль и разрывы одним ответом; LLM не вызывается.
+
+Доменные эндпоинты защищены `get_current_user` и изолированы по владельцу: обращение к чужому
+документу возвращает 404. `LLMError` обрабатывается глобально — 502 с понятным текстом,
+причина пишется в лог.
 
 **Frontend** — поток входа:
 
@@ -237,8 +261,8 @@ golden-набор и eval-скрипт меряют качество. Есть �
           └── нет токена ──▶ «Вы не вошли в аккаунт» + ссылка на /login
 ```
 
-**План:** расширение REST-контура доменными эндпоинтами; WebSocket для стриминга интервью
-([`AGENTS.md`](../AGENTS.md) §2.1, §3.3); LLM пока не вызывается из HTTP-контура.
+**План:** WebSocket для стриминга интервью ([`AGENTS.md`](../AGENTS.md) §2.1, §3.3);
+эндпоинты плана подготовки и сессий интервью — M3–M4.
 
 ---
 
@@ -283,21 +307,25 @@ SQLAlchemy 2 (async); `agent_actions` — обязательный audit-лог;
 
 ## 8. Внешние интеграции
 
-**Факт:** в рантайме внешних вызовов нет. Слой LLM реализован и по умолчанию использует
-`MockProvider` (без сети); `OpenAIProvider` (официальный SDK) активируется настройками
-и выполняет живые вызовы только при заданных `OPENAI_API_KEY` и `OPENAI_MODEL`.
+**Факт:** слой LLM реализован и по умолчанию использует `MockProvider` (без сети);
+`OpenAIProvider` (официальный SDK) активируется настройками и выполняет живые вызовы при
+заданных `OPENAI_API_KEY` и `OPENAI_MODEL`; `OPENAI_BASE_URL` позволяет работать через
+OpenAI-совместимый шлюз. Загрузка вакансии и резюме вызывает модель из HTTP-контура
+(`POST /vacancies`, `POST /resumes`); `POST /analysis` модель не вызывает.
+Структурированный вывод сначала использует `response_format=json_schema`, при отказе шлюза
+повторяется с описанием схемы в промпте. Ошибки SDK и сети превращаются в `LLMError` → 502.
 Frontend и backend связаны по REST (CORS-разрешение для dev-сервера).
 
 **План** ([`AGENTS.md`](../AGENTS.md) §6, §10):
 
 | Параметр | Значение |
 |---|---|
-| Integration | LLM-провайдер (OpenAI; запасной — Anthropic), провайдер-агностичный слой |
+| Integration | LLM-провайдер (OpenAI или совместимый шлюз; запасной — Anthropic), провайдер-агностичный слой |
 | Purpose | анализ, планирование, генерация вопросов, оценка ответов |
-| Location | `backend/app/llm/` (слой готов; использование в агентском цикле — план) |
-| Configuration | `LLM_PROVIDER`, `OPENAI_API_KEY`, `OPENAI_MODEL` (окружение, `backend/.env`) |
+| Location | `backend/app/llm/`; вызовы из сервисного слоя и (далее) из агентского цикла |
+| Configuration | `LLM_PROVIDER`, `OPENAI_API_KEY`, `OPENAI_MODEL`, `OPENAI_BASE_URL`, таймауты/повторы |
 | Data exchanged | тексты промптов/ответов, структурированный JSON (tool-calls, оценки) |
-| Failure handling | план: лимиты итераций/бюджета, таймауты, fallback-ответ (§10) |
+| Failure handling | таймаут запроса, один резервный запрос без strict-схемы, 502 в API, audit-лог |
 
 ---
 
@@ -314,8 +342,9 @@ Frontend и backend связаны по REST (CORS-разрешение для d
 | `API_PORT` | порт API-контейнера на хосте (по умолчанию `8000`) | нет |
 | `JWT_SECRET_KEY` | секрет JWT для контейнера API (пусто → dev-дефолт кода) | да |
 | `LLM_PROVIDER` | провайдер LLM в контейнере (`mock` по умолчанию) | нет |
-| `OPENAI_API_KEY` | ключ OpenAI для контейнера API | да |
+| `OPENAI_API_KEY` | ключ OpenAI (или совместимого шлюза) для контейнера API | да |
 | `OPENAI_MODEL` | модель OpenAI для контейнера API | нет |
+| `OPENAI_BASE_URL` | базовый URL OpenAI-совместимого шлюза (пусто — `api.openai.com`) | нет |
 | `CORS_ORIGINS` | браузерные источники (JSON-массив) для контейнера API | нет |
 
 **Backend** — `backend/.env` (копия `backend/.env.example`):
@@ -330,8 +359,11 @@ Frontend и backend связаны по REST (CORS-разрешение для d
 | `ACCESS_TOKEN_EXPIRE_MINUTES` | время жизни access-токена (по умолчанию 30) | нет |
 | `REFRESH_TOKEN_EXPIRE_DAYS` | время жизни refresh-токена (по умолчанию 30) | нет |
 | `LLM_PROVIDER` | провайдер LLM: `mock` (по умолчанию) или `openai` | нет |
-| `OPENAI_API_KEY` | ключ OpenAI (для `LLM_PROVIDER=openai`) | да |
+| `OPENAI_API_KEY` | ключ OpenAI (или совместимого шлюза) для `LLM_PROVIDER=openai` | да |
 | `OPENAI_MODEL` | модель OpenAI (для `LLM_PROVIDER=openai`) | нет |
+| `OPENAI_BASE_URL` | базовый URL OpenAI-совместимого шлюза (пусто — `api.openai.com`) | нет |
+| `OPENAI_TIMEOUT_SECONDS` | таймаут одного запроса к LLM, сек (по умолчанию 30) | нет |
+| `OPENAI_MAX_RETRIES` | повторы SDK при ошибках (по умолчанию 0: резервный запрос делает провайдер) | нет |
 | `CORS_ORIGINS` | браузерные источники (по умолчанию `["http://localhost:5173"]`) | нет |
 | `AGENT_MAX_STEPS` | максимум шагов агентского цикла (по умолчанию 10) | нет |
 | `AGENT_TOKEN_BUDGET` | бюджет токенов на цикл (по умолчанию 50000) | нет |
@@ -376,9 +408,12 @@ Access-TTL — 30 минут, refresh-TTL — 30 дней (настройки). 
 сохраняются в `localStorage`; дашборд запрашивает `/me` с `Authorization: Bearer`; при 401
 токены очищаются; «Выйти» очищает токены и состояние. Refresh-механика в UI пока не используется.
 
-**План** ([`AGENTS.md`](../AGENTS.md) §6, §10): изоляция данных по `user_id` на уровне Tools;
-при необходимости отзыва токенов — таблица refresh-сессий (отдельный шаг); возможен переход
-на httpOnly-cookie для снижения XSS-риска.
+**Изоляция доменных данных (факт):** сервисы получают `user_id` из проверенного токена и
+проверяют владельца при чтении документа (иначе `NotFoundError` → 404); агентские инструменты
+собираются под конкретного пользователя и сессию БД — `user_id` не приходит от модели.
+
+**План** ([`AGENTS.md`](../AGENTS.md) §6, §10): при необходимости отзыва токенов — таблица
+refresh-сессий (отдельный шаг); возможен переход на httpOnly-cookie для снижения XSS-риска.
 
 ---
 
