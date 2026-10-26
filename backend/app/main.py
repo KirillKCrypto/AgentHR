@@ -1,19 +1,28 @@
 """Точка входа FastAPI-приложения AgentHR."""
 
+import logging
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from typing import Annotated
 
-from fastapi import Depends, FastAPI, HTTPException
+from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from sqlalchemy import text
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.api.routes.analysis import router as analysis_router
 from app.api.routes.auth import router as auth_router
+from app.api.routes.profile import router as profile_router
+from app.api.routes.resumes import router as resumes_router
 from app.api.routes.users import router as users_router
+from app.api.routes.vacancies import router as vacancies_router
 from app.core.config import get_settings
 from app.db.session import engine, get_db
+from app.llm.base import LLMError
+
+logger = logging.getLogger(__name__)
 
 settings = get_settings()
 
@@ -37,6 +46,20 @@ app.add_middleware(
 
 app.include_router(auth_router)
 app.include_router(users_router)
+app.include_router(vacancies_router)
+app.include_router(resumes_router)
+app.include_router(profile_router)
+app.include_router(analysis_router)
+
+
+@app.exception_handler(LLMError)
+async def llm_error_handler(_: Request, exc: LLMError) -> JSONResponse:
+    """Ошибка модели — 502 с понятным текстом; причина уходит в лог."""
+    logger.warning("Ошибка LLM: %s", exc)
+    return JSONResponse(
+        status_code=502,
+        content={"detail": "LLM недоступна — попробуйте позже"},
+    )
 
 
 @app.get("/health", tags=["system"])
