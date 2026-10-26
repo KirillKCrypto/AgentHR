@@ -31,6 +31,12 @@ class Settings(BaseSettings):
     llm_provider: str = "mock"
     openai_api_key: str | None = None
     openai_model: str | None = None
+    openai_base_url: str | None = None  # для OpenAI-совместимых прокси (например, сторонние шлюзы)
+    # Таймаут одного запроса к LLM: бесплатные шлюзы отвечают неравномерно
+    openai_timeout_seconds: float = 30.0
+    # Повторы на уровне SDK: наш провайдер сам делает резервный запрос,
+    # поэтому лишние ретраи только увеличивают худшее время ответа
+    openai_max_retries: int = 0
     # CORS: браузерные источники, которым разрешены запросы (frontend dev-сервер)
     cors_origins: list[str] = ["http://localhost:5173"]
     # Agent Harness: лимиты цикла

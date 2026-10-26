@@ -17,6 +17,12 @@ def create_llm_provider(settings: Settings | None = None) -> LLMProvider:
             raise LLMConfigurationError(
                 "Для LLM_PROVIDER=openai задайте OPENAI_API_KEY и OPENAI_MODEL"
             )
-        return OpenAIProvider(api_key=current.openai_api_key, model=current.openai_model)
+        return OpenAIProvider(
+            api_key=current.openai_api_key,
+            model=current.openai_model,
+            base_url=current.openai_base_url,
+            timeout=current.openai_timeout_seconds,
+            max_retries=current.openai_max_retries,
+        )
 
     raise LLMConfigurationError(f"Неизвестный LLM_PROVIDER: {current.llm_provider!r}")

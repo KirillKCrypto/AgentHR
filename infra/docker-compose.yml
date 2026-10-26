@@ -27,6 +27,10 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+    # Публичные DNS: резолвер хоста за VPN может отдавать неверный адрес шлюза LLM
+    dns:
+      - 1.1.1.1
+      - 8.8.8.8
     environment:
       # Внутри compose-сети БД доступна по имени сервиса; порт — внутренний (5432)
       DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
@@ -34,6 +38,8 @@ services:
       LLM_PROVIDER: ${LLM_PROVIDER:-mock}
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       OPENAI_MODEL: ${OPENAI_MODEL:-}
+      # Базовый URL OpenAI-совместимого шлюза (пусто = api.openai.com)
+      OPENAI_BASE_URL: ${OPENAI_BASE_URL:-}
       # Эмбеддинги: none (по умолчанию) или local (нужен образ с --extra embeddings)
       EMBEDDING_PROVIDER: ${EMBEDDING_PROVIDER:-none}
       EMBEDDING_MODEL: ${EMBEDDING_MODEL:-sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2}
