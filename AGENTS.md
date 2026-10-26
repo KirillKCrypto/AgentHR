@@ -380,7 +380,8 @@ spaced repetition · мультиагентность · голос и тайм�
 9. [x] `extract_vacancy_requirements` + `extract_resume_skills` — сервисный слой готов
    (`app/services/analysis.py`), зарегистрированы как tools агента (`app/agent/analysis_tools.py`)
 10. [x] Frontend-каркас: React + TS + Vite, роутинг, shadcn/ui, `/login`
-11. [ ] E2E-скелет сквозного сценария
+11. [x] E2E-скелет сквозного сценария (API-уровень: `backend/tests/test_e2e_scenario.py`;
+   UI-e2e — позже)
 
 ---
 

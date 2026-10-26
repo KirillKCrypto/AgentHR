@@ -1,8 +1,8 @@
 # Frontend
 
-React SPA AgentHR. Реализован каркас с рабочим входом: Vite + React 19 + TypeScript,
-Tailwind CSS 4, shadcn/ui (Base UI), роутинг (react-router 8), TanStack Query,
-типизированный API-клиент (типы из OpenAPI).
+React SPA AgentHR. Реализованы вход, загрузка вакансии и резюме с анализом, профиль
+знаний: Vite + React 19 + TypeScript, Tailwind CSS 4, shadcn/ui (Base UI), роутинг
+(react-router 8), TanStack Query, типизированный API-клиент (типы из OpenAPI).
 
 ## Запуск
 
@@ -23,11 +23,15 @@ npm run generate:api # обновить src/api/schema.d.ts из OpenAPI (нуж
 
 - `src/main.tsx` — точка входа: QueryClientProvider + BrowserRouter
 - `src/App.tsx` — шапка и маршруты
-- `src/pages/` — экраны: `DashboardPage` (`/`), `LoginPage` (`/login`), `NotFoundPage` (404)
-- `src/api/` — `client.ts` (единый клиент: `login`, `register`, `fetchMe`, `ApiError`),
-  `schema.d.ts` (типы из OpenAPI, генерируется)
-- `src/lib/` — `tokens.ts` (сохранение/очистка токенов в localStorage), `utils.ts` (`cn`)
-- `src/components/ui/` — компоненты shadcn/ui (Button, Card, Input, Label)
+- `src/pages/` — экраны: `DashboardPage` (`/`), `LoginPage` (`/login`),
+  `VacancyUploadPage` (`/vacancies/new`), `ProfilePage` (`/profile`), `NotFoundPage` (404)
+- `src/api/` — `client.ts` (единый клиент: auth, вакансии, резюме, профиль, разрывы,
+  `/analysis`, `ApiError`), `schema.d.ts` (типы из OpenAPI, генерируется)
+- `src/lib/` — `tokens.ts` (токены в localStorage), `useAuthToken.ts` (токен + сброс сессии
+  при 401), `errors.ts` (понятные сообщения), `labels.ts` (источники, методы, даты),
+  `utils.ts` (`cn`)
+- `src/components/ui/` — компоненты shadcn/ui (Button, Card, Input, Label, Textarea, Badge,
+  Progress, Table)
 
 ## Работа с API
 
@@ -36,6 +40,11 @@ npm run generate:api # обновить src/api/schema.d.ts из OpenAPI (нуж
 - После изменения backend API обновить типы: `npm run generate:api`.
 - Поток входа: `/login` → `POST /auth/register` (при регистрации) → `POST /auth/login` →
   токены в localStorage → редирект на `/`; дашборд запрашивает `GET /me`.
+- Новая подготовка: `/vacancies/new` → `POST /vacancies` → `POST /resumes` → `POST /analysis`;
+  на экране показываются требования, готовность и разрывы, профиль инвалидируется.
+- Профиль: `/profile` → `GET /profile` + `GET /vacancies`; для выбранной вакансии —
+  `GET /profile/gaps`; параметр `?vacancy=<id>` предвыбирает вакансию.
+- Явные состояния loading / error / empty / ready на всех доменных экранах.
 
 ## Соглашения
 
@@ -45,5 +54,5 @@ npm run generate:api # обновить src/api/schema.d.ts из OpenAPI (нуж
 - Tailwind 4 подключён через `@tailwindcss/vite`; тема — в `src/index.css`
 - Никаких анимаций и кастомных визуализаций без явного запроса
 
-Экраны продукта (по `AGENTS.md` §7): `/`, `/login`, `/vacancies/new`, `/profile`, `/plans/:id`,
-`/interview/:id`, `/reports/:id` — наполняются по плану недель 2–7.
+Экраны продукта (по `AGENTS.md` §7): реализованы `/`, `/login`, `/vacancies/new`, `/profile`;
+`/plans/:id`, `/interview/:id`, `/reports/:id` — по плану M3–M5.

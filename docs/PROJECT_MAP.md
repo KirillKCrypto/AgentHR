@@ -242,15 +242,17 @@ services), `alembic/`, `alembic.ini`, `scripts/`, `tests/`, `pyproject.toml`, `u
 
 **Role:** APPLICATION (frontend)
 
-**Назначение:** React SPA AgentHR. Реализован каркас с рабочим входом: Vite + React 19 +
-TypeScript, Tailwind CSS 4, shadcn/ui (Base UI), роутинг (react-router 8), TanStack Query;
-типизированный API-клиент (`src/api/client.ts`, типы из OpenAPI в `src/api/schema.d.ts`);
-экран `/login` (регистрация и вход, состояния loading/error, токены в `src/lib/tokens.ts`,
-редирект); дашборд (загрузка `/me`, выход); 404.
+**Назначение:** React SPA AgentHR. Реализованы: вход через UI, экран новой подготовки
+(`/vacancies/new`: тексты вакансии и резюме → `POST /vacancies` → `POST /resumes` →
+`POST /analysis`, вывод требований, готовности и разрывов), профиль знаний (`/profile`:
+темы 0–100 с источником и уверенностью, подсветка пробелов по выбранной вакансии,
+блок навыков вне онтологии, `?vacancy=<id>`), дашборд (загрузка `/me` и списка вакансий,
+переходы к подготовке и профилю, выход), 404. Стек: Vite + React 19 + TypeScript,
+Tailwind CSS 4, shadcn/ui (Base UI), роутинг (react-router 8), TanStack Query;
+типизированный API-клиент (`src/api/client.ts`, типы из OpenAPI в `src/api/schema.d.ts`).
 
-**Цель по плану:** остальные экраны продукта — `/vacancies/new`, `/profile`, `/plans/:id`,
-`/interview/:id`, `/reports/:id` ([`AGENTS.md`](../AGENTS.md) §7).
-Источник: `frontend/README.md`.
+**Цель по плану:** остальные экраны продукта — `/plans/:id`, `/interview/:id`,
+`/reports/:id` ([`AGENTS.md`](../AGENTS.md) §7). Источник: `frontend/README.md`.
 
 **Содержит сейчас:** `src/` (main, App, api, pages, components/ui, lib), конфигурации
 (`package.json`, `vite.config.ts`, `tsconfig*.json`, `components.json`, `.npmrc`,
@@ -1496,8 +1498,8 @@ API доступен снаружи по `localhost:${API_PORT}` (по умол�
 
 ## 10. Тесты
 
-**Backend.** `backend/tests/` — 141 тест на pytest (+ `pytest-asyncio`; 1 пропускается
-без `RUN_LIVE_LLM_TESTS=1`):
+**Backend.** `backend/tests/` — 142 теста на pytest (+ `pytest-asyncio`; 139 passed,
+3 skipped без `fastembed` и ключа LLM):
 
 - `test_health.py` — `/health` (200 + статус) и `/docs` (200);
 - `test_health_db.py` — `/health/db`: 200 и 503 (два случая: `SQLAlchemyError`, `OSError`)
@@ -1520,6 +1522,8 @@ API доступен снаружи по `localhost:${API_PORT}` (по умол�
   чтение профиля и графа, обновление оценки;
 - `test_profile_service.py` — взвешенное слияние оценок, потолок уверенности, приоритет
   источников, ошибка на неизвестной теме;
+- `test_e2e_scenario.py` — сквозной сценарий M2 на уровне API: вакансия → резюме → профиль →
+  разрывы → `/analysis` → новая вакансия с переиспользованием профиля;
 - `test_analysis.py`, `test_normalization.py`, `test_extraction_golden.py`, `test_embeddings*.py` —
   извлечение, нормализация и golden-набор (без сети).
 
@@ -1527,8 +1531,8 @@ API доступен снаружи по `localhost:${API_PORT}` (по умол�
 (`testpaths`, `pythonpath`, `asyncio_mode`).
 
 **Frontend.** Автотестов нет; проверки — `npm run build` (типы + сборка) и `npm run lint`
-(oxlint). Сквозной сценарий (регистрация → вход → `/me` → перезагрузка → выход → ошибка пароля)
-проверен вручную в браузере на dev-сервере.
+(oxlint). Сценарии входа и M2 (регистрация → загрузка вакансии и резюме → анализ → профиль →
+пустой профиль) проверены вручную в браузере на dev-сервере.
 
 **План** ([`AGENTS.md`](../AGENTS.md) §9): функциональные тесты, агентские (на мок-LLM),
 сценарные e2e, тесты адаптивности, eval-наборы качества LLM.
