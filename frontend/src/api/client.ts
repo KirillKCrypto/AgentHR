@@ -6,6 +6,17 @@ export type LoginRequest = components['schemas']['LoginRequest']
 export type RegisterRequest = components['schemas']['RegisterRequest']
 export type TokenResponse = components['schemas']['TokenResponse']
 export type UserRead = components['schemas']['UserRead']
+export type VacancyCreate = components['schemas']['VacancyCreate']
+export type VacancyRead = components['schemas']['VacancyRead']
+export type VacancySummary = components['schemas']['VacancySummary']
+export type ResumeCreate = components['schemas']['ResumeCreate']
+export type ResumeRead = components['schemas']['ResumeRead']
+export type ResumeSummary = components['schemas']['ResumeSummary']
+export type SkillRead = components['schemas']['SkillRead']
+export type ProfileRead = components['schemas']['ProfileRead']
+export type GapAnalysisRead = components['schemas']['GapAnalysisRead']
+export type AnalysisRequest = components['schemas']['AnalysisRequest']
+export type AnalysisResponse = components['schemas']['AnalysisResponse']
 
 export class ApiError extends Error {
   readonly status: number
@@ -66,4 +77,32 @@ export function register(payload: RegisterRequest): Promise<UserRead> {
 
 export function fetchMe(token: string): Promise<UserRead> {
   return apiFetch('/me', { token })
+}
+
+export function createVacancy(payload: VacancyCreate, token: string): Promise<VacancyRead> {
+  return apiFetch('/vacancies', { method: 'POST', token, body: JSON.stringify(payload) })
+}
+
+export function listVacancies(token: string): Promise<VacancySummary[]> {
+  return apiFetch('/vacancies', { token })
+}
+
+export function createResume(payload: ResumeCreate, token: string): Promise<ResumeRead> {
+  return apiFetch('/resumes', { method: 'POST', token, body: JSON.stringify(payload) })
+}
+
+export function listResumes(token: string): Promise<ResumeSummary[]> {
+  return apiFetch('/resumes', { token })
+}
+
+export function fetchProfile(token: string): Promise<ProfileRead> {
+  return apiFetch('/profile', { token })
+}
+
+export function fetchGaps(vacancyId: string, token: string): Promise<GapAnalysisRead> {
+  return apiFetch(`/profile/gaps?vacancy_id=${encodeURIComponent(vacancyId)}`, { token })
+}
+
+export function runAnalysis(payload: AnalysisRequest, token: string): Promise<AnalysisResponse> {
+  return apiFetch('/analysis', { method: 'POST', token, body: JSON.stringify(payload) })
 }

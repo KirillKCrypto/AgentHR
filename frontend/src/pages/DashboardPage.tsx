@@ -1,9 +1,9 @@
 import { useQuery } from '@tanstack/react-query'
 import { useEffect, useState, type ReactNode } from 'react'
-import { useNavigate } from 'react-router'
+import { Link, useNavigate } from 'react-router'
 
-import { ApiError, fetchMe } from '@/api/client'
-import { Button } from '@/components/ui/button'
+import { ApiError, fetchMe, listVacancies } from '@/api/client'
+import { Button, buttonVariants } from '@/components/ui/button'
 import {
   Card,
   CardContent,
@@ -11,6 +11,7 @@ import {
   CardHeader,
   CardTitle,
 } from '@/components/ui/card'
+import { formatDate } from '@/lib/labels'
 import { clearTokens, getAccessToken } from '@/lib/tokens'
 
 export default function DashboardPage() {
@@ -20,6 +21,13 @@ export default function DashboardPage() {
   const { data, isPending, error } = useQuery({
     queryKey: ['me', token],
     queryFn: () => fetchMe(token as string),
+    enabled: token !== null,
+    retry: false,
+  })
+
+  const vacanciesQuery = useQuery({
+    queryKey: ['vacancies', token],
+    queryFn: () => listVacancies(token as string),
     enabled: token !== null,
     retry: false,
   })
@@ -52,15 +60,48 @@ export default function DashboardPage() {
     content = <Button onClick={() => navigate('/login')}>Ко входу</Button>
   } else if (data) {
     description = `Вы вошли как ${data.email}.`
+    const vacancies = vacanciesQuery.data ?? []
     content = (
-      <div className="flex flex-col gap-4">
-        <p className="text-muted-foreground">
-          Дашборд подготовки появится здесь: вакансии, активный план и последние интервью.
-        </p>
-        <div>
-          <Button variant="outline" onClick={handleLogout}>
+      <div className="flex flex-col gap-6">
+        <div className="flex flex-wrap gap-2">
+          <Link to="/vacancies/new" className={buttonVariants()}>
+            Новая подготовка
+          </Link>
+          <Link to="/profile" className={buttonVariants({ variant: 'outline' })}>
+            Профиль знаний
+          </Link>
+          <Button variant="ghost" onClick={handleLogout}>
             Выйти
           </Button>
+        </div>
+        <div className="flex flex-col gap-2">
+          <p className="text-sm font-medium">Последние вакансии</p>
+          {vacanciesQuery.isPending ? (
+            <p className="text-sm text-muted-foreground">Загружаем вакансии…</p>
+          ) : vacanciesQuery.error ? (
+            <p className="text-sm text-muted-foreground">Не удалось загрузить вакансии.</p>
+          ) : vacancies.length === 0 ? (
+            <p className="text-sm text-muted-foreground">
+              Вакансий пока нет — начните с новой подготовки.
+            </p>
+          ) : (
+            <div className="flex flex-col gap-1">
+              {vacancies.map((vacancy) => (
+                <Button
+                  key={vacancy.id}
+                  variant="ghost"
+                  className="h-auto justify-between gap-3 py-2"
+                  onClick={() => navigate(`/profile?vacancy=${vacancy.id}`)}
+                >
+                  <span className="font-medium">{vacancy.title ?? 'Без названия'}</span>
+                  <span className="text-xs text-muted-foreground">
+                    {vacancy.company ? `${vacancy.company} · ` : ''}
+                    {formatDate(vacancy.created_at)}
+                  </span>
+                </Button>
+              ))}
+            </div>
+          )}
         </div>
       </div>
     )

@@ -84,6 +84,158 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/vacancies": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Vacancies
+         * @description Вакансии текущего пользователя (без навыков — для дашборда).
+         */
+        get: operations["list_vacancies_vacancies_get"];
+        put?: never;
+        /**
+         * Create Vacancy
+         * @description Создаёт вакансию и сразу извлекает из неё требования.
+         */
+        post: operations["create_vacancy_vacancies_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/vacancies/{vacancy_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Read Vacancy
+         * @description Карточка вакансии с извлечёнными навыками.
+         */
+        get: operations["read_vacancy_vacancies__vacancy_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/resumes": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Resumes
+         * @description Резюме текущего пользователя (без навыков).
+         */
+        get: operations["list_resumes_resumes_get"];
+        put?: never;
+        /**
+         * Create Resume
+         * @description Создаёт резюме, извлекает навыки и пересобирает профиль знаний.
+         */
+        post: operations["create_resume_resumes_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/resumes/{resume_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Read Resume
+         * @description Карточка резюме с извлечёнными навыками.
+         */
+        get: operations["read_resume_resumes__resume_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/profile": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Read Profile
+         * @description Профиль знаний: освоенные темы и навыки вне онтологии.
+         */
+        get: operations["read_profile_profile_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/profile/gaps": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Read Gaps
+         * @description Разрывы между требованиями вакансии и текущим профилем.
+         */
+        get: operations["read_gaps_profile_gaps_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/analysis": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Analyze Documents
+         * @description Собирает анализ по уже загруженным вакансии и резюме.
+         *
+         *     Извлечение навыков выполняется при загрузке документов
+         *     (`POST /vacancies`, `POST /resumes`); здесь только чтение и расчёт,
+         *     поэтому повторный вызов не тратит токены LLM.
+         */
+        post: operations["analyze_documents_analysis_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/health": {
         parameters: {
             query?: never;
@@ -128,6 +280,82 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        /**
+         * AnalysisRequest
+         * @description Запрос на совместный анализ вакансии и резюме.
+         */
+        AnalysisRequest: {
+            /**
+             * Vacancy Id
+             * Format: uuid
+             */
+            vacancy_id: string;
+            /**
+             * Resume Id
+             * Format: uuid
+             */
+            resume_id: string;
+        };
+        /**
+         * AnalysisResponse
+         * @description Результат анализа: документы, профиль и разрывы.
+         */
+        AnalysisResponse: {
+            vacancy: components["schemas"]["VacancyRead"];
+            resume: components["schemas"]["ResumeRead"];
+            profile: components["schemas"]["ProfileRead"];
+            gaps: components["schemas"]["GapAnalysisRead"];
+        };
+        /**
+         * GapAnalysisRead
+         * @description Gap-анализ вакансии относительно профиля.
+         */
+        GapAnalysisRead: {
+            /**
+             * Vacancy Id
+             * Format: uuid
+             */
+            vacancy_id: string;
+            /** Vacancy Title */
+            vacancy_title?: string | null;
+            /**
+             * Items
+             * @default []
+             */
+            items: components["schemas"]["GapItemRead"][];
+            /**
+             * Overall Readiness
+             * @description Доля закрытых требований, 0..1
+             */
+            overall_readiness: number;
+            /**
+             * Unmatched Count
+             * @description Навыков вакансии вне онтологии
+             */
+            unmatched_count: number;
+        };
+        /**
+         * GapItemRead
+         * @description Разрыв по одному навыку вакансии.
+         */
+        GapItemRead: {
+            /** Skill Name */
+            skill_name: string;
+            /** Required Level */
+            required_level: number;
+            /** User Level */
+            user_level: number;
+            /** Gap */
+            gap: number;
+            /** Satisfied */
+            satisfied: boolean;
+            /** Weight */
+            weight: number;
+            /** Topic Key */
+            topic_key?: string | null;
+            /** Topic Name */
+            topic_name?: string | null;
+        };
         /** HTTPValidationError */
         HTTPValidationError: {
             /** Detail */
@@ -145,6 +373,52 @@ export interface components {
             email: string;
             /** Password */
             password: string;
+        };
+        /**
+         * ProfileRead
+         * @description Профиль знаний пользователя.
+         */
+        ProfileRead: {
+            /**
+             * User Id
+             * Format: uuid
+             */
+            user_id: string;
+            /**
+             * Topics
+             * @default []
+             */
+            topics: components["schemas"]["ProfileTopicRead"][];
+            /**
+             * Unmatched Skills
+             * @default []
+             */
+            unmatched_skills: components["schemas"]["UnmatchedSkillRead"][];
+        };
+        /**
+         * ProfileTopicRead
+         * @description Тема в срезе профиля знаний.
+         */
+        ProfileTopicRead: {
+            /**
+             * Topic Id
+             * Format: uuid
+             */
+            topic_id: string;
+            /** Topic Key */
+            topic_key: string;
+            /** Topic Name */
+            topic_name: string;
+            /** Category */
+            category?: string | null;
+            /** Proficiency */
+            proficiency: number;
+            /** Confidence */
+            confidence: number;
+            /** Source */
+            source: string;
+            /** Last Assessed */
+            last_assessed?: string | null;
         };
         /**
          * RefreshRequest
@@ -168,6 +442,97 @@ export interface components {
             password: string;
         };
         /**
+         * ResumeCreate
+         * @description Тело запроса на создание резюме.
+         */
+        ResumeCreate: {
+            /** Title */
+            title?: string | null;
+            /** Raw Text */
+            raw_text: string;
+        };
+        /**
+         * ResumeRead
+         * @description Резюме с извлечёнными навыками.
+         */
+        ResumeRead: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * User Id
+             * Format: uuid
+             */
+            user_id: string;
+            /** Title */
+            title?: string | null;
+            /** Raw Text */
+            raw_text: string;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /**
+             * Skills
+             * @default []
+             */
+            skills: components["schemas"]["SkillRead"][];
+        };
+        /**
+         * ResumeSummary
+         * @description Резюме для списка (без навыков и текста).
+         */
+        ResumeSummary: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Title */
+            title?: string | null;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+        };
+        /**
+         * SkillRead
+         * @description Навык документа вместе с сопоставленной темой.
+         */
+        SkillRead: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Raw Name */
+            raw_name: string;
+            /**
+             * Level
+             * @description Требуемый уровень (вакансия) или владение (резюме), 0..100
+             */
+            level: number;
+            /**
+             * Weight
+             * @description Важность навыка для вакансии, 0..1
+             */
+            weight?: number | null;
+            /** Confidence */
+            confidence: number;
+            /** Evidence */
+            evidence?: string | null;
+            /**
+             * Match Method
+             * @description exact | alias | fuzzy | embedding | none
+             */
+            match_method: string;
+            topic?: components["schemas"]["TopicBrief"] | null;
+        };
+        /**
          * TokenResponse
          * @description Пара токенов (access + refresh).
          */
@@ -181,6 +546,39 @@ export interface components {
              * @default bearer
              */
             token_type: string;
+        };
+        /**
+         * TopicBrief
+         * @description Краткое описание темы онтологии.
+         */
+        TopicBrief: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Key */
+            key: string;
+            /** Name */
+            name: string;
+            /** Category */
+            category?: string | null;
+        };
+        /**
+         * UnmatchedSkillRead
+         * @description Навык из резюме вне онтологии.
+         */
+        UnmatchedSkillRead: {
+            /** Raw Name */
+            raw_name: string;
+            /** Level */
+            level: number;
+            /** Confidence */
+            confidence: number;
+            /** Evidence */
+            evidence?: string | null;
+            /** Match Method */
+            match_method: string;
         };
         /**
          * UserRead
@@ -197,6 +595,70 @@ export interface components {
              * Format: email
              */
             email: string;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+        };
+        /**
+         * VacancyCreate
+         * @description Тело запроса на создание вакансии.
+         */
+        VacancyCreate: {
+            /** Title */
+            title?: string | null;
+            /** Company */
+            company?: string | null;
+            /** Raw Text */
+            raw_text: string;
+        };
+        /**
+         * VacancyRead
+         * @description Вакансия с извлечёнными навыками.
+         */
+        VacancyRead: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * User Id
+             * Format: uuid
+             */
+            user_id: string;
+            /** Title */
+            title?: string | null;
+            /** Company */
+            company?: string | null;
+            /** Raw Text */
+            raw_text: string;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /**
+             * Skills
+             * @default []
+             */
+            skills: components["schemas"]["SkillRead"][];
+        };
+        /**
+         * VacancySummary
+         * @description Вакансия для списка (без навыков и текста).
+         */
+        VacancySummary: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Title */
+            title?: string | null;
+            /** Company */
+            company?: string | null;
             /**
              * Created At
              * Format: date-time
@@ -340,6 +802,258 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["UserRead"];
+                };
+            };
+        };
+    };
+    list_vacancies_vacancies_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["VacancySummary"][];
+                };
+            };
+        };
+    };
+    create_vacancy_vacancies_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["VacancyCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["VacancyRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    read_vacancy_vacancies__vacancy_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                vacancy_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["VacancyRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_resumes_resumes_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ResumeSummary"][];
+                };
+            };
+        };
+    };
+    create_resume_resumes_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ResumeCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ResumeRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    read_resume_resumes__resume_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                resume_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ResumeRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    read_profile_profile_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProfileRead"];
+                };
+            };
+        };
+    };
+    read_gaps_profile_gaps_get: {
+        parameters: {
+            query: {
+                vacancy_id: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GapAnalysisRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    analyze_documents_analysis_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AnalysisRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AnalysisResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };
