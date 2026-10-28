@@ -1372,10 +1372,10 @@ API доступен снаружи по `localhost:${API_PORT}` (по умол�
 | Запуск инфраструктуры и API | `infra/docker-compose.yml` (сервисы `postgres`, `api`) | реализовано |
 | Backend-приложение (локально) | `backend/app/main.py` (uvicorn) | каркас, auth, Agent Harness и доменные API реализованы |
 | Backend-приложение (контейнер) | `backend/docker/entrypoint.sh` → uvicorn | миграции + API, healthy |
-| Миграции БД | `backend/alembic/` (`uv run alembic ...`) | 5 миграций: pgvector, users, agent_actions, граф знаний и документы, provisional-темы и алиасы |
-| Сид онтологии | `backend/app/ontology/seed.py` (`uv run python -m app.ontology.seed`) | 89 тем, 75 рёбер `REQUIRES`, 233 алиаса, идемпотентно |
+| Миграции БД | `backend/alembic/` (`uv run alembic ...`) | 6 миграций: pgvector, users, agent_actions, граф знаний, provisional-темы и алиасы, backfill + `NOT NULL` |
+| Сид онтологии | `backend/app/ontology/seed.py` (`uv run python -m app.ontology.seed`) | 89 canonical-тем, 75 рёбер `REQUIRES`, 233 алиаса, идемпотентно |
 | Eval качества извлечения | `backend/scripts/eval_extraction.py` | golden-набор из 5 кейсов; требует живого LLM |
-| Прогон тестов backend | `backend/tests/` (pytest) | 147 тестов, 3 пропускаются без флагов живого LLM/эмбеддингов |
+| Прогон тестов backend | `backend/tests/` (pytest) | 152 теста, 3 пропускаются без флагов живого LLM/эмбеддингов |
 | Frontend dev-сервер | `frontend/` (`npm run dev`) | вход/регистрация через API |
 | Генерация типов API | `frontend/` (`npm run generate:api`, нужен backend) | скрипт готов |
 | Сборка frontend | `npm run build` (tsc + vite) | проходит |

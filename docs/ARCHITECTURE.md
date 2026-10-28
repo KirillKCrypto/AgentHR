@@ -314,6 +314,12 @@ JWT-токенов в SPA; дашборд → `GET /me` с access-токеном
   - `topic_candidates.topic_id` — provisional-тема, созданная для кандидата.
   Для новых документов `topic_id` у навыков всегда заполнен: `resolve_or_create_topics()`
   создаёт provisional-тему в той же транзакции.
+- Миграция `c9a1d2e3f4b5` — backfill и обязательный `topic_id`:
+  - исторические NULL-навыки привязываются к темам или получают provisional-темы;
+  - `resume_skills.topic_id` / `vacancy_skills.topic_id` — `NOT NULL`;
+  - FK темы у навыков — `RESTRICT` вместо `SET NULL`;
+  - `AUTO_TOPIC_LIMIT` ограничивает число новых тем на документ, overflow идёт
+    в одну review-тему.
 - Подключение: `DATABASE_URL` из `backend/.env` (локальный дефолт в `app/core/config.py`);
   движок и сессии — `backend/app/db/session.py` (asyncpg, `pool_pre_ping`).
 - Миграции: Alembic (async-шаблон), URL берётся в `alembic/env.py` из настроек;

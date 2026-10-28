@@ -2,11 +2,12 @@
 
 from uuid import uuid4
 
-from sqlalchemy import select
+from sqlalchemy import delete, func, select
 
 from app.db.session import async_session_factory
 from app.models import ResumeSkill, Topic, TopicAlias, TopicCandidate, VacancySkill
-from app.services.normalization import normalize_name
+from app.services.normalization import TopicMatch, normalize_name
+from app.services.topics import resolve_or_create_topics
 from tests.conftest import ApiUser
 
 
@@ -26,6 +27,8 @@ async def _cleanup_topic(name: str) -> None:
         if candidate is not None:
             await session.delete(candidate)
         if topic_id is not None:
+            await session.execute(delete(ResumeSkill).where(ResumeSkill.topic_id == topic_id))
+            await session.execute(delete(VacancySkill).where(VacancySkill.topic_id == topic_id))
             topic = await session.get(Topic, topic_id)
             if topic is not None:
                 await session.delete(topic)
@@ -103,6 +106,52 @@ async def test_unknown_resume_skill_creates_provisional_topic(api_user: ApiUser)
         assert alias is not None
     finally:
         await _cleanup_topic(name)
+
+
+async def test_auto_topic_limit_groups_overflow(seeded_db: None) -> None:
+    """При исчерпании лимита новые навыки идут в одну review-тему."""
+    first = _unknown_skill()
+    second = _unknown_skill()
+    source_id = uuid4()
+    topic_id = None
+
+    try:
+        async with async_session_factory() as session:
+            resolved = await resolve_or_create_topics(
+                session,
+                [(first, None), (second, None)],
+                [
+                    TopicMatch(None, "none", 0.0),
+                    TopicMatch(None, "none", 0.0),
+                ],
+                source_type="vacancy",
+                source_id=source_id,
+                auto_topic_limit=0,
+            )
+            await session.commit()
+            topic_id = resolved[0].topic_id
+            assert topic_id is not None
+            assert resolved[1].topic_id == topic_id
+
+            topic = await session.get(Topic, topic_id)
+            assert topic is not None
+            assert topic.key.startswith("auto-review-")
+            assert topic.status == "provisional"
+
+            candidate_count = await session.scalar(
+                select(func.count())
+                .select_from(TopicCandidate)
+                .where(TopicCandidate.topic_id == topic_id)
+            )
+            assert candidate_count == 2
+    finally:
+        if topic_id is not None:
+            async with async_session_factory() as session:
+                await session.execute(
+                    delete(TopicCandidate).where(TopicCandidate.topic_id == topic_id)
+                )
+                await session.execute(delete(Topic).where(Topic.id == topic_id))
+                await session.commit()
 
 
 async def test_unknown_vacancy_skill_gets_topic_and_gap(api_user: ApiUser) -> None:

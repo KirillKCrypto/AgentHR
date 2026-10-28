@@ -46,8 +46,7 @@ class Resume(Base):
 class ResumeSkill(Base):
     """Навык, извлечённый из резюме.
 
-    `topic_id` может быть NULL — навык сохранён как есть и показан в профиле
-    отдельным блоком «вне онтологии».
+    `topic_id` обязателен: неизвестный навык получает provisional-тему.
     """
 
     __tablename__ = "resume_skills"
@@ -68,8 +67,9 @@ class ResumeSkill(Base):
     resume_id: Mapped[uuid.UUID] = mapped_column(
         Uuid, ForeignKey("resumes.id", ondelete="CASCADE"), index=True
     )
-    topic_id: Mapped[uuid.UUID | None] = mapped_column(
-        Uuid, ForeignKey("topics.id", ondelete="SET NULL"), nullable=True, index=True
+    # RESTRICT не даёт удалить тему, пока на неё ссылаются навыки.
+    topic_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid, ForeignKey("topics.id", ondelete="RESTRICT"), nullable=False, index=True
     )
     raw_name: Mapped[str] = mapped_column(String(200))
     # Оценка владения, 0..100
@@ -77,7 +77,7 @@ class ResumeSkill(Base):
     # Уверенность извлечения, 0..1
     confidence: Mapped[float] = mapped_column(Float, default=0.5, server_default=text("0.5"))
     evidence: Mapped[str | None] = mapped_column(Text, nullable=True)
-    # exact | alias | fuzzy | embedding | manual | none
+    # exact | alias | fuzzy | embedding | provisional | backfill | manual | none
     match_method: Mapped[str] = mapped_column(
         String(20), default="none", server_default=text("'none'")
     )

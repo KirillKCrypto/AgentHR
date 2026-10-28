@@ -43,6 +43,8 @@ services:
       # Режим структурированного вывода: json_schema (OpenAI), json_object (DeepSeek), prompt
       LLM_STRUCTURED_MODE: ${LLM_STRUCTURED_MODE:-json_schema}
       # Эмбеддинги: none (по умолчанию) или local (нужен образ с --extra embeddings)
+      # 0 — все новые навыки сразу в review-тему
+      AUTO_TOPIC_LIMIT: ${AUTO_TOPIC_LIMIT:-10}
       EMBEDDING_PROVIDER: ${EMBEDDING_PROVIDER:-none}
       EMBEDDING_MODEL: ${EMBEDDING_MODEL:-sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2}
       EMBEDDING_THRESHOLD: ${EMBEDDING_THRESHOLD:-0.35}

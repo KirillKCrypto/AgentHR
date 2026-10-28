@@ -86,27 +86,53 @@ async def resolve_or_create_topics(
     *,
     source_type: str,
     source_id: uuid.UUID,
+    auto_topic_limit: int | None = None,
 ) -> list[TopicMatch]:
     """Гарантирует, что у каждого навыка есть тема.
 
     Совпавшие навыки возвращаются как есть. Для остальных создаётся
     provisional-тема, алиас и запись в очереди ревью — в текущей транзакции.
+    Если лимит новых тем исчерпан, остаток уходит в одну review-тему.
     """
     if len(mentions) != len(matches):
         raise ValueError("Количество навыков и результатов сопоставления не совпадает")
 
+    limit = get_settings().auto_topic_limit if auto_topic_limit is None else auto_topic_limit
+    created_count = 0
     resolved: list[TopicMatch] = []
     for (name, evidence), match in zip(mentions, matches, strict=True):
         if match.matched:
             resolved.append(match)
             continue
-        topic = await _resolve_or_create_topic(
+
+        allow_create = created_count < max(0, limit)
+        result = await _resolve_or_create_topic(
             session,
             name,
             evidence,
             source_type=source_type,
             source_id=source_id,
+            allow_create=allow_create,
         )
+        if result is None:
+            topic = await _get_or_create_review_topic(
+                session,
+                source_type=source_type,
+                source_id=source_id,
+            )
+            await _record_alias_and_candidate(
+                session,
+                topic,
+                name,
+                evidence,
+                source_type=source_type,
+                source_id=source_id,
+            )
+        else:
+            topic, created = result
+            if created:
+                created_count += 1
+
         resolved.append(TopicMatch(topic.id, "provisional", 0.0, topic.key))
     return resolved
 
@@ -118,7 +144,8 @@ async def _resolve_or_create_topic(
     *,
     source_type: str,
     source_id: uuid.UUID,
-) -> Topic:
+    allow_create: bool,
+) -> tuple[Topic, bool] | None:
     """Возвращает существующую provisional-тему или создаёт новую."""
     normalized = _clip(normalize_name(name), 200)
     if not normalized:
@@ -136,7 +163,7 @@ async def _resolve_or_create_topic(
     if alias is not None:
         topic = await session.get(Topic, alias.topic_id)
         if topic is not None and topic.status not in ("merged", "rejected"):
-            return topic
+            return topic, False
 
     candidate = await session.scalar(
         select(TopicCandidate).where(TopicCandidate.normalized_name == normalized)
@@ -144,12 +171,15 @@ async def _resolve_or_create_topic(
     if candidate is not None and candidate.topic_id is not None:
         topic = await session.get(Topic, candidate.topic_id)
         if topic is not None and topic.status not in ("merged", "rejected"):
-            return topic
+            return topic, False
 
     topic_key = _auto_topic_key(normalized)
     existing_topic = await session.scalar(select(Topic).where(Topic.key == topic_key))
     if existing_topic is not None and existing_topic.status not in ("merged", "rejected"):
-        return existing_topic
+        return existing_topic, False
+
+    if not allow_create:
+        return None
 
     display_name = _clip(name, 120) or normalized
     topic = Topic(
@@ -160,7 +190,7 @@ async def _resolve_or_create_topic(
             "Требует проверки и подтверждения."
         ),
         category="auto",
-        aliases=[_clip(name, 200) or normalized],
+        aliases=[],
         ontology_version=ONTOLOGY_VERSION,
         is_auto_generated=True,
         status="provisional",
@@ -168,31 +198,79 @@ async def _resolve_or_create_topic(
     )
     session.add(topic)
     await session.flush()
-
-    alias_stmt = (
-        pg_insert(TopicAlias)
-        .values(
-            topic_id=topic.id,
-            alias=_clip(name, 200) or normalized,
-            normalized_alias=normalized,
-            source="auto",
-            status="active",
-        )
-        .on_conflict_do_nothing(index_elements=[TopicAlias.normalized_alias])
-        .returning(TopicAlias.topic_id)
+    await _record_alias_and_candidate(
+        session,
+        topic,
+        name,
+        evidence,
+        source_type=source_type,
+        source_id=source_id,
     )
-    alias_topic_id = (await session.execute(alias_stmt)).scalar_one_or_none()
-    if alias_topic_id is None:
-        # Алиас уже занят (например, откатанной или параллельной темой).
-        existing_alias = await session.scalar(
-            select(TopicAlias).where(TopicAlias.normalized_alias == normalized)
-        )
-        if existing_alias is not None and existing_alias.topic_id != topic.id:
-            await session.delete(topic)
-            existing_topic = await session.get(Topic, existing_alias.topic_id)
-            if existing_topic is None:
-                raise ValueError("Алиас указывает на несуществующую тему")
-            topic = existing_topic
+    return topic, True
+
+
+async def _get_or_create_review_topic(
+    session: AsyncSession,
+    *,
+    source_type: str,
+    source_id: uuid.UUID,
+) -> Topic:
+    """Одна provisional-тема для переполнения лимита в документе."""
+    topic_key = f"auto-review-{source_type}-{source_id.hex}"[:64]
+    await session.execute(select(func.pg_advisory_xact_lock(func.hashtext(topic_key))))
+    topic = await session.scalar(select(Topic).where(Topic.key == topic_key))
+    if topic is not None:
+        return topic
+
+    topic = Topic(
+        key=topic_key,
+        name="Новые навыки (на ревью)",
+        description=(
+            "Навыки, для которых исчерпан лимит отдельных provisional-тем. Требуют ручного разбора."
+        ),
+        category="auto_review",
+        aliases=[],
+        ontology_version=ONTOLOGY_VERSION,
+        is_auto_generated=True,
+        status="provisional",
+        origin="auto",
+    )
+    session.add(topic)
+    await session.flush()
+    return topic
+
+
+async def _record_alias_and_candidate(
+    session: AsyncSession,
+    topic: Topic,
+    name: str,
+    evidence: str | None,
+    *,
+    source_type: str,
+    source_id: uuid.UUID,
+) -> None:
+    """Сохраняет алиас и кандидата для навыка, привязанного к теме."""
+    normalized = _clip(normalize_name(name), 200)
+    if not normalized:
+        raise ValueError("Нельзя сохранить пустой алиас навыка")
+
+    alias_stmt = pg_insert(TopicAlias).values(
+        topic_id=topic.id,
+        alias=_clip(name, 200) or normalized,
+        normalized_alias=normalized,
+        source="auto",
+        status="active",
+    )
+    alias_stmt = alias_stmt.on_conflict_do_update(
+        index_elements=[TopicAlias.normalized_alias],
+        set_={
+            "topic_id": alias_stmt.excluded.topic_id,
+            "alias": alias_stmt.excluded.alias,
+            "source": "auto",
+            "status": "active",
+        },
+    )
+    await session.execute(alias_stmt)
 
     candidate_stmt = pg_insert(TopicCandidate).values(
         name=_clip(name, 200) or normalized,
@@ -221,7 +299,6 @@ async def _resolve_or_create_topic(
         },
     )
     await session.execute(candidate_stmt)
-    return topic
 
 
 def _clip(value: str, limit: int) -> str:

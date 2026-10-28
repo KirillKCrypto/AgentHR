@@ -58,6 +58,10 @@ class Settings(BaseSettings):
     embedding_threshold: float = 0.35
     # Каталог кэша моделей (не коммитится)
     embedding_cache_dir: str = ".cache/fastembed"
+    # Максимум новых provisional-тем на один документ. Если лимит исчерпан,
+    # остальные незнакомые навыки попадают в одну тему «Новые навыки (на ревью)».
+    # 0 — не создавать отдельные темы, сразу использовать review-тему.
+    auto_topic_limit: int = 10
 
 
 @lru_cache

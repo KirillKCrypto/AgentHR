@@ -51,8 +51,7 @@ class Vacancy(Base):
 class VacancySkill(Base):
     """Навык, извлечённый из вакансии.
 
-    `topic_id` может быть NULL: навык не сопоставлен ни с одной темой
-    онтологии — он сохраняется как есть и попадает в кандидаты.
+    `topic_id` обязателен: неизвестный навык получает provisional-тему.
     """
 
     __tablename__ = "vacancy_skills"
@@ -74,9 +73,9 @@ class VacancySkill(Base):
     vacancy_id: Mapped[uuid.UUID] = mapped_column(
         Uuid, ForeignKey("vacancies.id", ondelete="CASCADE"), index=True
     )
-    # NULL — навык не сопоставлен с темой (SET NULL сохраняет навык при удалении темы)
-    topic_id: Mapped[uuid.UUID | None] = mapped_column(
-        Uuid, ForeignKey("topics.id", ondelete="SET NULL"), nullable=True, index=True
+    # RESTRICT не даёт удалить тему, пока на неё ссылаются навыки.
+    topic_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid, ForeignKey("topics.id", ondelete="RESTRICT"), nullable=False, index=True
     )
     raw_name: Mapped[str] = mapped_column(String(200))
     # Ожидаемый уровень владения, 0..100
@@ -86,7 +85,7 @@ class VacancySkill(Base):
     # Уверенность извлечения, 0..1
     confidence: Mapped[float] = mapped_column(Float, default=0.5, server_default=text("0.5"))
     evidence: Mapped[str | None] = mapped_column(Text, nullable=True)
-    # exact | alias | fuzzy | embedding | manual | none
+    # exact | alias | fuzzy | embedding | provisional | backfill | manual | none
     match_method: Mapped[str] = mapped_column(
         String(20), default="none", server_default=text("'none'")
     )

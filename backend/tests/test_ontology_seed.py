@@ -5,7 +5,7 @@ from sqlalchemy import delete, func, select, text
 from sqlalchemy.exc import SQLAlchemyError
 
 from app.db.session import async_session_factory, engine
-from app.models import Topic, TopicAlias, TopicPrerequisite
+from app.models import ResumeSkill, Topic, TopicAlias, TopicPrerequisite, VacancySkill
 from app.ontology import ONTOLOGY_TOPICS, ONTOLOGY_VERSION
 from app.ontology.seed import seed_ontology
 from app.services.topics import create_skill_matcher, load_topic_index
@@ -100,6 +100,34 @@ async def test_seed_aliases_are_searchable(seeded_db: None) -> None:
 
     assert match.topic_key == "postgresql"
     assert match.method == "alias"
+
+
+async def test_skill_topic_id_is_required(seeded_db: None) -> None:
+    """После backfill у навыков не остаётся NULL topic_id."""
+    async with async_session_factory() as session:
+        nullable = (
+            await session.execute(
+                text(
+                    """
+                    SELECT table_name, is_nullable
+                    FROM information_schema.columns
+                    WHERE table_name IN ('resume_skills', 'vacancy_skills')
+                      AND column_name = 'topic_id'
+                    """
+                )
+            )
+        ).all()
+        resume_nulls = await session.scalar(
+            select(func.count()).select_from(ResumeSkill).where(ResumeSkill.topic_id.is_(None))
+        )
+        vacancy_nulls = await session.scalar(
+            select(func.count()).select_from(VacancySkill).where(VacancySkill.topic_id.is_(None))
+        )
+
+    assert len(nullable) == 2
+    assert all(row.is_nullable == "NO" for row in nullable)
+    assert resume_nulls == 0
+    assert vacancy_nulls == 0
 
 
 async def test_seed_restores_changed_description() -> None:
