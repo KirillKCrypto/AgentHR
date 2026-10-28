@@ -89,15 +89,16 @@ docker compose up -d --build    # agenthr-api на http://127.0.0.1:8000
   (`REQUIRES`); описания используются как текст для эмбеддингов при нормализации навыков.
 - `app/ontology/graph.py` — операции над графом: поиск циклов, топологический порядок,
   транзитивные пререквизиты.
-- `app/ontology/seed.py` — идемпотентный сид: темы обновляются по ключу, рёбра синхронизируются
-  точно; автосозданные темы (из кандидатов) сид не трогает.
+- `app/ontology/seed.py` — идемпотентный сид: темы, рёбра и алиасы синхронизируются
+  точно; provisional-темы и auto-алиасы сид не удаляет.
 
 ```powershell
 uv run python -m app.ontology.seed    # засеять онтологию (нужна запущенная БД)
 ```
 
-Онтология — словарь верхнего уровня, а не фильтр: навыки без темы сохраняются как есть
-(`raw_name`) и попадают в `topic_candidates` — пул тем на ревью.
+Онтология — словарь верхнего уровня, а не фильтр: для навыка без темы создаётся
+provisional-тема, запись в `topic_aliases` и кандидат в `topic_candidates` на ревью.
+Новые названия не остаются с `topic_id = NULL`.
 
 ## Анализ и нормализация
 
@@ -107,13 +108,15 @@ uv run python -m app.ontology.seed    # засеять онтологию (ну�
 - `app/services/normalization.py` — сопоставление навыка с темой онтологии:
   `exact` → `alias` → нечёткое совпадение → косинусная близость (`embedding`).
   Нормализация учитывает регистр, пунктуацию и кириллические омоглифы («ООП» = «OOP»).
-- `app/services/topics.py` — индекс тем из БД (`load_topic_index`) и из пакета онтологии
-  (`load_packaged_topic_index`, детерминированные id — для тестов и офлайна).
+- `app/services/topics.py` — индекс canonical/provisional-тем и алиасов из БД
+  (`load_topic_index`), индекс пакета (`load_packaged_topic_index`) и
+  `resolve_or_create_topics()` — гарантия `topic_id` для каждого навыка.
 - `app/services/evaluation.py` — метрики качества извлечения (precision / recall / F1).
 - `app/services/profile.py` — запись документов и профиль знаний: `analyze_vacancy` /
   `save_vacancy_analysis`, `analyze_resume` / `save_resume_analysis`, `rebuild_profile`,
   `get_profile`, `compute_gaps`, `update_skill_proficiency`, `weighted_estimate`.
-  Навыки без темы не теряются: сохраняются с `topic_id = NULL` и попадают в `topic_candidates`.
+  Навыки без темы не теряются: для них создаётся provisional-тема и кандидат на ревью,
+  поэтому новые строки всегда имеют `topic_id`.
 
 ### Профиль знаний и gap-анализ
 
@@ -191,8 +194,8 @@ URL БД берётся из настроек (`backend/.env`, переменн�
 - `app/db/session.py` — async-движок, фабрика сессий, зависимость `get_db`
 - `app/db/base.py` — базовый класс моделей (`Base`)
 - `app/llm/` — слой LLM: `base.py` (интерфейс), `mock.py`, `openai.py`, `factory.py`
-- `app/models/` — ORM-модели (`User`, `AgentAction`, `Topic`, `TopicPrerequisite`, `TopicCandidate`,
-  `Vacancy`, `VacancySkill`, `Resume`, `ResumeSkill`, `UserSkillState`)
+- `app/models/` — ORM-модели (`User`, `AgentAction`, `Topic`, `TopicAlias`, `TopicPrerequisite`,
+  `TopicCandidate`, `Vacancy`, `VacancySkill`, `Resume`, `ResumeSkill`, `UserSkillState`)
 - `app/ontology/` — онтология v2, операции над графом зависимостей, идемпотентный сид
 - `app/embeddings/` — слой эмбеддингов (none / local ONNX / mock)
 - `app/services/` — сервисный слой: анализ (извлечение), нормализация, профиль и gap-анализ,

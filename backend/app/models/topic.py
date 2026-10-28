@@ -26,8 +26,9 @@ from app.db.base import Base
 class Topic(Base):
     """Тема онтологии — узел графа знаний.
 
-    Тема — словарь верхнего уровня для графа и планирования, а не фильтр:
-    навыки, для которых темы нет, сохраняются отдельно (см. `TopicCandidate`).
+    Canonical-темы приходят из пакета онтологии, provisional-темы создаются
+    автоматически для новых навыков и ждут ревью. Тема — словарь верхнего
+    уровня для графа и планирования, а не фильтр.
     """
 
     __tablename__ = "topics"
@@ -53,6 +54,20 @@ class Topic(Base):
     is_auto_generated: Mapped[bool] = mapped_column(
         Boolean, default=False, server_default=text("false")
     )
+    # canonical — из пакета/подтверждена, provisional — автосоздана,
+    # merged — объединена с canonical_topic_id, rejected — отклонена на ревью.
+    status: Mapped[str] = mapped_column(
+        String(20), default="canonical", server_default=text("'canonical'")
+    )
+    # Источник темы: seed, auto, manual, import.
+    origin: Mapped[str] = mapped_column(String(20), default="seed", server_default=text("'seed'"))
+    # Для merged-тем: куда перенесены связи и алиасы.
+    canonical_topic_id: Mapped[uuid.UUID | None] = mapped_column(
+        Uuid,
+        ForeignKey("topics.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
@@ -60,6 +75,39 @@ class Topic(Base):
 
     def __repr__(self) -> str:
         return f"<Topic key={self.key!r} name={self.name!r}>"
+
+
+class TopicAlias(Base):
+    """Алиас темы: единственное нормализованное написание на всю онтологию."""
+
+    __tablename__ = "topic_aliases"
+    __table_args__ = (
+        UniqueConstraint("normalized_alias", name="uq_topic_aliases_normalized_alias"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        Uuid,
+        primary_key=True,
+        default=uuid.uuid4,
+        server_default=text("gen_random_uuid()"),
+    )
+    topic_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid, ForeignKey("topics.id", ondelete="CASCADE"), index=True
+    )
+    alias: Mapped[str] = mapped_column(String(200))
+    normalized_alias: Mapped[str] = mapped_column(String(200))
+    # seed | auto | manual | import
+    source: Mapped[str] = mapped_column(
+        String(20), default="manual", server_default=text("'manual'")
+    )
+    # active | rejected
+    status: Mapped[str] = mapped_column(
+        String(20), default="active", server_default=text("'active'")
+    )
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+    def __repr__(self) -> str:
+        return f"<TopicAlias {self.normalized_alias!r} topic_id={self.topic_id}>"
 
 
 class TopicPrerequisite(Base):
@@ -114,8 +162,15 @@ class TopicCandidate(Base):
     sources: Mapped[list[dict[str, Any]]] = mapped_column(
         JSONB, default=list, server_default=text("'[]'::jsonb")
     )
-    # new | approved | rejected | merged
+    # new | auto_created | approved | rejected | merged
     status: Mapped[str] = mapped_column(String(20), default="new", server_default=text("'new'"))
+    # Provisional-тема, созданная для этого кандидата.
+    topic_id: Mapped[uuid.UUID | None] = mapped_column(
+        Uuid,
+        ForeignKey("topics.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
     ontology_version: Mapped[int] = mapped_column(Integer, default=1, server_default=text("1"))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(

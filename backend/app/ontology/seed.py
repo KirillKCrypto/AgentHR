@@ -1,10 +1,10 @@
-"""Идемпотентный сид онтологии v1 в БД.
+"""Идемпотентный сид онтологии v2 в БД.
 
 Запуск: `uv run python -m app.ontology.seed`.
 
 Повторный запуск не дублирует данные: темы обновляются по ключу,
-рёбра `REQUIRES` синхронизируются точно (только между засеянными темами).
-Темы, созданные автоматически из кандидатов, сид не трогает.
+рёбра `REQUIRES` и алиасы синхронизируются точно (только для засеянных тем).
+Темы и алиасы, созданные автоматически из кандидатов, сид не удаляет.
 """
 
 import asyncio
@@ -12,11 +12,13 @@ import sys
 from dataclasses import dataclass
 
 from sqlalchemy import select
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.session import async_session_factory
-from app.models import Topic, TopicPrerequisite
+from app.models import Topic, TopicAlias, TopicPrerequisite
 from app.ontology.topics import ONTOLOGY_TOPICS, ONTOLOGY_VERSION
+from app.services.normalization import normalize_name
 
 
 @dataclass
@@ -61,6 +63,9 @@ async def seed_ontology(session: AsyncSession, *, version: int = ONTOLOGY_VERSIO
                 aliases=list(definition.aliases),
                 ontology_version=version,
                 is_auto_generated=False,
+                status="canonical",
+                origin="seed",
+                canonical_topic_id=None,
             )
             session.add(topic)
             result.topics_created += 1
@@ -72,6 +77,9 @@ async def seed_ontology(session: AsyncSession, *, version: int = ONTOLOGY_VERSIO
                 or list(topic.aliases or []) != list(definition.aliases)
                 or topic.ontology_version != version
                 or topic.is_auto_generated
+                or topic.status != "canonical"
+                or topic.origin != "seed"
+                or topic.canonical_topic_id is not None
             )
             topic.name = definition.name
             topic.description = definition.description
@@ -79,11 +87,48 @@ async def seed_ontology(session: AsyncSession, *, version: int = ONTOLOGY_VERSIO
             topic.aliases = list(definition.aliases)
             topic.ontology_version = version
             topic.is_auto_generated = False
+            topic.status = "canonical"
+            topic.origin = "seed"
+            topic.canonical_topic_id = None
             if changed:
                 result.topics_updated += 1
         seeded_ids[definition.key] = topic
 
     await session.flush()
+
+    # Синхронизируем алиасы пакета. Auto-алиасы provisional-тем не трогаем.
+    desired_aliases: dict[str, tuple[str, str]] = {}
+    for definition in ONTOLOGY_TOPICS:
+        for alias in definition.aliases:
+            normalized = normalize_name(alias).strip()
+            if normalized:
+                desired_aliases[normalized] = (definition.key, alias)
+
+    existing_seed_aliases = (
+        await session.scalars(select(TopicAlias).where(TopicAlias.source == "seed"))
+    ).all()
+    for alias in existing_seed_aliases:
+        if alias.normalized_alias not in desired_aliases:
+            await session.delete(alias)
+
+    for normalized, (topic_key, alias) in desired_aliases.items():
+        statement = pg_insert(TopicAlias).values(
+            topic_id=seeded_ids[topic_key].id,
+            alias=alias,
+            normalized_alias=normalized,
+            source="seed",
+            status="active",
+        )
+        statement = statement.on_conflict_do_update(
+            index_elements=[TopicAlias.normalized_alias],
+            set_={
+                "topic_id": statement.excluded.topic_id,
+                "alias": statement.excluded.alias,
+                "source": "seed",
+                "status": "active",
+            },
+        )
+        await session.execute(statement)
 
     desired_edges = {
         (definition.key, prerequisite)

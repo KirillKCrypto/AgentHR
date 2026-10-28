@@ -27,6 +27,7 @@ from app.services.topics import (
     create_skill_matcher,
     load_packaged_topic_index,
     load_topic_index,
+    resolve_or_create_topics,
 )
 
 __all__ = [
@@ -50,6 +51,7 @@ __all__ = [
     "normalize_name",
     "precision_recall",
     "rebuild_profile",
+    "resolve_or_create_topics",
     "update_skill_proficiency",
     "weighted_estimate",
 ]

@@ -1,9 +1,9 @@
 """Сохранение вакансий и резюме, профиль знаний и gap-анализ.
 
 Слой отвечает за запись в БД и вычисления поверх онтологии; LLM используется
-только для извлечения навыков (`app/services/analysis.py`). Навыки, для которых
-в онтологии нет темы, не отбрасываются: они сохраняются с `topic_id = NULL`
-и попадают в пул кандидатов на новые темы (`topic_candidates`).
+только для извлечения навыков (`app/services/analysis.py`). Любой навык получает
+тему: если совпадения нет, `app.services.topics` создаёт provisional-тему и
+запись в очереди ревью. Поэтому новые навыки не остаются с `topic_id = NULL`.
 """
 
 import uuid
@@ -12,7 +12,6 @@ from datetime import UTC, datetime
 from typing import Any
 
 from sqlalchemy import select
-from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.embeddings.base import EmbeddingProvider
@@ -21,7 +20,6 @@ from app.models import (
     Resume,
     ResumeSkill,
     Topic,
-    TopicCandidate,
     UserSkillState,
     Vacancy,
     VacancySkill,
@@ -34,7 +32,11 @@ from app.services.analysis import (
     extract_vacancy_requirements,
 )
 from app.services.normalization import TopicMatch, normalize_name
-from app.services.topics import create_skill_matcher, load_topic_index
+from app.services.topics import (
+    create_skill_matcher,
+    load_topic_index,
+    resolve_or_create_topics,
+)
 
 # Вес источника оценки: чем надёжнее источник, тем сильнее он влияет на профиль.
 # Резюме — самый слабый источник: кандидат описывает себя сам.
@@ -203,7 +205,13 @@ async def save_vacancy_analysis(
 
     skills = _unique_skills(requirements.skills)
     matches = await _match_skills(session, skills, embedder)
-    unmatched: list[tuple[ExtractedSkill, TopicMatch]] = []
+    matches = await resolve_or_create_topics(
+        session,
+        [(skill.name, skill.evidence) for skill in skills],
+        matches,
+        source_type="vacancy",
+        source_id=vacancy.id,
+    )
 
     for skill, match in zip(skills, matches, strict=True):
         session.add(
@@ -218,10 +226,7 @@ async def save_vacancy_analysis(
                 match_method=match.method,
             )
         )
-        if not match.matched:
-            unmatched.append((skill, match))
 
-    await _register_candidates(session, unmatched, source_type="vacancy", source_id=vacancy.id)
     await session.commit()
     await session.refresh(vacancy)
     return vacancy
@@ -264,7 +269,13 @@ async def save_resume_analysis(
 
     skills = _unique_skills(profile.skills)
     matches = await _match_skills(session, skills, embedder)
-    unmatched: list[tuple[ExtractedSkill, TopicMatch]] = []
+    matches = await resolve_or_create_topics(
+        session,
+        [(skill.name, skill.evidence) for skill in skills],
+        matches,
+        source_type="resume",
+        source_id=resume.id,
+    )
 
     for skill, match in zip(skills, matches, strict=True):
         session.add(
@@ -278,10 +289,7 @@ async def save_resume_analysis(
                 match_method=match.method,
             )
         )
-        if not match.matched:
-            unmatched.append((skill, match))
 
-    await _register_candidates(session, unmatched, source_type="resume", source_id=resume.id)
     await session.commit()
     await session.refresh(resume)
 
@@ -614,44 +622,6 @@ async def _match_skills(
     index = await load_topic_index(session)
     matcher = create_skill_matcher(index, embedder)
     return await matcher.match_many([skill.name for skill in skills])
-
-
-async def _register_candidates(
-    session: AsyncSession,
-    unmatched: list[tuple[ExtractedSkill, TopicMatch]],
-    *,
-    source_type: str,
-    source_id: uuid.UUID,
-) -> None:
-    """Пополняет пул кандидатов на новые темы (upsert по нормализованному имени)."""
-    seen: set[str] = set()
-    for skill, _ in unmatched:
-        normalized = _truncate(normalize_name(skill.name), 200)
-        if not normalized or normalized in seen:
-            continue
-        seen.add(normalized)
-
-        statement = pg_insert(TopicCandidate).values(
-            name=_truncate(skill.name, 200),
-            normalized_name=normalized,
-            suggested_description=None,
-            occurrences=1,
-            sources=[
-                {
-                    "type": source_type,
-                    "id": str(source_id),
-                    "evidence": skill.evidence,
-                }
-            ],
-        )
-        statement = statement.on_conflict_do_update(
-            index_elements=[TopicCandidate.normalized_name],
-            set_={
-                "occurrences": TopicCandidate.occurrences + 1,
-                "sources": TopicCandidate.sources.op("||")(statement.excluded.sources),
-            },
-        )
-        await session.execute(statement)
 
 
 async def _unmatched_resume_skills(

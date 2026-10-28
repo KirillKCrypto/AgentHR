@@ -100,7 +100,7 @@ AgentHR/
 │   │   │   ├── __init__.py    (импортирует все модели для Alembic)
 │   │   │   ├── agent_action.py (модель AgentAction)
 │   │   │   ├── resume.py      (модели Resume, ResumeSkill)
-│   │   │   ├── topic.py       (модели Topic, TopicPrerequisite, TopicCandidate)
+│   │   │   ├── topic.py       (модели Topic, TopicAlias, TopicPrerequisite, TopicCandidate)
 │   │   │   ├── user.py        (модель User)
 │   │   │   ├── user_skill_state.py (модель UserSkillState)
 │   │   │   └── vacancy.py     (модели Vacancy, VacancySkill)
@@ -1184,16 +1184,18 @@ Tailwind 4, shadcn/ui: Base UI, lucide, cn, cva), скрипты `dev` / `build`
 
 **Used by:** `backend/app/services/topics.py`, агентские tools, API профиля.
 
-**Important:** несопоставленный навык не отбрасывается — он сохраняется как есть
-(`raw_name`) и попадает в кандидаты на новые темы.
+**Important:** несопоставленный навык не отбрасывается — `resolve_or_create_topics()`
+создаёт для него provisional-тему и запись в очереди ревью в той же транзакции.
 
 #### `backend/app/services/topics.py`
 
 **Role:** SERVICE (доступ к онтологии)
 
-**Responsibility:** `load_topic_index` — индекс тем из БД; `load_packaged_topic_index` —
-индекс из пакета онтологии с детерминированными id (тесты и офлайн-режим);
-`create_skill_matcher` — сборка сопоставителя с порогами из настроек.
+**Responsibility:** `load_topic_index` — индекс canonical/provisional-тем и алиасов
+из БД; `load_packaged_topic_index` — индекс из пакета онтологии с детерминированными
+id (тесты и офлайн-режим); `create_skill_matcher` — сборка сопоставителя с порогами
+из настроек; `resolve_or_create_topics` — инвариант «у навыка всегда есть `topic_id`»
+через provisional-темы, `TopicAlias` и `topic_candidates`.
 
 **Depends on:** `backend/app/models/topic.py`, `backend/app/ontology/topics.py`,
 `backend/app/services/normalization.py`.
@@ -1370,8 +1372,8 @@ API доступен снаружи по `localhost:${API_PORT}` (по умол�
 | Запуск инфраструктуры и API | `infra/docker-compose.yml` (сервисы `postgres`, `api`) | реализовано |
 | Backend-приложение (локально) | `backend/app/main.py` (uvicorn) | каркас, auth, Agent Harness и доменные API реализованы |
 | Backend-приложение (контейнер) | `backend/docker/entrypoint.sh` → uvicorn | миграции + API, healthy |
-| Миграции БД | `backend/alembic/` (`uv run alembic ...`) | 4 миграции: pgvector, users, agent_actions, граф знаний и документы |
-| Сид онтологии | `backend/app/ontology/seed.py` (`uv run python -m app.ontology.seed`) | 89 тем + 75 рёбер `REQUIRES`, идемпотентно |
+| Миграции БД | `backend/alembic/` (`uv run alembic ...`) | 5 миграций: pgvector, users, agent_actions, граф знаний и документы, provisional-темы и алиасы |
+| Сид онтологии | `backend/app/ontology/seed.py` (`uv run python -m app.ontology.seed`) | 89 тем, 75 рёбер `REQUIRES`, 233 алиаса, идемпотентно |
 | Eval качества извлечения | `backend/scripts/eval_extraction.py` | golden-набор из 5 кейсов; требует живого LLM |
 | Прогон тестов backend | `backend/tests/` (pytest) | 147 тестов, 3 пропускаются без флагов живого LLM/эмбеддингов |
 | Frontend dev-сервер | `frontend/` (`npm run dev`) | вход/регистрация через API |

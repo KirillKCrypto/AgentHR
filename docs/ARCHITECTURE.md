@@ -308,6 +308,12 @@ JWT-токенов в SPA; дашборд → `GET /me` с access-токеном
   - `user_skill_states` — срез профиля: уникальная пара `(user_id, topic_id)`, `proficiency` 0–100,
     `confidence`, `source`, `evidence` (JSONB), `last_assessed`.
   ORM-модели — `backend/app/models/topic.py`, `vacancy.py`, `resume.py`, `user_skill_state.py`.
+- Миграция `b7e4c2a91f30` — provisional-темы и алиасы:
+  - `topics.status` (`canonical`/`provisional`/`merged`/`rejected`), `origin`, `canonical_topic_id`;
+  - `topic_aliases` — уникальный `normalized_alias` на всю онтологию;
+  - `topic_candidates.topic_id` — provisional-тема, созданная для кандидата.
+  Для новых документов `topic_id` у навыков всегда заполнен: `resolve_or_create_topics()`
+  создаёт provisional-тему в той же транзакции.
 - Подключение: `DATABASE_URL` из `backend/.env` (локальный дефолт в `app/core/config.py`);
   движок и сессии — `backend/app/db/session.py` (asyncpg, `pool_pre_ping`).
 - Миграции: Alembic (async-шаблон), URL берётся в `alembic/env.py` из настроек;

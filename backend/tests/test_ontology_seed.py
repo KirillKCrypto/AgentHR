@@ -5,9 +5,10 @@ from sqlalchemy import delete, func, select, text
 from sqlalchemy.exc import SQLAlchemyError
 
 from app.db.session import async_session_factory, engine
-from app.models import Topic, TopicPrerequisite
+from app.models import Topic, TopicAlias, TopicPrerequisite
 from app.ontology import ONTOLOGY_TOPICS, ONTOLOGY_VERSION
 from app.ontology.seed import seed_ontology
+from app.services.topics import create_skill_matcher, load_topic_index
 
 AUTO_TOPIC_KEY = "test-auto-generated-topic"
 
@@ -43,10 +44,20 @@ async def test_seed_creates_topics_and_edges() -> None:
                 )
             ).all()
             edges = (await session.scalars(select(TopicPrerequisite))).all()
+            aliases = (
+                await session.scalars(
+                    select(TopicAlias).where(
+                        TopicAlias.topic_id.in_([topic.id for topic in topics])
+                    )
+                )
+            ).all()
 
         assert len(topics) == len(ONTOLOGY_TOPICS)
         assert len(edges) == _desired_edge_count()
+        assert len(aliases) >= len(ONTOLOGY_TOPICS)
         assert all(topic.ontology_version == ONTOLOGY_VERSION for topic in topics)
+        assert all(topic.status == "canonical" for topic in topics)
+        assert all(topic.origin == "seed" for topic in topics)
         assert all(topic.aliases for topic in topics)
         assert all(topic.description for topic in topics)
     finally:
@@ -63,7 +74,10 @@ async def test_seed_is_idempotent() -> None:
             first = await seed_ontology(session)
         async with async_session_factory() as session:
             second = await seed_ontology(session)
-            topic_count = await session.scalar(select(func.count()).select_from(Topic))
+            seeded_keys = [topic.key for topic in ONTOLOGY_TOPICS]
+            topic_count = await session.scalar(
+                select(func.count()).select_from(Topic).where(Topic.key.in_(seeded_keys))
+            )
             edge_count = await session.scalar(select(func.count()).select_from(TopicPrerequisite))
 
         assert first.topics_created == 0
@@ -75,6 +89,17 @@ async def test_seed_is_idempotent() -> None:
         assert edge_count == _desired_edge_count()
     finally:
         await engine.dispose()
+
+
+async def test_seed_aliases_are_searchable(seeded_db: None) -> None:
+    """Алиасы из таблицы участвуют в нормализации навыков."""
+    async with async_session_factory() as session:
+        index = await load_topic_index(session)
+        matcher = create_skill_matcher(index)
+        match = await matcher.match("postgres")
+
+    assert match.topic_key == "postgresql"
+    assert match.method == "alias"
 
 
 async def test_seed_restores_changed_description() -> None:
