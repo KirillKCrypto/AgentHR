@@ -325,9 +325,34 @@ export interface components {
             items: components["schemas"]["GapItemRead"][];
             /**
              * Overall Readiness
-             * @description Доля закрытых требований, 0..1
+             * @description Взвешенное покрытие всех требований, включая provisional, 0..1
              */
             overall_readiness: number;
+            /**
+             * Coverage All
+             * @description Покрытие всех требований, включая provisional, 0..1
+             */
+            coverage_all: number;
+            /**
+             * Confirmed Readiness
+             * @description Покрытие только canonical-требований; null, если их нет
+             */
+            confirmed_readiness?: number | null;
+            /**
+             * Provisional Count
+             * @description Сколько требований опираются на provisional-темы
+             */
+            provisional_count: number;
+            /**
+             * Provisional Weight
+             * @description Суммарный вес provisional-требований
+             */
+            provisional_weight: number;
+            /**
+             * Confirmed Weight
+             * @description Суммарный вес canonical-требований
+             */
+            confirmed_weight: number;
             /**
              * Unmatched Count
              * @description Навыков вакансии вне онтологии
@@ -355,6 +380,8 @@ export interface components {
             topic_key?: string | null;
             /** Topic Name */
             topic_name?: string | null;
+            /** Topic Status */
+            topic_status?: string | null;
         };
         /** HTTPValidationError */
         HTTPValidationError: {
@@ -419,6 +446,11 @@ export interface components {
             source: string;
             /** Last Assessed */
             last_assessed?: string | null;
+            /**
+             * Status
+             * @default canonical
+             */
+            status: string;
         };
         /**
          * RefreshRequest
@@ -527,7 +559,7 @@ export interface components {
             evidence?: string | null;
             /**
              * Match Method
-             * @description exact | alias | fuzzy | embedding | none
+             * @description exact | alias | fuzzy | embedding | provisional | backfill | none
              */
             match_method: string;
             topic?: components["schemas"]["TopicBrief"] | null;
@@ -563,6 +595,11 @@ export interface components {
             name: string;
             /** Category */
             category?: string | null;
+            /**
+             * Status
+             * @default canonical
+             */
+            status: string;
         };
         /**
          * UnmatchedSkillRead

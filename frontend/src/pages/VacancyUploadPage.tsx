@@ -204,31 +204,62 @@ export default function VacancyUploadPage() {
 
 function AnalysisResult({ analysis }: { analysis: AnalysisResponse }) {
   const { vacancy, resume, gaps } = analysis
-  const readiness = Math.round(gaps.overall_readiness * 100)
+  const coverage = Math.round(gaps.coverage_all * 100)
+  const confirmed =
+    gaps.confirmed_readiness === null || gaps.confirmed_readiness === undefined
+      ? null
+      : Math.round(gaps.confirmed_readiness * 100)
   const satisfied = gaps.items.filter((item) => item.satisfied).length
 
   return (
     <div className="flex flex-col gap-6">
       <Card>
         <CardHeader>
-          <CardTitle>Готовность к вакансии</CardTitle>
+          <CardTitle>Покрытие требований</CardTitle>
           <CardDescription>
             {vacancy.title ?? 'Без названия'}
             {vacancy.company ? ` · ${vacancy.company}` : ''}
           </CardDescription>
         </CardHeader>
-        <CardContent className="flex flex-col gap-3">
+        <CardContent className="flex flex-col gap-4">
+          <div className="grid gap-4 sm:grid-cols-2">
+            <div className="flex flex-col gap-1">
+              <span className="text-3xl font-medium">{coverage}%</span>
+              <span className="text-sm text-muted-foreground">все требования</span>
+              <Progress value={coverage} />
+            </div>
+            <div className="flex flex-col gap-1">
+              <span className="text-3xl font-medium">
+                {confirmed === null ? '—' : `${confirmed}%`}
+              </span>
+              <span className="text-sm text-muted-foreground">
+                подтверждённая готовность
+              </span>
+              {confirmed === null ? (
+                <span className="text-xs text-muted-foreground">
+                  нет подтверждённых требований
+                </span>
+              ) : (
+                <Progress value={confirmed} />
+              )}
+            </div>
+          </div>
           <div className="flex items-end justify-between">
-            <span className="text-3xl font-medium">{readiness}%</span>
             <span className="text-sm text-muted-foreground">
               {satisfied} из {gaps.items.length} требований закрыто
             </span>
           </div>
-          <Progress value={readiness} />
+          {gaps.provisional_count > 0 ? (
+            <p className="text-sm text-muted-foreground">
+              {gaps.provisional_count} требований опираются на непроверенные темы (вес{' '}
+              {gaps.provisional_weight.toFixed(2)}). Они входят в покрытие, но не в
+              подтверждённую готовность.
+            </p>
+          ) : null}
           {gaps.unmatched_count > 0 ? (
             <p className="text-sm text-muted-foreground">
               {gaps.unmatched_count} навык(ов) вне онтологии — показаны в разрывах,
-              но не входят в готовность.
+              но не входят в покрытие.
             </p>
           ) : null}
           <div>
@@ -281,11 +312,16 @@ function SkillsCard({
                 <TableRow key={skill.id}>
                   <TableCell>{skill.raw_name}</TableCell>
                   <TableCell>
-                    {skill.topic ? (
-                      skill.topic.name
-                    ) : (
-                      <Badge variant="secondary">вне онтологии</Badge>
-                    )}
+                    <div className="flex flex-wrap items-center gap-2">
+                      {skill.topic ? (
+                        skill.topic.name
+                      ) : (
+                        <Badge variant="secondary">вне онтологии</Badge>
+                      )}
+                      {skill.topic?.status === 'provisional' ? (
+                        <Badge variant="secondary">на проверке</Badge>
+                      ) : null}
+                    </div>
                   </TableCell>
                   <TableCell>{skill.level}</TableCell>
                   {showWeight ? (
@@ -337,9 +373,14 @@ function GapsCard({ gaps }: { gaps: GapAnalysisRead }) {
                 <TableRow key={item.skill_name}>
                   <TableCell>{item.skill_name}</TableCell>
                   <TableCell>
-                    {item.topic_name ?? (
-                      <Badge variant="outline">вне онтологии</Badge>
-                    )}
+                    <div className="flex flex-wrap items-center gap-2">
+                      {item.topic_name ?? (
+                        <Badge variant="outline">вне онтологии</Badge>
+                      )}
+                      {item.topic_status === 'provisional' ? (
+                        <Badge variant="secondary">на проверке</Badge>
+                      ) : null}
+                    </div>
                   </TableCell>
                   <TableCell>{item.required_level}</TableCell>
                   <TableCell>{item.user_level}</TableCell>

@@ -49,7 +49,13 @@ def topic_brief(topic: TopicBriefData | None) -> TopicBrief | None:
     """Тема онтологии для ответа API."""
     if topic is None:
         return None
-    return TopicBrief(id=topic.id, key=topic.key, name=topic.name, category=topic.category)
+    return TopicBrief(
+        id=topic.id,
+        key=topic.key,
+        name=topic.name,
+        category=topic.category,
+        status=topic.status,
+    )
 
 
 def skill_read(entry: SkillEntry) -> SkillRead:
@@ -85,6 +91,7 @@ def profile_read(snapshot: ProfileSnapshot) -> ProfileRead:
                 confidence=topic.confidence,
                 source=topic.source,
                 last_assessed=topic.last_assessed,
+                status=topic.status,
             )
             for topic in snapshot.topics
         ],
@@ -116,9 +123,15 @@ def gap_analysis_read(report: GapReport) -> GapAnalysisRead:
                 weight=item.weight,
                 topic_key=item.topic_key,
                 topic_name=item.topic_name,
+                topic_status=item.topic_status,
             )
             for item in report.items
         ],
         overall_readiness=report.overall_readiness,
+        coverage_all=report.coverage_all,
+        confirmed_readiness=report.confirmed_readiness,
+        provisional_count=report.provisional_count,
+        provisional_weight=report.provisional_weight,
+        confirmed_weight=report.confirmed_weight,
         unmatched_count=report.unmatched_count,
     )

@@ -87,6 +87,10 @@ async def test_unknown_resume_skill_creates_provisional_topic(api_user: ApiUser)
         profile = await api_user.client.get("/profile", headers=api_user.headers)
         assert profile.status_code == 200
         assert profile.json()["unmatched_skills"] == []
+        profile_topics = {
+            topic["topic_key"]: topic for topic in profile.json()["topics"]
+        }
+        assert profile_topics[topic_key]["status"] == "provisional"
 
         # Повторное упоминание переиспользует ту же provisional-тему.
         second = await api_user.client.post(
@@ -168,6 +172,25 @@ async def test_unknown_vacancy_skill_gets_topic_and_gap(api_user: ApiUser) -> No
                 "weight": 1.0,
                 "evidence": "нестандартный стек",
                 "confidence": 0.8,
+            },
+            {
+                "name": "Python",
+                "required_level": 60,
+                "weight": 1.0,
+                "evidence": "основной язык",
+                "confidence": 0.9,
+            },
+        ],
+    }
+    api_user.provider.responses["resume_skills"] = {
+        "experience_years": 2.0,
+        "self_level": "middle",
+        "skills": [
+            {
+                "name": "Python",
+                "proficiency": 80,
+                "evidence": "два года",
+                "confidence": 0.9,
             }
         ],
     }
@@ -179,9 +202,34 @@ async def test_unknown_vacancy_skill_gets_topic_and_gap(api_user: ApiUser) -> No
             headers=api_user.headers,
         )
         assert response.status_code == 201, response.text
-        skill = response.json()["skills"][0]
+        vacancy = response.json()
+        skill = next(item for item in vacancy["skills"] if item["raw_name"] == name)
         assert skill["match_method"] == "provisional"
         assert skill["topic"] is not None
+
+        resume_response = await api_user.client.post(
+            "/resumes",
+            json={"title": "Резюме", "raw_text": "Python"},
+            headers=api_user.headers,
+        )
+        assert resume_response.status_code == 201, resume_response.text
+        analysis = await api_user.client.post(
+            "/analysis",
+            json={
+                "vacancy_id": vacancy["id"],
+                "resume_id": resume_response.json()["id"],
+            },
+            headers=api_user.headers,
+        )
+        assert analysis.status_code == 200, analysis.text
+        gaps = analysis.json()["gaps"]
+        assert gaps["provisional_count"] == 1
+        assert gaps["provisional_weight"] == 1.0
+        assert gaps["confirmed_weight"] == 1.0
+        assert gaps["confirmed_readiness"] == 1.0
+        assert gaps["coverage_all"] == 0.5
+        provisional_item = next(item for item in gaps["items"] if item["skill_name"] == name)
+        assert provisional_item["topic_status"] == "provisional"
 
         async with async_session_factory() as session:
             vacancy_skill = await session.scalar(

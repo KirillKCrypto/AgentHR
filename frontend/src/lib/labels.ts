@@ -10,6 +10,8 @@ const MATCH_LABELS: Record<string, string> = {
   alias: 'синоним',
   fuzzy: 'нечёткое',
   embedding: 'эмбеддинг',
+  provisional: 'новая тема',
+  backfill: 'восстановлено',
   none: 'не сопоставлено',
 }
 

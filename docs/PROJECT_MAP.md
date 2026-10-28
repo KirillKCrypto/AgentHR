@@ -733,8 +733,8 @@ dev-группа (pytest, pytest-asyncio, httpx2, ruff), конфигураци�
 `save_resume_analysis` — извлечение и запись документов с нормализацией навыков;
 `rebuild_profile` — пересчёт среза по резюме без занижения более сильных источников;
 `get_profile`, `compute_gaps`, `update_skill_proficiency`, `weighted_estimate` — профиль,
-разрывы и взвешенное слияние оценок; upsert кандидатов на новые темы через
-`pg_insert(...).on_conflict_do_update`. `NotFoundError` — изоляция по владельцу.
+разрывы, `coverage_all` / `confirmed_readiness` и взвешенное слияние оценок.
+`NotFoundError` — изоляция по владельцу.
 
 **Depends on:** `app/services/analysis.py`, `app/services/topics.py`,
 `app/models/`, `app/llm/base.py`, `app/embeddings/base.py`.
@@ -742,8 +742,8 @@ dev-группа (pytest, pytest-asyncio, httpx2, ruff), конфигураци�
 **Used by:** доменные роутеры, `app/agent/analysis_tools.py`, тесты.
 
 **Important:** веса источников — `manual 1.0 / interview 0.9 / assessment 0.8 / resume 0.6`;
-потолок уверенности `0.95`; готовность считается только по навыкам, сопоставленным
-с онтологией.
+потолок уверенности `0.95`; `coverage_all` включает provisional-темы,
+`confirmed_readiness` — только canonical.
 
 #### `backend/app/agent/analysis_tools.py`
 

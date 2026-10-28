@@ -90,6 +90,11 @@ async def test_analysis_returns_gaps_and_readiness(api_user: ApiUser) -> None:
     assert body["gaps"]["unmatched_count"] == 0
     # (1.0 * 75/70 + 0.8 * 0/60 + 0.3 * 0/40) / 2.1
     assert body["gaps"]["overall_readiness"] == pytest.approx(0.476, abs=0.001)
+    assert body["gaps"]["coverage_all"] == pytest.approx(0.476, abs=0.001)
+    assert body["gaps"]["confirmed_readiness"] == pytest.approx(0.476, abs=0.001)
+    assert body["gaps"]["provisional_count"] == 0
+    assert body["gaps"]["provisional_weight"] == 0
+    assert body["gaps"]["confirmed_weight"] == pytest.approx(2.1, abs=0.001)
 
 
 async def test_documents_are_isolated_by_user(api_user: ApiUser, second_user: ApiUser) -> None:

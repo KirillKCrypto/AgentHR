@@ -65,6 +65,7 @@ class TopicBriefData:
     key: str
     name: str
     category: str | None = None
+    status: str = "canonical"
 
 
 @dataclass(frozen=True)
@@ -93,6 +94,7 @@ class ProfileTopic:
     confidence: float
     source: str
     last_assessed: datetime | None
+    status: str = "canonical"
 
 
 @dataclass(frozen=True)
@@ -127,6 +129,7 @@ class GapItem:
     weight: float
     topic_key: str | None = None
     topic_name: str | None = None
+    topic_status: str | None = None
 
 
 @dataclass(frozen=True)
@@ -137,6 +140,11 @@ class GapReport:
     vacancy_title: str | None
     items: tuple[GapItem, ...] = ()
     overall_readiness: float = 0.0
+    coverage_all: float = 0.0
+    confirmed_readiness: float | None = None
+    provisional_count: int = 0
+    provisional_weight: float = 0.0
+    confirmed_weight: float = 0.0
     unmatched_count: int = 0
 
 
@@ -375,7 +383,10 @@ async def get_profile(session: AsyncSession, user_id: uuid.UUID) -> ProfileSnaps
         await session.execute(
             select(UserSkillState, Topic)
             .join(Topic, Topic.id == UserSkillState.topic_id)
-            .where(UserSkillState.user_id == user_id)
+            .where(
+                UserSkillState.user_id == user_id,
+                Topic.status.in_(("canonical", "provisional")),
+            )
             .order_by(Topic.key)
         )
     ).all()
@@ -390,6 +401,7 @@ async def get_profile(session: AsyncSession, user_id: uuid.UUID) -> ProfileSnaps
             confidence=state.confidence,
             source=state.source,
             last_assessed=state.last_assessed,
+            status=topic.status,
         )
         for state, topic in rows
     )
@@ -430,8 +442,12 @@ async def compute_gaps(
     }
 
     items: list[GapItem] = []
-    weighted_done = 0.0
-    weighted_total = 0.0
+    weighted_all_done = 0.0
+    weighted_all_total = 0.0
+    weighted_confirmed_done = 0.0
+    confirmed_weight = 0.0
+    provisional_count = 0
+    provisional_weight = 0.0
     unmatched_count = 0
 
     for skill in skills:
@@ -439,6 +455,7 @@ async def compute_gaps(
         state = states.get(skill.topic_id) if skill.topic_id is not None else None
         user_level = state.proficiency if state is not None else 0
         gap = max(0, skill.required_level - user_level)
+        topic_status = topic.status if topic is not None else None
 
         items.append(
             GapItem(
@@ -450,28 +467,45 @@ async def compute_gaps(
                 weight=skill.weight,
                 topic_key=topic.key if topic is not None else None,
                 topic_name=topic.name if topic is not None else None,
+                topic_status=topic_status,
             )
         )
 
-        if topic is None:
+        if topic is None or topic_status not in ("canonical", "provisional"):
             unmatched_count += 1
             continue
 
         ratio = 1.0 if skill.required_level <= 0 else min(1.0, user_level / skill.required_level)
-        weighted_done += skill.weight * ratio
-        weighted_total += skill.weight
+        weighted_all_done += skill.weight * ratio
+        weighted_all_total += skill.weight
 
-    if weighted_total > 0:
-        readiness = weighted_done / weighted_total
+        if topic_status == "provisional":
+            provisional_count += 1
+            provisional_weight += skill.weight
+        else:
+            weighted_confirmed_done += skill.weight * ratio
+            confirmed_weight += skill.weight
+
+    if weighted_all_total > 0:
+        coverage_all = weighted_all_done / weighted_all_total
     else:
-        # Навыков вне онтологии нет, а требований нет вовсе — готовность полная
-        readiness = 1.0 if not skills else 0.0
+        # Навыков вне онтологии нет, а требований нет вовсе — покрытие полное
+        coverage_all = 1.0 if not skills else 0.0
+
+    confirmed_readiness = (
+        round(weighted_confirmed_done / confirmed_weight, 3) if confirmed_weight > 0 else None
+    )
 
     return GapReport(
         vacancy_id=vacancy.id,
         vacancy_title=vacancy.title,
         items=tuple(items),
-        overall_readiness=round(readiness, 3),
+        overall_readiness=round(coverage_all, 3),
+        coverage_all=round(coverage_all, 3),
+        confirmed_readiness=confirmed_readiness,
+        provisional_count=provisional_count,
+        provisional_weight=round(provisional_weight, 3),
+        confirmed_weight=round(confirmed_weight, 3),
         unmatched_count=unmatched_count,
     )
 
@@ -663,6 +697,7 @@ def _topic_brief(topic: Topic | None) -> TopicBriefData | None:
         key=topic.key,
         name=topic.name,
         category=topic.category,
+        status=topic.status,
     )
 
 

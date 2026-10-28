@@ -56,6 +56,9 @@ async def test_full_preparation_scenario(api_user: ApiUser) -> None:
     assert gaps_by_skill["PostgreSQL"]["gap"] == 60
     assert gaps_by_skill["Kafka"]["topic_key"] == "kafka"
     assert gaps["unmatched_count"] == 0
+    assert gaps["provisional_count"] == 0
+    assert gaps["coverage_all"] == gaps["overall_readiness"]
+    assert gaps["confirmed_readiness"] == gaps["overall_readiness"]
 
     # 5. Совместный анализ по сохранённым документам — без новых вызовов LLM
     analysis_response = await api_user.client.post(

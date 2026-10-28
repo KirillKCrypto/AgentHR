@@ -140,6 +140,8 @@ export default function ProfilePage() {
     }
   }
 
+  const canonicalTopics = profile.topics.filter((topic) => topic.status !== 'provisional')
+  const provisionalTopics = profile.topics.filter((topic) => topic.status === 'provisional')
   const isEmpty = profile.topics.length === 0 && profile.unmatched_skills.length === 0
 
   return (
@@ -188,16 +190,16 @@ export default function ProfilePage() {
             <CardHeader>
               <CardTitle>Темы</CardTitle>
               <CardDescription>
-                Владение темой — 0–100; источник и уверенность показаны под шкалой.
+                Подтверждённые темы: владение 0–100, источник и уверенность под шкалой.
               </CardDescription>
             </CardHeader>
             <CardContent className="flex flex-col gap-5">
-              {profile.topics.length === 0 ? (
+              {canonicalTopics.length === 0 ? (
                 <p className="text-sm text-muted-foreground">
-                  Темы ещё не оценены — загрузите резюме.
+                  Подтверждённых тем пока нет — загрузите резюме.
                 </p>
               ) : (
-                profile.topics.map((topic) => (
+                canonicalTopics.map((topic) => (
                   <TopicRow
                     key={topic.topic_id}
                     topic={topic}
@@ -207,6 +209,27 @@ export default function ProfilePage() {
               )}
             </CardContent>
           </Card>
+
+          {provisionalTopics.length > 0 ? (
+            <Card>
+              <CardHeader>
+                <CardTitle>Непроверенные темы</CardTitle>
+                <CardDescription>
+                  Созданы автоматически из новых навыков. Учитываются в покрытии, но не в
+                  подтверждённой готовности до ревью.
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="flex flex-col gap-5">
+                {provisionalTopics.map((topic) => (
+                  <TopicRow
+                    key={topic.topic_id}
+                    topic={topic}
+                    gap={gapByTopic.get(topic.topic_key)}
+                  />
+                ))}
+              </CardContent>
+            </Card>
+          ) : null}
 
           <GapsSection
             profile={profile}
@@ -260,6 +283,9 @@ function TopicRow({ topic, gap }: { topic: ProfileTopic; gap?: GapItem }) {
       <div className="flex items-center justify-between gap-3">
         <div className="flex flex-wrap items-center gap-2">
           <span className="font-medium">{topic.topic_name}</span>
+          {topic.status === 'provisional' ? (
+            <Badge variant="secondary">на проверке</Badge>
+          ) : null}
           {topic.category ? <Badge variant="outline">{topic.category}</Badge> : null}
           {gap && !gap.satisfied ? (
             <Badge variant="destructive">пробел −{gap.gap}</Badge>
@@ -365,27 +391,56 @@ function GapsSection({
 }
 
 function GapsView({ gaps, hasTopics }: { gaps: GapAnalysisRead; hasTopics: boolean }) {
-  const readiness = Math.round(gaps.overall_readiness * 100)
+  const coverage = Math.round(gaps.coverage_all * 100)
+  const confirmed =
+    gaps.confirmed_readiness === null || gaps.confirmed_readiness === undefined
+      ? null
+      : Math.round(gaps.confirmed_readiness * 100)
 
   return (
     <div className="flex flex-col gap-3">
+      <div className="grid gap-4 sm:grid-cols-2">
+        <div className="flex flex-col gap-1">
+          <span className="text-2xl font-medium">{coverage}%</span>
+          <span className="text-sm text-muted-foreground">покрытие всех требований</span>
+          <Progress value={coverage} />
+        </div>
+        <div className="flex flex-col gap-1">
+          <span className="text-2xl font-medium">
+            {confirmed === null ? '—' : `${confirmed}%`}
+          </span>
+          <span className="text-sm text-muted-foreground">подтверждённая готовность</span>
+          {confirmed === null ? (
+            <span className="text-xs text-muted-foreground">
+              нет подтверждённых требований
+            </span>
+          ) : (
+            <Progress value={confirmed} />
+          )}
+        </div>
+      </div>
       <div className="flex items-end justify-between gap-3">
-        <span className="text-2xl font-medium">{readiness}%</span>
         <span className="text-sm text-muted-foreground">
           {gaps.items.filter((item) => item.satisfied).length} из {gaps.items.length}{' '}
           требований закрыто
         </span>
       </div>
-      <Progress value={readiness} />
       {hasTopics ? null : (
         <p className="text-sm text-muted-foreground">
           Профиль пуст — все требования пока считаются разрывами.
         </p>
       )}
+      {gaps.provisional_count > 0 ? (
+        <p className="text-sm text-muted-foreground">
+          {gaps.provisional_count} требований опираются на непроверенные темы (вес{' '}
+          {gaps.provisional_weight.toFixed(2)}). Они входят в покрытие, но не в
+          подтверждённую готовность.
+        </p>
+      ) : null}
       {gaps.unmatched_count > 0 ? (
         <p className="text-sm text-muted-foreground">
           {gaps.unmatched_count} навык(ов) вакансии вне онтологии: показаны в таблице,
-          но не входят в готовность.
+          но не входят в покрытие.
         </p>
       ) : null}
       {gaps.items.length === 0 ? (
@@ -407,7 +462,12 @@ function GapsView({ gaps, hasTopics }: { gaps: GapAnalysisRead; hasTopics: boole
               <TableRow key={item.skill_name}>
                 <TableCell>{item.skill_name}</TableCell>
                 <TableCell>
-                  {item.topic_name ?? <Badge variant="outline">вне онтологии</Badge>}
+                  <div className="flex flex-wrap items-center gap-2">
+                    {item.topic_name ?? <Badge variant="outline">вне онтологии</Badge>}
+                    {item.topic_status === 'provisional' ? (
+                      <Badge variant="secondary">на проверке</Badge>
+                    ) : null}
+                  </div>
                 </TableCell>
                 <TableCell>{item.required_level}</TableCell>
                 <TableCell>{item.user_level}</TableCell>

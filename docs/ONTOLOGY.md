@@ -170,6 +170,20 @@ uv run python -m app.ontology.review merge <source_key> --into <target_key> --ac
 HTTP API ревью пока не добавлен: в проекте нет ролей/админ-аутентификации,
 поэтому CLI безопаснее. API появится после введения ролей.
 
+### 2.4. Покрытие и подтверждённая готовность
+
+Gap-анализ теперь отдаёт две метрики:
+
+- `coverage_all` — взвешенное покрытие всех требований, включая provisional;
+- `confirmed_readiness` — покрытие только canonical-требований; `null`, если
+  подтверждённых требований нет.
+
+Дополнительно возвращаются `provisional_count`, `provisional_weight` и
+`confirmed_weight`. В профиле у темы есть `status`, в разрыве — `topic_status`,
+поэтому UI показывает непроверенные темы отдельным блоком и помечает их
+«на проверке». `overall_readiness` сохранён как синоним `coverage_all` для
+совместимости.
+
 ### Важное следствие для оценки
 
 Раньше `PostgreSQL` матчился в `sql`, а `Kafka` считалась «вне онтологии» и не входила
@@ -274,6 +288,7 @@ readiness = critical_gate × readiness
 | 2.1 | Инвариант `topic_id`: provisional-темы, `TopicAlias`, resolver | сделано |
 | 2.2 | Backfill legacy NULL, `NOT NULL`, `RESTRICT`, лимит тем на документ | сделано |
 | 2.3 | CLI ревью: list/approve/reject/merge, перенос связей, аудит | сделано |
+| 2.4 | `coverage_all` / `confirmed_readiness`, отдельный блок provisional в UI | сделано |
 | 3 | Миграция `requirement_group` + `logic` в `vacancy_skills` | следующее |
 | 4 | `criticality`, `required_level` по рубрике в извлечении вакансии | следующее |
 | 5 | `evidence_type` / `verified_level` в резюме и профиле | следующее |

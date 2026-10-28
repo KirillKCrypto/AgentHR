@@ -30,6 +30,7 @@ class TopicBrief(BaseModel):
     key: str
     name: str
     category: str | None = None
+    status: str = "canonical"
 
 
 class SkillRead(BaseModel):
@@ -41,7 +42,9 @@ class SkillRead(BaseModel):
     weight: float | None = Field(default=None, description="Важность навыка для вакансии, 0..1")
     confidence: float
     evidence: str | None = None
-    match_method: str = Field(description="exact | alias | fuzzy | embedding | none")
+    match_method: str = Field(
+        description="exact | alias | fuzzy | embedding | provisional | backfill | none"
+    )
     topic: TopicBrief | None = None
 
 
@@ -100,6 +103,7 @@ class ProfileTopicRead(BaseModel):
     confidence: float
     source: str
     last_assessed: datetime | None = None
+    status: str = "canonical"
 
 
 class UnmatchedSkillRead(BaseModel):
@@ -131,6 +135,7 @@ class GapItemRead(BaseModel):
     weight: float
     topic_key: str | None = None
     topic_name: str | None = None
+    topic_status: str | None = None
 
 
 class GapAnalysisRead(BaseModel):
@@ -139,7 +144,17 @@ class GapAnalysisRead(BaseModel):
     vacancy_id: UUID
     vacancy_title: str | None = None
     items: list[GapItemRead] = []
-    overall_readiness: float = Field(description="Доля закрытых требований, 0..1")
+    overall_readiness: float = Field(
+        description="Взвешенное покрытие всех требований, включая provisional, 0..1"
+    )
+    coverage_all: float = Field(description="Покрытие всех требований, включая provisional, 0..1")
+    confirmed_readiness: float | None = Field(
+        default=None,
+        description="Покрытие только canonical-требований; null, если их нет",
+    )
+    provisional_count: int = Field(description="Сколько требований опираются на provisional-темы")
+    provisional_weight: float = Field(description="Суммарный вес provisional-требований")
+    confirmed_weight: float = Field(description="Суммарный вес canonical-требований")
     unmatched_count: int = Field(description="Навыков вакансии вне онтологии")
 
 

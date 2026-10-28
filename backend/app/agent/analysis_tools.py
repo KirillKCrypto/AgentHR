@@ -107,6 +107,7 @@ def build_analysis_tools(
                     "proficiency": topic.proficiency,
                     "confidence": topic.confidence,
                     "source": topic.source,
+                    "status": topic.status,
                     "last_assessed": (
                         topic.last_assessed.isoformat() if topic.last_assessed else None
                     ),
@@ -181,11 +182,17 @@ def build_analysis_tools(
         return {
             "vacancy_id": str(report.vacancy_id),
             "overall_readiness": report.overall_readiness,
+            "coverage_all": report.coverage_all,
+            "confirmed_readiness": report.confirmed_readiness,
+            "provisional_count": report.provisional_count,
+            "provisional_weight": report.provisional_weight,
+            "confirmed_weight": report.confirmed_weight,
             "unmatched_count": report.unmatched_count,
             "items": [
                 {
                     "skill_name": item.skill_name,
                     "topic_key": item.topic_key,
+                    "topic_status": item.topic_status,
                     "required_level": item.required_level,
                     "user_level": item.user_level,
                     "gap": item.gap,
