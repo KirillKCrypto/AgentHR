@@ -108,7 +108,7 @@ AgentHR/
 │   │   │   ├── __init__.py    (реэкспорт онтологии и операций над графом)
 │   │   │   ├── graph.py       (циклы, топологический порядок, пререквизиты)
 │   │   │   ├── seed.py        (идемпотентный сид + CLI)
-│   │   │   └── topics.py      (онтология v1: 8 тем, алиасы, зависимости)
+│   │   │   └── topics.py      (онтология v2: 89 атомарных тем, алиасы, зависимости)
 │   │   ├── schemas/
 │   │   │   ├── __init__.py
 │   │   │   ├── analysis.py    (схемы вакансий, резюме, профиля и gap-анализа)
@@ -224,7 +224,7 @@ AgentHR/
 (`app/main.py`: CORS, роутеры, `/health`, `/health/db`, обработчик `LLMError`), JWT-аутентификация
 (`app/api/`, `app/core/security.py`), слой LLM (`app/llm/`: интерфейс, mock- и OpenAI-провайдеры),
 агентский слой (`app/agent/`: реестр Tools, middleware аудита и лимитов, harness на Deep Agents,
-доменные инструменты), онтология v1 с сидом (`app/ontology/`), сервисный слой
+доменные инструменты), онтология v2 с сидом (`app/ontology/`), сервисный слой
 (`app/services/`: извлечение, нормализация, профиль и gap-анализ), доменные REST-эндпоинты
 (`/vacancies`, `/resumes`, `/profile`, `/analysis`), настройки (`app/core/config.py`), слой БД
 (`app/db/`), модели (`app/models/`: пользователь, аудит-лог, граф знаний, документы, срез профиля),
@@ -1112,9 +1112,10 @@ Tailwind 4, shadcn/ui: Base UI, lucide, cn, cva), скрипты `dev` / `build`
 
 **Role:** DOMAIN (онтология)
 
-**Responsibility:** онтология v1 — 8 тем (`OntologyTopic`: ключ, название, описание,
-категория, алиасы, пререквизиты) и версия `ONTOLOGY_VERSION`. Описания тем используются
-как текст для эмбеддингов при нормализации навыков.
+**Responsibility:** онтология v2 — 89 атомарных тем и 75 пререквизитов
+(`OntologyTopic`: ключ, название, описание, категория, алиасы, пререквизиты) и версия
+`ONTOLOGY_VERSION`. Описания тем используются как текст для эмбеддингов при
+нормализации навыков. Состав и ограничения описаны в [`docs/ONTOLOGY.md`](ONTOLOGY.md).
 
 **Depends on:** — (только стандартная библиотека).
 
@@ -1302,7 +1303,7 @@ app/agent/deep_harness.py ──▶ middleware.py (AuditMiddleware ──▶ aud
                                              LimitsMiddleware — шаги/токены)
 app/agent/deep_harness.py ──▶ langchain_tools.py ──▶ tools.py (JSON Schema + валидация)
 
-app/ontology/seed.py ──▶ app/ontology/topics.py (онтология v1)
+app/ontology/seed.py ──▶ app/ontology/topics.py (онтология v2)
                      ──▶ app/ontology/graph.py (проверки графа зависимостей)
                      ──▶ app/models/topic.py ──▶ topics, topic_prerequisites, topic_candidates
 app/ontology/graph.py ──▶ только стандартная библиотека (не зависит от ORM)
@@ -1370,9 +1371,9 @@ API доступен снаружи по `localhost:${API_PORT}` (по умол�
 | Backend-приложение (локально) | `backend/app/main.py` (uvicorn) | каркас, auth, Agent Harness и доменные API реализованы |
 | Backend-приложение (контейнер) | `backend/docker/entrypoint.sh` → uvicorn | миграции + API, healthy |
 | Миграции БД | `backend/alembic/` (`uv run alembic ...`) | 4 миграции: pgvector, users, agent_actions, граф знаний и документы |
-| Сид онтологии | `backend/app/ontology/seed.py` (`uv run python -m app.ontology.seed`) | 8 тем + 3 ребра `REQUIRES`, идемпотентно |
+| Сид онтологии | `backend/app/ontology/seed.py` (`uv run python -m app.ontology.seed`) | 89 тем + 75 рёбер `REQUIRES`, идемпотентно |
 | Eval качества извлечения | `backend/scripts/eval_extraction.py` | golden-набор из 5 кейсов; требует живого LLM |
-| Прогон тестов backend | `backend/tests/` (pytest) | 141 тест (1 пропускается без флага живого LLM) |
+| Прогон тестов backend | `backend/tests/` (pytest) | 147 тестов, 3 пропускаются без флагов живого LLM/эмбеддингов |
 | Frontend dev-сервер | `frontend/` (`npm run dev`) | вход/регистрация через API |
 | Генерация типов API | `frontend/` (`npm run generate:api`, нужен backend) | скрипт готов |
 | Сборка frontend | `npm run build` (tsc + vite) | проходит |

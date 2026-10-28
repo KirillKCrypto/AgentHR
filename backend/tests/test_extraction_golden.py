@@ -15,6 +15,7 @@ from app.services.analysis import extract_resume_skills, extract_vacancy_require
 from app.services.evaluation import precision_recall
 from app.services.normalization import SkillMatcher
 from app.services.topics import load_packaged_topic_index
+from tests.fixtures.curated_skills import CURATED_SKILLS
 from tests.fixtures.extraction_golden import ALL_CASES, ExtractionCase
 
 
@@ -68,3 +69,13 @@ def test_golden_set_is_not_empty() -> None:
     """Golden-набор непустой и покрывает оба типа документов."""
     assert len(ALL_CASES) >= 4
     assert {case.kind for case in ALL_CASES} == {"vacancy", "resume"}
+
+
+async def test_curated_dataset_is_fully_covered() -> None:
+    """Все 76 канонических навыков датасета находят тему в онтологии."""
+    matcher = SkillMatcher(load_packaged_topic_index())
+    matches = await matcher.match_many(CURATED_SKILLS)
+    unmatched = [
+        name for name, match in zip(CURATED_SKILLS, matches, strict=True) if not match.matched
+    ]
+    assert unmatched == [], f"навыки вне онтологии: {unmatched}"

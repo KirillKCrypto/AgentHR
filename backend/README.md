@@ -2,7 +2,7 @@
 
 Backend-приложение AgentHR на FastAPI. Реализованы: каркас, health-эндпоинты,
 JWT-аутентификация, слой LLM (mock/OpenAI), подключение к БД, Agent Harness на Deep Agents,
-модели User/AgentAction/граф знаний и онтология v1 с идемпотентным сидом, доменные REST API
+модели User/AgentAction/граф знаний и онтология v2 с идемпотентным сидом, доменные REST API
 (вакансии, резюме, профиль знаний, gap-анализ) и агентские tools поверх сервисного слоя.
 
 Стек: Python 3.13, FastAPI, SQLAlchemy 2 (async) + asyncpg, Alembic, PyJWT, pwdlib (argon2),
@@ -85,7 +85,7 @@ docker compose up -d --build    # agenthr-api на http://127.0.0.1:8000
 
 ## Онтология и граф знаний
 
-- `app/ontology/topics.py` — онтология v1: 8 тем с описаниями, алиасами и пререквизитами
+- `app/ontology/topics.py` — онтология v2: 89 атомарных тем с описаниями, алиасами и пререквизитами
   (`REQUIRES`); описания используются как текст для эмбеддингов при нормализации навыков.
 - `app/ontology/graph.py` — операции над графом: поиск циклов, топологический порядок,
   транзитивные пререквизиты.
@@ -193,7 +193,7 @@ URL БД берётся из настроек (`backend/.env`, переменн�
 - `app/llm/` — слой LLM: `base.py` (интерфейс), `mock.py`, `openai.py`, `factory.py`
 - `app/models/` — ORM-модели (`User`, `AgentAction`, `Topic`, `TopicPrerequisite`, `TopicCandidate`,
   `Vacancy`, `VacancySkill`, `Resume`, `ResumeSkill`, `UserSkillState`)
-- `app/ontology/` — онтология v1, операции над графом зависимостей, идемпотентный сид
+- `app/ontology/` — онтология v2, операции над графом зависимостей, идемпотентный сид
 - `app/embeddings/` — слой эмбеддингов (none / local ONNX / mock)
 - `app/services/` — сервисный слой: анализ (извлечение), нормализация, профиль и gap-анализ,
   метрики качества

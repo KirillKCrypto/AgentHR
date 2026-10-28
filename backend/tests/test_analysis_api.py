@@ -40,11 +40,11 @@ async def test_create_vacancy_extracts_and_matches_skills(api_user: ApiUser) -> 
     assert skills["Python"]["topic"]["key"] == "python"
     assert skills["Python"]["match_method"] == "exact"
     assert skills["Python"]["level"] == 70
-    assert skills["PostgreSQL"]["topic"]["key"] == "sql"
-    assert skills["PostgreSQL"]["match_method"] == "alias"
-    # Навык вне онтологии не отбрасывается
-    assert skills["Kafka"]["topic"] is None
-    assert skills["Kafka"]["match_method"] == "none"
+    assert skills["PostgreSQL"]["topic"]["key"] == "postgresql"
+    assert skills["PostgreSQL"]["match_method"] == "exact"
+    # В онтологии v2 Kafka — отдельный навык, а не «вне словаря»
+    assert skills["Kafka"]["topic"]["key"] == "kafka"
+    assert skills["Kafka"]["match_method"] == "exact"
 
 
 async def test_resume_updates_profile(api_user: ApiUser) -> None:
@@ -60,7 +60,8 @@ async def test_resume_updates_profile(api_user: ApiUser) -> None:
     assert topics["python"]["proficiency"] == 75
     assert topics["python"]["source"] == "resume"
     assert topics["sql"]["proficiency"] == 50
-    assert [skill["raw_name"] for skill in profile["unmatched_skills"]] == ["Docker"]
+    assert topics["docker"]["proficiency"] == 40
+    assert profile["unmatched_skills"] == []
 
 
 async def test_analysis_returns_gaps_and_readiness(api_user: ApiUser) -> None:
@@ -82,13 +83,13 @@ async def test_analysis_returns_gaps_and_readiness(api_user: ApiUser) -> None:
     gaps = {item["skill_name"]: item for item in body["gaps"]["items"]}
     assert gaps["Python"]["satisfied"] is True
     assert gaps["Python"]["user_level"] == 75
-    assert gaps["PostgreSQL"]["gap"] == 10
+    # PostgreSQL — отдельный навык: знаний SQL недостаточно для зачёта.
+    assert gaps["PostgreSQL"]["gap"] == 60
     assert gaps["PostgreSQL"]["satisfied"] is False
-    # Kafka вне онтологии: разрыв показан, но в готовность не входит
-    assert gaps["Kafka"]["topic_key"] is None
-    assert body["gaps"]["unmatched_count"] == 1
-    # (1.0 * 75/70 + 0.8 * 50/60) / 1.8
-    assert body["gaps"]["overall_readiness"] == pytest.approx(0.926, abs=0.001)
+    assert gaps["Kafka"]["topic_key"] == "kafka"
+    assert body["gaps"]["unmatched_count"] == 0
+    # (1.0 * 75/70 + 0.8 * 0/60 + 0.3 * 0/40) / 2.1
+    assert body["gaps"]["overall_readiness"] == pytest.approx(0.476, abs=0.001)
 
 
 async def test_documents_are_isolated_by_user(api_user: ApiUser, second_user: ApiUser) -> None:
@@ -131,9 +132,7 @@ async def test_vacancy_and_resume_lists(api_user: ApiUser) -> None:
 
 async def test_endpoints_require_authentication(api_user: ApiUser) -> None:
     """Без токена доменные эндпоинты недоступны."""
-    response = await api_user.client.post(
-        "/vacancies", json={"raw_text": VACANCY_TEXT}
-    )
+    response = await api_user.client.post("/vacancies", json={"raw_text": VACANCY_TEXT})
     assert response.status_code == 401
 
     profile = await api_user.client.get("/profile")

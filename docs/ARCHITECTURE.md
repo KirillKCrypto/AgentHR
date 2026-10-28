@@ -60,7 +60,7 @@ mock). CORS разрешает запросы с dev-сервера frontend.
    │                                                 - Agent Harness: Deep Agents + middleware аудита/лимитов (app/agent/)
    │                                                 - модели User, AgentAction, Topic, Vacancy, Resume, UserSkillState (app/models/)
    │                                                 - Alembic-миграции (pgvector, users, agent_actions, граф знаний и документы)
-   │                                                 - онтология v1 + идемпотентный сид (app/ontology/)
+   │                                                 - онтология v2: 89 тем, 75 пререквизитов, идемпотентный сид (app/ontology/)
    └── npm run dev (frontend/) ──▶ Vite dev-сервер (SPA)
                                      - /login: регистрация и вход через REST API
                                      - /: дашборд — /me через TanStack Query, выход
@@ -189,8 +189,8 @@ Tools — типизированные функции, единственный 
 **Факт:** созданы таблицы `topics` (ключ, название, описание, алиасы, версия онтологии,
 флаг автосозданной темы), `topic_prerequisites` (ребро `REQUIRES`), `topic_candidates`
 (навыки вне онтологии — пул тем на ревью) и `user_skill_states` (срез профиля по
-паре «пользователь × тема»). Онтология v1 — 8 тем с зависимостями, сид идемпотентен
-(`app/ontology/`). Слой эмбеддингов (`app/embeddings/`): локальная ONNX-модель
+паре «пользователь × тема»). Онтология v2 — 89 атомарных тем и 75 рёбер `REQUIRES`,
+сид идемпотентен (`app/ontology/`); состав и ограничения — в [`ONTOLOGY.md`](ONTOLOGY.md). Слой эмбеддингов (`app/embeddings/`): локальная ONNX-модель
 (multilingual MiniLM, 384 измерения) без внешних сервисов, с деградацией к alias и
 нечёткому совпадению, если пакет не установлен.
 

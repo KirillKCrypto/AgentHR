@@ -15,14 +15,9 @@ from tests.conftest import RESUME_TEXT, VACANCY_TEXT, SchemaStubProvider
 PASSWORD = "correct-horse-battery-staple"
 
 
-def _tools(
-    session, provider: SchemaStubProvider, user_id
-) -> dict[str, ToolDefinition]:
+def _tools(session, provider: SchemaStubProvider, user_id) -> dict[str, ToolDefinition]:
     """Инструменты анализа по имени."""
-    return {
-        tool.name: tool
-        for tool in build_analysis_tools(session, provider, user_id=user_id)
-    }
+    return {tool.name: tool for tool in build_analysis_tools(session, provider, user_id=user_id)}
 
 
 async def _create_user(session) -> User:
@@ -75,9 +70,7 @@ def test_tool_schemas_are_registered_and_validated() -> None:
             "update_skill_proficiency", {"topic_key": "python", "score": 150}
         )
 
-    registry.validate_arguments(
-        "update_skill_proficiency", {"topic_key": "python", "score": 70}
-    )
+    registry.validate_arguments("update_skill_proficiency", {"topic_key": "python", "score": 70})
 
 
 async def test_extract_vacancy_tool_returns_skills(seeded_db: None) -> None:
@@ -107,15 +100,11 @@ async def test_get_vacancy_requirements_respects_owner(seeded_db: None) -> None:
         owner = await _create_user(session)
         stranger = await _create_user(session)
         try:
-            vacancy = await analyze_vacancy(
-                session, provider, owner.id, raw_text=VACANCY_TEXT
-            )
+            vacancy = await analyze_vacancy(session, provider, owner.id, raw_text=VACANCY_TEXT)
             tools = _tools(session, provider, stranger.id)
 
             with pytest.raises(NotFoundError):
-                await tools["get_vacancy_requirements"].handler(
-                    vacancy_id=str(vacancy.id)
-                )
+                await tools["get_vacancy_requirements"].handler(vacancy_id=str(vacancy.id))
         finally:
             await _cleanup_user(owner)
             await _cleanup_user(stranger)
@@ -135,7 +124,8 @@ async def test_get_user_skill_state_reads_profile(seeded_db: None) -> None:
             topics = {topic["topic_key"]: topic for topic in result["topics"]}
             assert topics["python"]["proficiency"] == 75
             assert topics["sql"]["proficiency"] == 50
-            assert [skill["name"] for skill in result["unmatched_skills"]] == ["Docker"]
+            assert topics["docker"]["proficiency"] == 40
+            assert result["unmatched_skills"] == []
         finally:
             await _cleanup_user(user)
 
@@ -153,7 +143,7 @@ async def test_query_skill_dependencies(seeded_db: None) -> None:
 
             by_key = {item["topic_key"]: item for item in result["topics"]}
             assert by_key["databases"]["prerequisites"] == ["sql"]
-            assert by_key["sql"]["dependents"] == ["databases"]
+            assert {"databases", "postgresql", "mysql"} <= set(by_key["sql"]["dependents"])
             assert by_key["no-such-topic"] == {
                 "topic_key": "no-such-topic",
                 "found": False,

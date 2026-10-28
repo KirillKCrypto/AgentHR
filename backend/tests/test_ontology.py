@@ -1,10 +1,13 @@
-"""Тесты состава онтологии v1 (без БД)."""
+"""Тесты состава онтологии (без БД)."""
+
+from collections import Counter
 
 from app.ontology import ONTOLOGY_TOPICS, ONTOLOGY_VERSION, detect_cycles, topic_by_key
+from app.services.normalization import normalize_name
 
 
 def test_ontology_has_enough_topics() -> None:
-    """Онтология v1 содержит не меньше 5 тем (план: 5–8 тем)."""
+    """Онтология v2 содержит атомарные темы, а не только broad-ядро."""
     assert len(ONTOLOGY_TOPICS) >= 5
 
 
@@ -58,4 +61,32 @@ def test_topic_by_key() -> None:
 
 def test_ontology_version_is_positive() -> None:
     """Версия онтологии задана и положительна."""
-    assert ONTOLOGY_VERSION >= 1
+    assert ONTOLOGY_VERSION >= 2
+
+
+def test_ontology_covers_atomic_skills() -> None:
+    """Онтология v2 состоит из атомарных навыков, а не только из broad-тем."""
+    assert len(ONTOLOGY_TOPICS) >= 70
+    categories = {topic.category for topic in ONTOLOGY_TOPICS}
+    assert {"language", "database", "devops", "cloud", "ml", "web"} <= categories
+
+
+def test_aliases_are_unique_after_normalization() -> None:
+    """Один алиас не может молча указывать на две разные темы."""
+    owners: dict[str, str] = {}
+    collisions: list[tuple[str, str, str]] = []
+    for topic in ONTOLOGY_TOPICS:
+        for alias in topic.alias_texts():
+            normalized = normalize_name(alias)
+            previous = owners.get(normalized)
+            if previous is not None and previous != topic.key:
+                collisions.append((normalized, previous, topic.key))
+            owners[normalized] = topic.key
+    assert collisions == [], f"коллизии алиасов: {collisions}"
+
+
+def test_categories_are_reviewable() -> None:
+    """Категории покрывают основные домены и не пустуют."""
+    categories = Counter(topic.category for topic in ONTOLOGY_TOPICS)
+    assert len(categories) >= 10
+    assert all(count >= 1 for count in categories.values())

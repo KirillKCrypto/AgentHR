@@ -28,6 +28,16 @@ DEFAULT_EMBEDDING_THRESHOLD = 0.35
 _NORMALIZE_RE = re.compile(r"[^\w\s]", re.UNICODE)
 _SPACES_RE = re.compile(r"\s+", re.UNICODE)
 
+# C++ и C# после удаления пунктуации превращаются в «c» и конфликтуют.
+# Сохраняем различие осмысленными токенами до общей нормализации.
+_C_LANGUAGE_RE = re.compile(r"c\+\+|c#", re.IGNORECASE)
+
+
+def _normalize_c_languages(text: str) -> str:
+    """Заменяет C++/C# на различимые токены ``cpp`` и ``csharp``."""
+    return _C_LANGUAGE_RE.sub(lambda match: "cpp" if "+" in match.group(0) else "csharp", text)
+
+
 # Кириллические омоглифы латиницы: «ООП» и «OOP» должны совпадать,
 # «С++» с кириллической «С» — с «C++».
 _HOMOGLYPHS_UPPER = str.maketrans(
@@ -79,6 +89,7 @@ def normalize_name(raw: str) -> str:
     text = text.translate(_HOMOGLYPHS_UPPER)
     text = text.lower()
     text = text.translate(_HOMOGLYPHS_LOWER)
+    text = _normalize_c_languages(text)
     text = _NORMALIZE_RE.sub(" ", text)
     text = _SPACES_RE.sub(" ", text)
     return text.strip()

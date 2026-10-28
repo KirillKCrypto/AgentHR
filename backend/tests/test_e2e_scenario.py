@@ -37,10 +37,11 @@ async def test_full_preparation_scenario(api_user: ApiUser) -> None:
     assert profile_response.status_code == 200
     profile = profile_response.json()
     topics = {topic["topic_key"]: topic for topic in profile["topics"]}
-    assert set(topics) == {"python", "sql"}
+    assert set(topics) == {"python", "sql", "docker"}
     assert topics["python"]["proficiency"] == 75
     assert topics["python"]["source"] == "resume"
-    assert [skill["raw_name"] for skill in profile["unmatched_skills"]] == ["Docker"]
+    assert topics["docker"]["proficiency"] == 40
+    assert profile["unmatched_skills"] == []
 
     # 4. Разрывы под загруженную вакансию
     gaps_response = await api_user.client.get(
@@ -52,9 +53,9 @@ async def test_full_preparation_scenario(api_user: ApiUser) -> None:
     gaps = gaps_response.json()
     gaps_by_skill = {item["skill_name"]: item for item in gaps["items"]}
     assert gaps_by_skill["Python"]["satisfied"] is True
-    assert gaps_by_skill["PostgreSQL"]["gap"] == 10
-    assert gaps_by_skill["Kafka"]["topic_key"] is None
-    assert gaps["unmatched_count"] == 1
+    assert gaps_by_skill["PostgreSQL"]["gap"] == 60
+    assert gaps_by_skill["Kafka"]["topic_key"] == "kafka"
+    assert gaps["unmatched_count"] == 0
 
     # 5. Совместный анализ по сохранённым документам — без новых вызовов LLM
     analysis_response = await api_user.client.post(
@@ -103,9 +104,8 @@ async def test_full_preparation_scenario(api_user: ApiUser) -> None:
     profile_after = await api_user.client.get("/profile", headers=api_user.headers)
     assert profile_after.status_code == 200
     assert {
-        topic["topic_key"]: topic["proficiency"]
-        for topic in profile_after.json()["topics"]
-    } == {"python": 75, "sql": 50}
+        topic["topic_key"]: topic["proficiency"] for topic in profile_after.json()["topics"]
+    } == {"python": 75, "sql": 50, "docker": 40}
     assert profile_after.json()["unmatched_skills"] == profile["unmatched_skills"]
 
     # Единственный дополнительный вызов модели — извлечение второй вакансии

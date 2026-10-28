@@ -43,7 +43,7 @@ TOPICS = (
         ("  PostgreSQL  ", "postgresql"),
         ("ООП", "oop"),
         ("Unit-Testing", "unit testing"),
-        ("С++, C#", "c c"),
+        ("С++, C#", "cpp csharp"),
         ("Python 3", "python 3"),
     ],
 )
