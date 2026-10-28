@@ -307,7 +307,8 @@ JWT-токенов в SPA; дашборд → `GET /me` с access-токеном
     `confidence`, `evidence`, `match_method`);
   - `user_skill_states` — срез профиля: уникальная пара `(user_id, topic_id)`, `proficiency` 0–100,
     `confidence`, `source`, `evidence` (JSONB), `last_assessed`.
-  ORM-модели — `backend/app/models/topic.py`, `vacancy.py`, `resume.py`, `user_skill_state.py`.
+  ORM-модели — `backend/app/models/topic.py`, `vacancy.py`, `resume.py`, `user_skill_state.py`,
+  `ontology_review.py`.
 - Миграция `b7e4c2a91f30` — provisional-темы и алиасы:
   - `topics.status` (`canonical`/`provisional`/`merged`/`rejected`), `origin`, `canonical_topic_id`;
   - `topic_aliases` — уникальный `normalized_alias` на всю онтологию;
@@ -320,6 +321,9 @@ JWT-токенов в SPA; дашборд → `GET /me` с access-токеном
   - FK темы у навыков — `RESTRICT` вместо `SET NULL`;
   - `AUTO_TOPIC_LIMIT` ограничивает число новых тем на документ, overflow идёт
     в одну review-тему.
+- Миграция `d1e2f3a4b5c6` — `ontology_review_actions`:
+  - аудит `approve` / `reject` / `merge` с source/target, актором и деталями;
+  - ревью выполняется CLI `python -m app.ontology.review`.
 - Подключение: `DATABASE_URL` из `backend/.env` (локальный дефолт в `app/core/config.py`);
   движок и сессии — `backend/app/db/session.py` (asyncpg, `pool_pre_ping`).
 - Миграции: Alembic (async-шаблон), URL берётся в `alembic/env.py` из настроек;

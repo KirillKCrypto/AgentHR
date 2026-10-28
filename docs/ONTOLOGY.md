@@ -146,6 +146,30 @@ provisional-тем на документ. Если лимит исчерпан, 
 привязываются к одной теме «Новые навыки (на ревью)»: `raw_name` сохраняется,
 `topic_id` остаётся заполненным, а онтология не растёт бесконтрольно.
 
+### 2.3. Ревью, merge и аудит
+
+Админский интерфейс — CLI `python -m app.ontology.review`:
+
+```bash
+uv run python -m app.ontology.review list
+uv run python -m app.ontology.review approve <key> --actor reviewer
+uv run python -m app.ontology.review reject <key> --actor reviewer
+uv run python -m app.ontology.review merge <source_key> --into <target_key> --actor reviewer
+```
+
+Правила:
+
+- `approve` переводит provisional в canonical;
+- `reject` разрешён только для темы без ссылок из резюме/вакансий, иначе
+  требуется merge;
+- `merge` переносит навыки документов, `user_skill_states`, алиасы, кандидатов
+  и рёбра `REQUIRES`; source помечается `merged` и получает `canonical_topic_id`;
+- каждое действие пишется в `ontology_review_actions` (актор, source/target,
+  детали, время).
+
+HTTP API ревью пока не добавлен: в проекте нет ролей/админ-аутентификации,
+поэтому CLI безопаснее. API появится после введения ролей.
+
 ### Важное следствие для оценки
 
 Раньше `PostgreSQL` матчился в `sql`, а `Kafka` считалась «вне онтологии» и не входила
@@ -249,6 +273,7 @@ readiness = critical_gate × readiness
 | 2 | Тесты покрытия 76 навыков, уникальности алиасов, ацикличности | сделано |
 | 2.1 | Инвариант `topic_id`: provisional-темы, `TopicAlias`, resolver | сделано |
 | 2.2 | Backfill legacy NULL, `NOT NULL`, `RESTRICT`, лимит тем на документ | сделано |
+| 2.3 | CLI ревью: list/approve/reject/merge, перенос связей, аудит | сделано |
 | 3 | Миграция `requirement_group` + `logic` в `vacancy_skills` | следующее |
 | 4 | `criticality`, `required_level` по рубрике в извлечении вакансии | следующее |
 | 5 | `evidence_type` / `verified_level` в резюме и профиле | следующее |

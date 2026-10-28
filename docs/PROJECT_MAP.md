@@ -99,6 +99,7 @@ AgentHR/
 │   │   ├── models/
 │   │   │   ├── __init__.py    (импортирует все модели для Alembic)
 │   │   │   ├── agent_action.py (модель AgentAction)
+│   │   │   ├── ontology_review.py (модель OntologyReviewAction)
 │   │   │   ├── resume.py      (модели Resume, ResumeSkill)
 │   │   │   ├── topic.py       (модели Topic, TopicAlias, TopicPrerequisite, TopicCandidate)
 │   │   │   ├── user.py        (модель User)
@@ -1202,6 +1203,17 @@ id (тесты и офлайн-режим); `create_skill_matcher` — сбор�
 
 **Used by:** сервис анализа, агентские tools.
 
+#### `backend/app/services/ontology_review.py`
+
+**Role:** SERVICE (ревью онтологии)
+
+**Responsibility:** `list_review_topics`, `approve_topic`, `reject_topic`,
+`merge_topics`. Merge переносит навыки документов, `user_skill_states`, алиасы,
+кандидатов и рёбра `REQUIRES`; действия пишутся в `ontology_review_actions`.
+Reject разрешён только для темы без ссылок из документов.
+
+**Used by:** CLI `backend/app/ontology/review.py`.
+
 #### `backend/app/services/evaluation.py`
 
 **Role:** SERVICE (метрики качества)
@@ -1372,10 +1384,11 @@ API доступен снаружи по `localhost:${API_PORT}` (по умол�
 | Запуск инфраструктуры и API | `infra/docker-compose.yml` (сервисы `postgres`, `api`) | реализовано |
 | Backend-приложение (локально) | `backend/app/main.py` (uvicorn) | каркас, auth, Agent Harness и доменные API реализованы |
 | Backend-приложение (контейнер) | `backend/docker/entrypoint.sh` → uvicorn | миграции + API, healthy |
-| Миграции БД | `backend/alembic/` (`uv run alembic ...`) | 6 миграций: pgvector, users, agent_actions, граф знаний, provisional-темы и алиасы, backfill + `NOT NULL` |
+| Миграции БД | `backend/alembic/` (`uv run alembic ...`) | 7 миграций: pgvector, users, agent_actions, граф знаний, provisional-темы, backfill + `NOT NULL`, аудит ревью |
 | Сид онтологии | `backend/app/ontology/seed.py` (`uv run python -m app.ontology.seed`) | 89 canonical-тем, 75 рёбер `REQUIRES`, 233 алиаса, идемпотентно |
+| Ревью онтологии | `backend/app/ontology/review.py` (`uv run python -m app.ontology.review ...`) | list / approve / reject / merge + аудит |
 | Eval качества извлечения | `backend/scripts/eval_extraction.py` | golden-набор из 5 кейсов; требует живого LLM |
-| Прогон тестов backend | `backend/tests/` (pytest) | 152 теста, 3 пропускаются без флагов живого LLM/эмбеддингов |
+| Прогон тестов backend | `backend/tests/` (pytest) | 155 тестов, 3 пропускаются без флагов живого LLM/эмбеддингов |
 | Frontend dev-сервер | `frontend/` (`npm run dev`) | вход/регистрация через API |
 | Генерация типов API | `frontend/` (`npm run generate:api`, нужен backend) | скрипт готов |
 | Сборка frontend | `npm run build` (tsc + vite) | проходит |

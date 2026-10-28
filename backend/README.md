@@ -114,6 +114,9 @@ provisional-тема, запись в `topic_aliases` и кандидат в `to
   (`load_topic_index`), индекс пакета (`load_packaged_topic_index`) и
   `resolve_or_create_topics()` — гарантия `topic_id` для каждого навыка.
 - `app/services/evaluation.py` — метрики качества извлечения (precision / recall / F1).
+- `app/services/ontology_review.py` — approve/reject/merge provisional-тем; merge
+  переносит навыки, состояния профиля, алиасы, кандидатов и рёбра `REQUIRES`.
+  CLI: `uv run python -m app.ontology.review list|approve|reject|merge`.
 - `app/services/profile.py` — запись документов и профиль знаний: `analyze_vacancy` /
   `save_vacancy_analysis`, `analyze_resume` / `save_resume_analysis`, `rebuild_profile`,
   `get_profile`, `compute_gaps`, `update_skill_proficiency`, `weighted_estimate`.
@@ -196,8 +199,9 @@ URL БД берётся из настроек (`backend/.env`, переменн�
 - `app/db/session.py` — async-движок, фабрика сессий, зависимость `get_db`
 - `app/db/base.py` — базовый класс моделей (`Base`)
 - `app/llm/` — слой LLM: `base.py` (интерфейс), `mock.py`, `openai.py`, `factory.py`
-- `app/models/` — ORM-модели (`User`, `AgentAction`, `Topic`, `TopicAlias`, `TopicPrerequisite`,
-  `TopicCandidate`, `Vacancy`, `VacancySkill`, `Resume`, `ResumeSkill`, `UserSkillState`)
+- `app/models/` — ORM-модели (`User`, `AgentAction`, `OntologyReviewAction`, `Topic`,
+  `TopicAlias`, `TopicPrerequisite`, `TopicCandidate`, `Vacancy`, `VacancySkill`, `Resume`,
+  `ResumeSkill`, `UserSkillState`)
 - `app/ontology/` — онтология v2, операции над графом зависимостей, идемпотентный сид
 - `app/embeddings/` — слой эмбеддингов (none / local ONNX / mock)
 - `app/services/` — сервисный слой: анализ (извлечение), нормализация, профиль и gap-анализ,
