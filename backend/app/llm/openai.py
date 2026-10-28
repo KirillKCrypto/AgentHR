@@ -4,12 +4,13 @@ import json
 import logging
 import re
 from collections.abc import Sequence
-from typing import Any
+from typing import Any, Literal
 
 from openai import AsyncOpenAI, OpenAIError
 
 from app.llm.base import (
     ChatMessage,
+    LLMConfigurationError,
     LLMError,
     LLMResponse,
     LLMUsage,
@@ -20,8 +21,11 @@ from app.llm.base import (
 
 logger = logging.getLogger(__name__)
 
-# Промпт резервного режима: некоторые OpenAI-совместимые шлюзы не поддерживают
-# `response_format=json_schema`, но понимают схему в тексте запроса.
+# Режимы структурированного вывода: не все OpenAI-совместимые API поддерживают
+# `response_format=json_schema`, поэтому схему можно передать только в промпте.
+StructuredMode = Literal["json_schema", "json_object", "prompt"]
+
+# Промпт режимов json_object/prompt: схема описывается в системном сообщении.
 _SCHEMA_INSTRUCTION = (
     "Верни только JSON-объект, соответствующий этой JSON Schema:\n{schema}\n"
     "Без markdown, без пояснений и без текста до или после JSON."
@@ -39,13 +43,20 @@ class OpenAIProvider:
         base_url: str | None = None,
         timeout: float = 60.0,
         max_retries: int = 0,
+        structured_mode: StructuredMode = "json_schema",
     ) -> None:
         """Создаёт клиент; таймаут ограничивает ожидание ответа модели.
 
-        Ретраи по умолчанию выключены: шлюзы бесплатных моделей отвечают
-        неравномерно, и лучше вернуть понятную ошибку, чем держать запрос
-        пользователя минутами.
+        Ретраи по умолчанию выключены: внешние API отвечают неравномерно,
+        и лучше вернуть понятную ошибку, чем держать запрос пользователя минутами.
+
+        `structured_mode` задаёт способ структурированного вывода: DeepSeek
+        не поддерживает `json_schema`, поэтому для него используется `json_object`.
         """
+        if structured_mode not in ("json_schema", "json_object", "prompt"):
+            raise LLMConfigurationError(
+                f"Неизвестный режим структурированного вывода: {structured_mode!r}"
+            )
         self._client = AsyncOpenAI(
             api_key=api_key,
             base_url=base_url,
@@ -53,6 +64,7 @@ class OpenAIProvider:
             max_retries=max_retries,
         )
         self._model = model
+        self._structured_mode = structured_mode
 
     async def generate_with_tools(
         self,
@@ -78,7 +90,7 @@ class OpenAIProvider:
                 or None,
             )
         except OpenAIError as exc:
-            raise LLMError(f"OpenAI: запрос не выполнен — {exc}") from exc
+            raise LLMError(f"LLM: запрос не выполнен — {exc}") from exc
 
         choice = completion.choices[0].message
         try:
@@ -91,7 +103,7 @@ class OpenAIProvider:
                 for call in (choice.tool_calls or [])
             )
         except (AttributeError, IndexError) as exc:
-            raise LLMError("OpenAI: неожиданная структура вызова инструмента") from exc
+            raise LLMError("LLM: неожиданная структура вызова инструмента") from exc
 
         return LLMResponse(
             content=choice.content,
@@ -108,54 +120,68 @@ class OpenAIProvider:
     ) -> StructuredResult:
         """Возвращает JSON-ответ, соответствующий переданной JSON Schema.
 
-        Сначала используется штатный `response_format=json_schema`. Если шлюз
-        его не поддерживает или запрос не прошёл (бесплатные прокси отвечают
-        неравномерно), запрос один раз повторяется с описанием схемы в промпте —
-        так пайплайн работает и на шлюзах, которые умеют только обычный чат.
+        Поведение зависит от `structured_mode`:
+        - `json_schema`: штатный `response_format=json_schema`; если API его не
+          поддерживает или запрос не прошёл, один повтор со схемой в промпте;
+        - `json_object`: `response_format=json_object` plus схема в промпте
+          (режим DeepSeek, который не принимает `json_schema`);
+        - `prompt`: только схема в промпте, без `response_format`.
         """
-        try:
-            completion = await self._client.chat.completions.create(
-                model=self._model,
-                messages=_to_openai_messages(messages),
-                response_format={
-                    "type": "json_schema",
-                    "json_schema": {
-                        "name": schema_name,
-                        "schema": schema,
-                        "strict": True,
+        if self._structured_mode == "json_schema":
+            try:
+                completion = await self._client.chat.completions.create(
+                    model=self._model,
+                    messages=_to_openai_messages(messages),
+                    response_format={
+                        "type": "json_schema",
+                        "json_schema": {
+                            "name": schema_name,
+                            "schema": schema,
+                            "strict": True,
+                        },
                     },
-                },
+                )
+            except OpenAIError as exc:
+                logger.warning(
+                    "Запрос со строгой JSON Schema не прошёл (%s), повторяю без неё", exc
+                )
+                completion = await self._generate_prompt_json(messages, schema)
+        elif self._structured_mode == "json_object":
+            completion = await self._generate_prompt_json(
+                messages, schema, response_format={"type": "json_object"}
             )
-        except OpenAIError as exc:
-            logger.warning(
-                "Запрос со строгой JSON Schema не прошёл (%s), повторяю без неё", exc
-            )
+        else:
             completion = await self._generate_prompt_json(messages, schema)
 
         content = completion.choices[0].message.content
         if content is None:
-            raise LLMError("OpenAI: пустой ответ при структурированной генерации")
+            raise LLMError("LLM: пустой ответ при структурированной генерации")
         return StructuredResult(data=_parse_json_object(content), usage=_usage(completion.usage))
 
     async def _generate_prompt_json(
         self,
         messages: Sequence[ChatMessage],
         schema: dict[str, Any],
+        *,
+        response_format: dict[str, str] | None = None,
     ) -> Any:
-        """Резервный запрос: схема описывается в системном сообщении."""
+        """Запрос со схемой в системном сообщении (режимы json_object и prompt)."""
         instruction = ChatMessage(
             role="system",
             content=_SCHEMA_INSTRUCTION.format(
                 schema=json.dumps(schema, ensure_ascii=False)
             ),
         )
+        request: dict[str, Any] = {
+            "model": self._model,
+            "messages": _to_openai_messages([instruction, *messages]),
+        }
+        if response_format is not None:
+            request["response_format"] = response_format
         try:
-            return await self._client.chat.completions.create(
-                model=self._model,
-                messages=_to_openai_messages([instruction, *messages]),
-            )
+            return await self._client.chat.completions.create(**request)
         except OpenAIError as exc:
-            raise LLMError(f"OpenAI: запрос не выполнен — {exc}") from exc
+            raise LLMError(f"LLM: запрос не выполнен — {exc}") from exc
 
     async def close(self) -> None:
         """Закрывает HTTP-клиент SDK."""
@@ -211,14 +237,14 @@ def _parse_json_object(content: str) -> dict[str, Any]:
     except json.JSONDecodeError:
         start, end = text.find("{"), text.rfind("}")
         if start == -1 or end <= start:
-            raise LLMError(f"OpenAI: ответ не является JSON: {content[:200]!r}") from None
+            raise LLMError(f"LLM: ответ не является JSON: {content[:200]!r}") from None
         try:
             data = json.loads(text[start : end + 1])
         except json.JSONDecodeError as exc:
-            raise LLMError(f"OpenAI: ответ не является JSON: {content[:200]!r}") from exc
+            raise LLMError(f"LLM: ответ не является JSON: {content[:200]!r}") from exc
 
     if not isinstance(data, dict):
-        raise LLMError("OpenAI: структурированный ответ должен быть JSON-объектом")
+        raise LLMError("LLM: структурированный ответ должен быть JSON-объектом")
     return data
 
 
@@ -229,7 +255,7 @@ def _parse_arguments(raw: str | None) -> dict[str, Any]:
     try:
         return json.loads(raw)
     except json.JSONDecodeError as exc:
-        raise LLMError(f"OpenAI: невалидные аргументы вызова инструмента: {raw!r}") from exc
+        raise LLMError(f"LLM: невалидные аргументы вызова инструмента: {raw!r}") from exc
 
 
 def _usage(usage: Any) -> LLMUsage | None:

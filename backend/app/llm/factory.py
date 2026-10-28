@@ -23,6 +23,7 @@ def create_llm_provider(settings: Settings | None = None) -> LLMProvider:
             base_url=current.openai_base_url,
             timeout=current.openai_timeout_seconds,
             max_retries=current.openai_max_retries,
+            structured_mode=current.llm_structured_mode,
         )
 
     raise LLMConfigurationError(f"Неизвестный LLM_PROVIDER: {current.llm_provider!r}")

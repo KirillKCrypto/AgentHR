@@ -5,6 +5,7 @@
 """
 
 from functools import lru_cache
+from typing import Literal
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -31,8 +32,13 @@ class Settings(BaseSettings):
     llm_provider: str = "mock"
     openai_api_key: str | None = None
     openai_model: str | None = None
-    openai_base_url: str | None = None  # для OpenAI-совместимых прокси (например, сторонние шлюзы)
-    # Таймаут одного запроса к LLM: бесплатные шлюзы отвечают неравномерно
+    openai_base_url: str | None = None  # для OpenAI-совместимых API (DeepSeek и другие)
+    # Режим структурированного вывода:
+    #   json_schema — штатный response_format=json_schema с откатом в промпт;
+    #   json_object — response_format=json_object + схема в промпте (DeepSeek);
+    #   prompt      — только схема в промпте, без response_format.
+    llm_structured_mode: Literal["json_schema", "json_object", "prompt"] = "json_schema"
+    # Таймаут одного запроса к LLM: внешние API отвечают неравномерно
     openai_timeout_seconds: float = 30.0
     # Повторы на уровне SDK: наш провайдер сам делает резервный запрос,
     # поэтому лишние ретраи только увеличивают худшее время ответа

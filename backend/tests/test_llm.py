@@ -1,4 +1,4 @@
-"""Тесты слоя LLM: MockProvider без сети и опциональная живая проверка OpenAI."""
+"""Тесты слоя LLM: MockProvider без сети и опциональная живая проверка внешнего API."""
 
 import os
 from types import SimpleNamespace
@@ -98,6 +98,31 @@ async def test_factory_builds_openai_provider_with_credentials() -> None:
         await provider.close()
 
 
+async def test_factory_passes_structured_mode() -> None:
+    provider = create_llm_provider(
+        Settings(
+            llm_provider="openai",
+            openai_api_key="test-key",
+            openai_model="test-model",
+            llm_structured_mode="json_object",
+        )
+    )
+    try:
+        assert isinstance(provider, OpenAIProvider)
+        assert provider._structured_mode == "json_object"
+    finally:
+        await provider.close()
+
+
+def test_openai_provider_rejects_unknown_structured_mode() -> None:
+    with pytest.raises(LLMConfigurationError):
+        OpenAIProvider(
+            api_key="test-key",
+            model="test-model",
+            structured_mode="unknown",  # type: ignore[arg-type]
+        )
+
+
 async def test_openai_provider_wraps_transport_errors() -> None:
     """Сбой сети превращается в доменную ошибку LLM, а не в 500."""
     provider = OpenAIProvider(api_key="test-key", model="test-model")
@@ -162,6 +187,47 @@ async def test_openai_provider_falls_back_when_json_schema_unsupported() -> None
         await provider.close()
 
 
+async def test_openai_provider_json_object_mode_skips_json_schema() -> None:
+    """В режиме json_object схема идёт в промпт, а json_schema не запрашивается."""
+    provider = OpenAIProvider(
+        api_key="test-key", model="test-model", structured_mode="json_object"
+    )
+    fake_completion = SimpleNamespace(
+        choices=[SimpleNamespace(message=SimpleNamespace(content='{"answer": 4}'))],
+        usage=None,
+    )
+    create = AsyncMock(return_value=fake_completion)
+    provider._client.chat.completions.create = create  # type: ignore[method-assign]
+    try:
+        result = await provider.generate_structured(USER_MESSAGE, SIMPLE_SCHEMA)
+
+        assert result.data == {"answer": 4}
+        assert create.await_count == 1
+        request = create.await_args.kwargs
+        assert request["response_format"] == {"type": "json_object"}
+        assert "JSON Schema" in request["messages"][0]["content"]
+    finally:
+        await provider.close()
+
+
+async def test_openai_provider_prompt_mode_omits_response_format() -> None:
+    """В режиме prompt API не получает response_format вовсе."""
+    provider = OpenAIProvider(api_key="test-key", model="test-model", structured_mode="prompt")
+    fake_completion = SimpleNamespace(
+        choices=[SimpleNamespace(message=SimpleNamespace(content='{"answer": 4}'))],
+        usage=None,
+    )
+    create = AsyncMock(return_value=fake_completion)
+    provider._client.chat.completions.create = create  # type: ignore[method-assign]
+    try:
+        result = await provider.generate_structured(USER_MESSAGE, SIMPLE_SCHEMA)
+
+        assert result.data == {"answer": 4}
+        assert "response_format" not in create.await_args.kwargs
+    finally:
+        await provider.close()
+
+
 _live_settings = get_settings()
 _LIVE_ENABLED = os.environ.get("RUN_LIVE_LLM_TESTS") == "1"
 
@@ -182,6 +248,7 @@ async def test_openai_structured_live() -> None:
         api_key=_live_settings.openai_api_key,
         model=_live_settings.openai_model,
         base_url=_live_settings.openai_base_url,
+        structured_mode=_live_settings.llm_structured_mode,
     )
     try:
         result = await provider.generate_structured(

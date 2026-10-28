@@ -40,6 +40,8 @@ services:
       OPENAI_MODEL: ${OPENAI_MODEL:-}
       # Базовый URL OpenAI-совместимого шлюза (пусто = api.openai.com)
       OPENAI_BASE_URL: ${OPENAI_BASE_URL:-}
+      # Режим структурированного вывода: json_schema (OpenAI), json_object (DeepSeek), prompt
+      LLM_STRUCTURED_MODE: ${LLM_STRUCTURED_MODE:-json_schema}
       # Эмбеддинги: none (по умолчанию) или local (нужен образ с --extra embeddings)
       EMBEDDING_PROVIDER: ${EMBEDDING_PROVIDER:-none}
       EMBEDDING_MODEL: ${EMBEDDING_MODEL:-sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2}
