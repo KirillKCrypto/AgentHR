@@ -48,10 +48,14 @@ async def test_local_embeddings_match_expected_topics() -> None:
     """Смысловое сопоставление работает на русском языке."""
     matcher = await _matcher()
     matches = await matcher.match_many(
-        ["GitHub Actions", "нормализация схемы БД", "Kafka"]
+        ["GitHub Actions", "нормализация схемы БД", "Kafka", "Fortran"]
     )
-    assert matches[0].topic_key == "git"
-    assert matches[0].method == "embedding"
+    assert matches[0].topic_key == "cicd"
+    assert matches[0].method == "alias"
     assert matches[1].topic_key == "databases"
+    assert matches[1].method == "embedding"
+    # В ontology v2 Kafka — отдельная canonical-тема
+    assert matches[2].topic_key == "kafka"
+    assert matches[2].matched is True
     # Навык вне онтологии не подгоняется под тему
-    assert matches[2].matched is False
+    assert matches[3].matched is False
