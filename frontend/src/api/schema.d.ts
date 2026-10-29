@@ -354,6 +354,21 @@ export interface components {
              */
             confirmed_weight: number;
             /**
+             * Critical Count
+             * @description Количество must_have-требований
+             */
+            critical_count: number;
+            /**
+             * Critical Weight
+             * @description Суммарный вес must_have-требований
+             */
+            critical_weight: number;
+            /**
+             * Critical Gap Count
+             * @description Количество незакрытых must_have-требований
+             */
+            critical_gap_count: number;
+            /**
              * Unmatched Count
              * @description Навыков вакансии вне онтологии
              */
@@ -389,6 +404,11 @@ export interface components {
              * @default SINGLE
              */
             requirement_logic: string;
+            /**
+             * Criticality
+             * @default must_have
+             */
+            criticality: string;
         };
         /** HTTPValidationError */
         HTTPValidationError: {
@@ -577,6 +597,11 @@ export interface components {
              * @default SINGLE
              */
             requirement_logic: string;
+            /**
+             * Criticality
+             * @default must_have
+             */
+            criticality: string;
         };
         /**
          * TokenResponse

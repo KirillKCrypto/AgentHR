@@ -437,6 +437,11 @@ function GapsView({ gaps, hasTopics }: { gaps: GapAnalysisRead; hasTopics: boole
           подтверждённую готовность.
         </p>
       ) : null}
+      {gaps.critical_gap_count > 0 ? (
+        <p className="text-sm text-destructive">
+          {gaps.critical_gap_count} обязательных требований не закрыто.
+        </p>
+      ) : null}
       {gaps.unmatched_count > 0 ? (
         <p className="text-sm text-muted-foreground">
           {gaps.unmatched_count} навык(ов) вакансии вне онтологии: показаны в таблице,
@@ -454,6 +459,7 @@ function GapsView({ gaps, hasTopics }: { gaps: GapAnalysisRead; hasTopics: boole
               <TableHead>Требуется</TableHead>
               <TableHead>В профиле</TableHead>
               <TableHead>Разрыв</TableHead>
+              <TableHead>Критичность</TableHead>
               <TableHead>Логика</TableHead>
               <TableHead>Статус</TableHead>
             </TableRow>
@@ -473,6 +479,13 @@ function GapsView({ gaps, hasTopics }: { gaps: GapAnalysisRead; hasTopics: boole
                 <TableCell>{item.required_level}</TableCell>
                 <TableCell>{item.user_level}</TableCell>
                 <TableCell>{item.gap}</TableCell>
+                <TableCell>
+                  {item.criticality === 'must_have' ? (
+                    <Badge>обязательно</Badge>
+                  ) : (
+                    <Badge variant="outline">желательно</Badge>
+                  )}
+                </TableCell>
                 <TableCell>
                   {item.requirement_logic === 'SINGLE' ? (
                     <span className="text-muted-foreground">—</span>

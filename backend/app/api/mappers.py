@@ -71,6 +71,7 @@ def skill_read(entry: SkillEntry) -> SkillRead:
         topic=topic_brief(entry.topic),
         requirement_group=entry.requirement_group,
         requirement_logic=entry.requirement_logic,
+        criticality=entry.criticality,
     )
 
 
@@ -128,6 +129,7 @@ def gap_analysis_read(report: GapReport) -> GapAnalysisRead:
                 topic_status=item.topic_status,
                 requirement_group=item.requirement_group,
                 requirement_logic=item.requirement_logic,
+                criticality=item.criticality,
             )
             for item in report.items
         ],
@@ -137,5 +139,8 @@ def gap_analysis_read(report: GapReport) -> GapAnalysisRead:
         provisional_count=report.provisional_count,
         provisional_weight=report.provisional_weight,
         confirmed_weight=report.confirmed_weight,
+        critical_count=report.critical_count,
+        critical_weight=report.critical_weight,
+        critical_gap_count=report.critical_gap_count,
         unmatched_count=report.unmatched_count,
     )

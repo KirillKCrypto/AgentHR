@@ -135,6 +135,8 @@ provisional-тема, запись в `topic_aliases` и кандидат в `to
   Дополнительно отдаются `provisional_count`, `provisional_weight`, `confirmed_weight`.
 - Группы требований: `OR` засчитывается по лучшему варианту, `AND` — по минимуму;
   `requirement_group` / `requirement_logic` сохраняются в `vacancy_skills`.
+- `criticality` (`must_have` / `nice_to_have`) сохраняется в `vacancy_skills`;
+  gap-анализ отдаёт `critical_count`, `critical_weight`, `critical_gap_count`.
 - В профиле и разрывах есть `status` / `topic_status`; UI показывает непроверенные
   темы отдельно и помечает их «на проверке».
 - `POST /analysis` не вызывает LLM: извлечение выполняется при загрузке документов.

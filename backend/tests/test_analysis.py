@@ -73,6 +73,7 @@ async def test_vacancy_requirement_groups_are_parsed() -> None:
                     "confidence": 0.8,
                     "group": "g1",
                     "logic": "OR",
+                    "criticality": "nice_to_have",
                 },
                 {
                     "name": "Docker",
@@ -112,6 +113,36 @@ async def test_vacancy_requirement_groups_are_parsed() -> None:
         ("Kubernetes", "g2", "AND"),
         ("SQL", None, "SINGLE"),
     ]
+    assert [skill.criticality for skill in result.skills] == [
+        "must_have",
+        "nice_to_have",
+        "must_have",
+        "must_have",
+        "must_have",
+    ]
+
+
+async def test_invalid_criticality_falls_back_to_must_have() -> None:
+    """Неизвестная критичность не ломает разбор и считается обязательной."""
+    provider = _provider(
+        {
+            "title": None,
+            "company": None,
+            "level": None,
+            "skills": [
+                {
+                    "name": "Python",
+                    "required_level": 60,
+                    "weight": 1.0,
+                    "evidence": None,
+                    "confidence": 0.8,
+                    "criticality": "required_maybe",
+                }
+            ],
+        }
+    )
+    result = await extract_vacancy_requirements(provider, "Вакансия")
+    assert result.skills[0].criticality == "must_have"
 
 
 async def test_extract_resume_skills() -> None:

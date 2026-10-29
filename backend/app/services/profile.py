@@ -82,6 +82,7 @@ class SkillEntry:
     topic: TopicBriefData | None = None
     requirement_group: str | None = None
     requirement_logic: str = "SINGLE"
+    criticality: str = "must_have"
 
 
 @dataclass(frozen=True)
@@ -134,6 +135,7 @@ class GapItem:
     topic_status: str | None = None
     requirement_group: str | None = None
     requirement_logic: str = "SINGLE"
+    criticality: str = "must_have"
 
 
 @dataclass(frozen=True)
@@ -149,6 +151,9 @@ class GapReport:
     provisional_count: int = 0
     provisional_weight: float = 0.0
     confirmed_weight: float = 0.0
+    critical_count: int = 0
+    critical_weight: float = 0.0
+    critical_gap_count: int = 0
     unmatched_count: int = 0
 
 
@@ -235,6 +240,7 @@ async def save_vacancy_analysis(
                 weight=skill.weight,
                 requirement_group=skill.group,
                 requirement_logic=skill.logic,
+                criticality=skill.criticality,
                 confidence=skill.confidence,
                 evidence=skill.evidence,
                 match_method=match.method,
@@ -451,6 +457,9 @@ async def compute_gaps(
     calculations: list[tuple[VacancySkill, GapItem, float, str | None]] = []
     provisional_count = 0
     provisional_weight = 0.0
+    critical_count = 0
+    critical_weight = 0.0
+    critical_gap_count = 0
     unmatched_count = 0
 
     for skill in skills:
@@ -460,6 +469,12 @@ async def compute_gaps(
         gap = max(0, skill.required_level - user_level)
         topic_status = topic.status if topic is not None else None
         logic = skill.requirement_logic or "SINGLE"
+        criticality = skill.criticality or "must_have"
+        if criticality == "must_have":
+            critical_count += 1
+            critical_weight += skill.weight
+            if gap > 0:
+                critical_gap_count += 1
 
         item = GapItem(
             skill_name=skill.raw_name,
@@ -473,6 +488,7 @@ async def compute_gaps(
             topic_status=topic_status,
             requirement_group=skill.requirement_group,
             requirement_logic=logic,
+            criticality=criticality,
         )
         items.append(item)
 
@@ -543,6 +559,9 @@ async def compute_gaps(
         provisional_count=provisional_count,
         provisional_weight=round(provisional_weight, 3),
         confirmed_weight=round(confirmed_weight, 3),
+        critical_count=critical_count,
+        critical_weight=round(critical_weight, 3),
+        critical_gap_count=critical_gap_count,
         unmatched_count=unmatched_count,
     )
 
@@ -587,6 +606,7 @@ async def load_vacancy_skills(
             topic=_topic_brief(topic),
             requirement_group=skill.requirement_group,
             requirement_logic=skill.requirement_logic,
+            criticality=skill.criticality,
         )
         for skill, topic in rows
     )

@@ -197,9 +197,10 @@ Tools — типизированные функции, единственный 
 Профиль знаний материализуется в `user_skill_states`: оценки объединяются взвешенно по
 источнику (`manual` > `interview` > `assessment` > `resume`), уверенность считается по
 независимым свидетельствам и ограничена `0.95`. Gap-анализ (`compute_gaps`) считает разрывы
-«требуется − есть» с учётом групп `AND`/`OR`; `coverage_all` включает provisional-темы,
-`confirmed_readiness` — только canonical. Непроверенные темы помечаются
-`status` / `topic_status`, а навыки вне словаря показываются отдельно (`unmatched_count`).
+«требуется − есть» с учётом групп `AND`/`OR` и критичности `must_have`;
+`coverage_all` включает provisional-темы, `confirmed_readiness` — только canonical.
+Непроверенные темы помечаются `status` / `topic_status`, а навыки вне словаря
+показываются отдельно (`unmatched_count`).
 
 **План:** таблица `embeddings` — на неделе 7 ([`AGENTS.md`](../AGENTS.md) §4); планировщик
 маршрута по графу и адаптация интервью — M3–M4.
@@ -328,6 +329,10 @@ JWT-токенов в SPA; дашборд → `GET /me` с access-токеном
 - Миграция `e2f3a4b5c6d7` — группы требований:
   - `vacancy_skills.requirement_group`, `requirement_logic` (`SINGLE`/`AND`/`OR`);
   - gap-анализ считает `OR` как max, `AND` как min, `SINGLE` как обычное требование.
+- Миграция `f3a4b5c6d7e8` — критичность:
+  - `vacancy_skills.criticality` (`must_have`/`nice_to_have`);
+  - gap-анализ отдаёт `critical_count`, `critical_weight`, `critical_gap_count`;
+  - критический гейт — на этапе 6.
 - Подключение: `DATABASE_URL` из `backend/.env` (локальный дефолт в `app/core/config.py`);
   движок и сессии — `backend/app/db/session.py` (asyncpg, `pool_pre_ping`).
 - Миграции: Alembic (async-шаблон), URL берётся в `alembic/env.py` из настроек;

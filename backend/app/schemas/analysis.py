@@ -48,6 +48,7 @@ class SkillRead(BaseModel):
     topic: TopicBrief | None = None
     requirement_group: str | None = None
     requirement_logic: str = "SINGLE"
+    criticality: str = "must_have"
 
 
 class VacancyRead(BaseModel):
@@ -140,6 +141,7 @@ class GapItemRead(BaseModel):
     topic_status: str | None = None
     requirement_group: str | None = None
     requirement_logic: str = "SINGLE"
+    criticality: str = "must_have"
 
 
 class GapAnalysisRead(BaseModel):
@@ -159,6 +161,9 @@ class GapAnalysisRead(BaseModel):
     provisional_count: int = Field(description="Сколько требований опираются на provisional-темы")
     provisional_weight: float = Field(description="Суммарный вес provisional-требований")
     confirmed_weight: float = Field(description="Суммарный вес canonical-требований")
+    critical_count: int = Field(description="Количество must_have-требований")
+    critical_weight: float = Field(description="Суммарный вес must_have-требований")
+    critical_gap_count: int = Field(description="Количество незакрытых must_have-требований")
     unmatched_count: int = Field(description="Навыков вакансии вне онтологии")
 
 

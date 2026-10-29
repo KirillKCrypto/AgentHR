@@ -19,7 +19,11 @@ VACANCY_SYSTEM_PROMPT = (
     "- Называй навыки так, как они написаны в тексте: не переводи, не сокращай, "
     "не объединяй разные навыки.\n"
     "- required_level — ожидаемый уровень владения навыком, целое число 0..100 "
-    "(0 — не требуется, 40 — базовый, 70 — уверенный, 90 — экспертный).\n"
+    "по рубрике: 0 — не требуется, 20 — знать термин, 40 — базово применять, "
+    "60 — рабочий уровень, 75 — уверенный самостоятельный, 90 — экспертный, "
+    "100 — эталонный.\n"
+    "- criticality — must_have для обязательного требования, nice_to_have для "
+    "«плюса»/«желательно». Если явно не сказано, что навык необязателен, ставь must_have.\n"
     "- weight — важность навыка для этой вакансии, число 0..1.\n"
     "- evidence — короткая цитата из текста вакансии, подтверждающая навык.\n"
     "- confidence — уверенность в извлечении, число 0..1.\n"
@@ -59,6 +63,11 @@ _SKILL_SCHEMA: dict[str, Any] = {
             "type": "string",
             "enum": ["SINGLE", "AND", "OR"],
             "description": "Логика группы требований",
+        },
+        "criticality": {
+            "type": "string",
+            "enum": ["must_have", "nice_to_have"],
+            "description": "Обязательность требования",
         },
     },
 }
@@ -115,6 +124,7 @@ class ExtractedSkill:
     confidence: float = 0.5
     group: str | None = None
     logic: str = "SINGLE"
+    criticality: str = "must_have"
 
     @property
     def is_named(self) -> bool:
@@ -227,6 +237,7 @@ def _parse_skill(item: dict[str, Any], *, level_field: str) -> ExtractedSkill:
         confidence=_clamp_float(item.get("confidence"), default=0.5),
         group=group[:50] if group is not None else None,
         logic=logic,
+        criticality=_normalize_criticality(item.get("criticality")),
     )
 
 
@@ -236,6 +247,14 @@ def _normalize_logic(value: Any) -> str:
         return "SINGLE"
     logic = value.strip().upper()
     return logic if logic in {"SINGLE", "AND", "OR"} else "SINGLE"
+
+
+def _normalize_criticality(value: Any) -> str:
+    """Приводит критичность к must_have / nice_to_have."""
+    if not isinstance(value, str):
+        return "must_have"
+    criticality = value.strip().lower()
+    return criticality if criticality in {"must_have", "nice_to_have"} else "must_have"
 
 
 def _clamp_int(value: Any, minimum: int = 0, maximum: int = 100) -> int:

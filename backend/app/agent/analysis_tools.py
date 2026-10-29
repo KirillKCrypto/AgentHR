@@ -187,6 +187,9 @@ def build_analysis_tools(
             "provisional_count": report.provisional_count,
             "provisional_weight": report.provisional_weight,
             "confirmed_weight": report.confirmed_weight,
+            "critical_count": report.critical_count,
+            "critical_weight": report.critical_weight,
+            "critical_gap_count": report.critical_gap_count,
             "unmatched_count": report.unmatched_count,
             "items": [
                 {
@@ -195,6 +198,7 @@ def build_analysis_tools(
                     "topic_status": item.topic_status,
                     "requirement_group": item.requirement_group,
                     "requirement_logic": item.requirement_logic,
+                    "criticality": item.criticality,
                     "required_level": item.required_level,
                     "user_level": item.user_level,
                     "gap": item.gap,
@@ -340,6 +344,7 @@ def _skill_payload(skill: SkillEntry) -> dict[str, Any]:
         "match_method": skill.match_method,
         "requirement_group": skill.requirement_group,
         "requirement_logic": skill.requirement_logic,
+        "criticality": skill.criticality,
     }
 
 

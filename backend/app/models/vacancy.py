@@ -65,6 +65,10 @@ class VacancySkill(Base):
             "requirement_logic IN ('SINGLE', 'AND', 'OR')",
             name="ck_vacancy_skills_requirement_logic",
         ),
+        CheckConstraint(
+            "criticality IN ('must_have', 'nice_to_have')",
+            name="ck_vacancy_skills_criticality",
+        ),
         Index("ix_vacancy_skills_vacancy_topic", "vacancy_id", "topic_id"),
     )
 
@@ -91,6 +95,10 @@ class VacancySkill(Base):
     # SINGLE | AND | OR
     requirement_logic: Mapped[str] = mapped_column(
         String(10), default="SINGLE", server_default=text("'SINGLE'")
+    )
+    # must_have | nice_to_have
+    criticality: Mapped[str] = mapped_column(
+        String(20), default="must_have", server_default=text("'must_have'")
     )
     # Уверенность извлечения, 0..1
     confidence: Mapped[float] = mapped_column(Float, default=0.5, server_default=text("0.5"))

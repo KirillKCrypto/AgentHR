@@ -121,6 +121,7 @@ async def test_or_and_requirement_groups_affect_readiness(api_user: ApiUser) -> 
                 "confidence": 0.9,
                 "group": "g1",
                 "logic": "OR",
+                "criticality": "nice_to_have",
             },
             {
                 "name": "Docker",
@@ -146,6 +147,7 @@ async def test_or_and_requirement_groups_affect_readiness(api_user: ApiUser) -> 
                 "weight": 1.0,
                 "evidence": "SQL",
                 "confidence": 0.9,
+                "criticality": "nice_to_have",
             },
         ],
     }
@@ -203,10 +205,15 @@ async def test_or_and_requirement_groups_affect_readiness(api_user: ApiUser) -> 
     assert gaps["coverage_all"] == pytest.approx(0.5, abs=0.001)
     assert gaps["confirmed_readiness"] == pytest.approx(0.5, abs=0.001)
     assert gaps["confirmed_weight"] == pytest.approx(4.0, abs=0.001)
+    assert gaps["critical_count"] == 3
+    assert gaps["critical_weight"] == pytest.approx(3.0, abs=0.001)
+    assert gaps["critical_gap_count"] == 1
     assert items["Java"]["requirement_group"] == "g1"
     assert items["Java"]["requirement_logic"] == "OR"
+    assert items["Java"]["criticality"] == "nice_to_have"
     assert items["Kubernetes"]["requirement_group"] == "g2"
     assert items["Kubernetes"]["requirement_logic"] == "AND"
+    assert items["Kubernetes"]["criticality"] == "must_have"
 
 
 async def test_documents_are_isolated_by_user(api_user: ApiUser, second_user: ApiUser) -> None:
