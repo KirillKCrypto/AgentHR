@@ -1,4 +1,4 @@
-"""Аудит ревью онтологии: approve, reject и merge provisional-тем."""
+"""Аудит ревью онтологии: approve, reject, merge и keep provisional-тем."""
 
 import uuid
 from datetime import datetime
@@ -12,7 +12,7 @@ from app.db.base import Base
 
 
 class OntologyReviewAction(Base):
-    """История ручных действий над темами онтологии."""
+    """История ручных и автоматических действий над темами онтологии."""
 
     __tablename__ = "ontology_review_actions"
 
@@ -22,7 +22,7 @@ class OntologyReviewAction(Base):
         default=uuid.uuid4,
         server_default=text("gen_random_uuid()"),
     )
-    # approve | reject | merge
+    # approve | reject | merge | keep
     action: Mapped[str] = mapped_column(String(20))
     source_topic_id: Mapped[uuid.UUID | None] = mapped_column(
         Uuid,

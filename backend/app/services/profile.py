@@ -1,7 +1,8 @@
 """Сохранение вакансий и резюме, профиль знаний и gap-анализ.
 
 Слой отвечает за запись в БД и вычисления поверх онтологии; LLM используется
-только для извлечения навыков (`app/services/analysis.py`). Любой навык получает
+для извлечения навыков (`app/services/analysis.py`) и, best-effort, для ревью
+новых тем (`app/services/ontology_auto_review.py`). Любой навык получает
 тему: если совпадения нет, `app.services.topics` создаёт provisional-тему и
 запись в очереди ревью. Поэтому новые навыки не остаются с `topic_id = NULL`.
 """
@@ -32,6 +33,7 @@ from app.services.analysis import (
     extract_vacancy_requirements,
 )
 from app.services.normalization import TopicMatch, normalize_name
+from app.services.ontology_auto_review import run_auto_review
 from app.services.topics import (
     create_skill_matcher,
     load_topic_index,
@@ -196,6 +198,7 @@ async def analyze_vacancy(
         requirements=requirements,
         title=title,
         company=company,
+        provider=provider,
         embedder=embedder,
     )
 
@@ -208,6 +211,7 @@ async def save_vacancy_analysis(
     requirements: VacancyRequirements,
     title: str | None = None,
     company: str | None = None,
+    provider: LLMProvider | None = None,
     embedder: EmbeddingProvider | None = None,
 ) -> Vacancy:
     """Сохраняет вакансию вместе с уже извлечёнными требованиями."""
@@ -229,6 +233,7 @@ async def save_vacancy_analysis(
         source_type="vacancy",
         source_id=vacancy.id,
     )
+    new_topic_ids = [match.topic_id for match in matches if match.method == "provisional"]
 
     for skill, match in zip(skills, matches, strict=True):
         session.add(
@@ -249,6 +254,14 @@ async def save_vacancy_analysis(
 
     await session.commit()
     await session.refresh(vacancy)
+
+    # Автопроверка новых тем: best-effort, ошибка не должна ломать загрузку.
+    await run_auto_review(
+        session,
+        new_topic_ids,
+        provider=provider,
+        embedder=embedder,
+    )
     return vacancy
 
 
@@ -269,6 +282,7 @@ async def analyze_resume(
         raw_text=raw_text,
         profile=profile,
         title=title,
+        provider=provider,
         embedder=embedder,
     )
 
@@ -280,6 +294,7 @@ async def save_resume_analysis(
     raw_text: str,
     profile: ResumeProfile,
     title: str | None = None,
+    provider: LLMProvider | None = None,
     embedder: EmbeddingProvider | None = None,
 ) -> Resume:
     """Сохраняет резюме с уже извлечёнными навыками и обновляет профиль."""
@@ -296,6 +311,7 @@ async def save_resume_analysis(
         source_type="resume",
         source_id=resume.id,
     )
+    new_topic_ids = [match.topic_id for match in matches if match.method == "provisional"]
 
     for skill, match in zip(skills, matches, strict=True):
         session.add(
@@ -312,6 +328,15 @@ async def save_resume_analysis(
 
     await session.commit()
     await session.refresh(resume)
+
+    # Автопроверка идёт до rebuild_profile: профиль должен пересчитаться уже
+    # с учётом merge/approve, иначе срез останется на старой теме.
+    await run_auto_review(
+        session,
+        new_topic_ids,
+        provider=provider,
+        embedder=embedder,
+    )
 
     await rebuild_profile(session, user_id)
     return resume

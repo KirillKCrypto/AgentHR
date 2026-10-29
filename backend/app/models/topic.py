@@ -8,6 +8,7 @@ from sqlalchemy import (
     Boolean,
     CheckConstraint,
     DateTime,
+    Float,
     ForeignKey,
     Integer,
     String,
@@ -67,6 +68,19 @@ class Topic(Base):
         ForeignKey("topics.id", ondelete="SET NULL"),
         nullable=True,
         index=True,
+    )
+    # Последняя автоматическая проверка темы: когда, каким решением и с какой
+    # уверенностью. `keep` означает, что тема оставлена на ручное ревью.
+    auto_reviewed_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    # approve | merge | keep
+    auto_review_decision: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    auto_review_confidence: Mapped[float | None] = mapped_column(Float, nullable=True)
+    # Сколько упоминаний было учтено при последней проверке: если кандидат
+    # накопил новые упоминания, тему можно проверить повторно.
+    auto_reviewed_occurrences: Mapped[int] = mapped_column(
+        Integer, default=0, server_default=text("0")
     )
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(

@@ -119,6 +119,8 @@ AgentHR/
 │   │       ├── analysis.py    (извлечение навыков вакансии и резюме)
 │   │       ├── evaluation.py  (precision / recall / F1)
 │   │       ├── normalization.py (сопоставление навыка с темой онтологии)
+│   │       ├── ontology_auto_review.py (авто-ревью provisional-тем)
+│   │       ├── ontology_review.py (approve / reject / merge и аудит)
 │   │       ├── profile.py     (запись документов, профиль, gap-анализ)
 │   │       └── topics.py      (индекс тем из БД и из пакета онтологии)
 │   ├── docker/
@@ -146,6 +148,7 @@ AgentHR/
 │   │   ├── test_embeddings_local.py
 │   │   ├── test_extraction_golden.py
 │   │   ├── test_normalization.py
+│   │   ├── test_ontology_auto_review.py (правила, LLM и аудит авто-ревью)
 │   │   └── fixtures/
 │   │       ├── __init__.py
 │   │       └── extraction_golden.py (golden-набор извлечения навыков)
@@ -1218,7 +1221,26 @@ id (тесты и офлайн-режим); `create_skill_matcher` — сбор�
 кандидатов и рёбра `REQUIRES`; действия пишутся в `ontology_review_actions`.
 Reject разрешён только для темы без ссылок из документов.
 
-**Used by:** CLI `backend/app/ontology/review.py`.
+**Used by:** CLI `backend/app/ontology/review.py`, `backend/app/services/ontology_auto_review.py`.
+
+#### `backend/app/services/ontology_auto_review.py`
+
+**Role:** SERVICE (автоматическое ревью онтологии)
+
+**Responsibility:** `auto_review_topics` — гибридная проверка provisional-тем:
+точный alias или высокая семантическая близость → merge; повторяющиеся
+упоминания без близкой canonical-темы → approve; спорные темы → LLM
+(`approve`/`merge`/`keep`) с порогом уверенности и проверкой target_key по
+top-5 кандидатов. `run_auto_review` — best-effort обёртка для вызова после
+сохранения документа. Решения пишутся в `ontology_review_actions`
+(`actor="auto"`), поля темы `auto_review_*` фиксируют последнюю проверку.
+
+**Depends on:** `backend/app/services/topics.py`,
+`backend/app/services/ontology_review.py`, `backend/app/llm/base.py`,
+`backend/app/embeddings/base.py`.
+
+**Used by:** `backend/app/services/profile.py` (после commit вакансии/резюме),
+CLI `backend/app/ontology/review.py` (`auto`).
 
 #### `backend/app/services/evaluation.py`
 
@@ -1390,11 +1412,11 @@ API доступен снаружи по `localhost:${API_PORT}` (по умол�
 | Запуск инфраструктуры и API | `infra/docker-compose.yml` (сервисы `postgres`, `api`) | реализовано |
 | Backend-приложение (локально) | `backend/app/main.py` (uvicorn) | каркас, auth, Agent Harness и доменные API реализованы |
 | Backend-приложение (контейнер) | `backend/docker/entrypoint.sh` → uvicorn | миграции + API, healthy |
-| Миграции БД | `backend/alembic/` (`uv run alembic ...`) | 9 миграций: pgvector, users, agent_actions, граф знаний, provisional-темы, backfill + `NOT NULL`, аудит ревью, группы требований, критичность |
+| Миграции БД | `backend/alembic/` (`uv run alembic ...`) | 10 миграций: pgvector, users, agent_actions, граф знаний, provisional-темы, backfill + `NOT NULL`, аудит ревью, группы требований, критичность, авто-ревью тем |
 | Сид онтологии | `backend/app/ontology/seed.py` (`uv run python -m app.ontology.seed`) | 89 canonical-тем, 75 рёбер `REQUIRES`, 233 алиаса, идемпотентно |
-| Ревью онтологии | `backend/app/ontology/review.py` (`uv run python -m app.ontology.review ...`) | list / approve / reject / merge + аудит |
+| Ревью онтологии | `backend/app/ontology/review.py` (`uv run python -m app.ontology.review ...`) | list / auto / approve / reject / merge + аудит; ручные команды — fallback |
 | Eval качества извлечения | `backend/scripts/eval_extraction.py` | golden-набор из 5 кейсов; требует живого LLM |
-| Прогон тестов backend | `backend/tests/` (pytest) | 158 тестов, 3 пропускаются без флагов живого LLM/эмбеддингов |
+| Прогон тестов backend | `backend/tests/` (pytest) | 176 тестов, 1 пропускается без флагов живого LLM/эмбеддингов |
 | Frontend dev-сервер | `frontend/` (`npm run dev`) | вход/регистрация через API |
 | Генерация типов API | `frontend/` (`npm run generate:api`, нужен backend) | скрипт готов |
 | Сборка frontend | `npm run build` (tsc + vite) | проходит |

@@ -11,6 +11,8 @@ const MATCH_LABELS: Record<string, string> = {
   fuzzy: 'нечёткое',
   embedding: 'эмбеддинг',
   provisional: 'новая тема',
+  auto_approve: 'авто-подтверждено',
+  auto_merge: 'авто-объединено',
   backfill: 'восстановлено',
   none: 'не сопоставлено',
 }

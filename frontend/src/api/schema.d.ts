@@ -586,7 +586,7 @@ export interface components {
             evidence?: string | null;
             /**
              * Match Method
-             * @description exact | alias | fuzzy | embedding | provisional | backfill | none
+             * @description exact | alias | fuzzy | embedding | provisional | auto_approve | auto_merge | backfill | none
              */
             match_method: string;
             topic?: components["schemas"]["TopicBrief"] | null;

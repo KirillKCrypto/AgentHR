@@ -46,19 +46,31 @@ def load_packaged_topic_index() -> TopicIndex:
     return TopicIndex(records)
 
 
-async def load_topic_index(session: AsyncSession) -> TopicIndex:
-    """Строит индекс canonical- и provisional-тем из БД."""
+async def load_topic_index(
+    session: AsyncSession,
+    *,
+    statuses: Sequence[str] = ("canonical", "provisional"),
+) -> TopicIndex:
+    """Строит индекс тем выбранных статусов (по умолчанию canonical и provisional)."""
     topics = (
         await session.scalars(
-            select(Topic).where(Topic.status.in_(("canonical", "provisional"))).order_by(Topic.key)
+            select(Topic).where(Topic.status.in_(tuple(statuses))).order_by(Topic.key)
         )
     ).all()
+    # Canonical-темы идут первыми: индекс использует setdefault, поэтому при
+    # одинаковом названии (например, legacy provisional-тема и тема из пакета)
+    # точное совпадение должно вести в canonical, а не в ожидающую ревью тему.
+    topics = sorted(topics, key=lambda topic: (topic.status != "canonical", topic.key))
+    topic_ids = {topic.id for topic in topics}
     alias_rows = (
         await session.scalars(select(TopicAlias).where(TopicAlias.status == "active"))
     ).all()
     aliases_by_topic: dict[uuid.UUID, list[str]] = {}
     for alias in alias_rows:
-        aliases_by_topic.setdefault(alias.topic_id, []).append(alias.alias)
+        # Алиасы тем вне выбранных статусов не попадают в индекс: иначе
+        # canonical-индекс «узнавал» бы provisional-тему по её собственному alias.
+        if alias.topic_id in topic_ids:
+            aliases_by_topic.setdefault(alias.topic_id, []).append(alias.alias)
 
     records = []
     for topic in topics:

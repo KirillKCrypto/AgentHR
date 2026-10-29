@@ -43,7 +43,10 @@ class SkillRead(BaseModel):
     confidence: float
     evidence: str | None = None
     match_method: str = Field(
-        description="exact | alias | fuzzy | embedding | provisional | backfill | none"
+        description=(
+            "exact | alias | fuzzy | embedding | provisional | "
+            "auto_approve | auto_merge | backfill | none"
+        )
     )
     topic: TopicBrief | None = None
     requirement_group: str | None = None

@@ -93,6 +93,7 @@ async def approve_topic(
     topic_key: str,
     *,
     actor: str = "cli",
+    details: dict | None = None,
 ) -> Topic:
     """Подтверждает provisional-тему как canonical."""
     topic = await _load_topic(session, topic_key)
@@ -103,7 +104,7 @@ async def approve_topic(
     await session.execute(
         update(TopicCandidate).where(TopicCandidate.topic_id == topic.id).values(status="approved")
     )
-    _add_audit(session, "approve", topic, actor=actor)
+    record_review_action(session, "approve", topic, actor=actor, details=details)
     await session.flush()
     return topic
 
@@ -113,6 +114,7 @@ async def reject_topic(
     topic_key: str,
     *,
     actor: str = "cli",
+    details: dict | None = None,
 ) -> Topic:
     """Отклоняет provisional-тему, если на неё нет ссылок из документов."""
     topic = await _load_topic(session, topic_key)
@@ -133,7 +135,7 @@ async def reject_topic(
     await session.execute(
         update(TopicAlias).where(TopicAlias.topic_id == topic.id).values(status="rejected")
     )
-    _add_audit(session, "reject", topic, actor=actor)
+    record_review_action(session, "reject", topic, actor=actor, details=details)
     await session.flush()
     return topic
 
@@ -144,6 +146,7 @@ async def merge_topics(
     target_key: str,
     *,
     actor: str = "cli",
+    details: dict | None = None,
 ) -> tuple[Topic, Topic]:
     """Переносит все связи и алиасы source в target, помечая source merged."""
     source = await _load_topic(session, source_key)
@@ -175,17 +178,20 @@ async def merge_topics(
 
     source.status = "merged"
     source.canonical_topic_id = target.id
-    _add_audit(
+    audit_details = {
+        "source_key": source.key,
+        "target_key": target.key,
+        "skills_moved": skills_moved,
+    }
+    if details:
+        audit_details.update(details)
+    record_review_action(
         session,
         "merge",
         source,
         target=target,
         actor=actor,
-        details={
-            "source_key": source.key,
-            "target_key": target.key,
-            "skills_moved": skills_moved,
-        },
+        details=audit_details,
     )
     await session.flush()
     return source, target
@@ -318,7 +324,7 @@ async def _transfer_aliases(
             alias.topic_id = target_id
 
 
-def _add_audit(
+def record_review_action(
     session: AsyncSession,
     action: str,
     source: Topic,
@@ -327,7 +333,7 @@ def _add_audit(
     actor: str,
     details: dict | None = None,
 ) -> None:
-    """Добавляет запись в аудит ревью онтологии."""
+    """Добавляет запись в аудит ревью онтологии (ручное или автоматическое)."""
     session.add(
         OntologyReviewAction(
             action=action,

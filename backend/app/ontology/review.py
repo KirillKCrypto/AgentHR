@@ -2,6 +2,7 @@
 
 Примеры:
     uv run python -m app.ontology.review list
+    uv run python -m app.ontology.review auto
     uv run python -m app.ontology.review approve auto-docker-...
     uv run python -m app.ontology.review reject auto-docker-...
     uv run python -m app.ontology.review merge auto-docker-... --into docker
@@ -11,7 +12,11 @@ import argparse
 import asyncio
 import sys
 
+from app.core.config import get_settings
 from app.db.session import async_session_factory
+from app.embeddings import create_embedding_provider
+from app.llm.factory import create_llm_provider
+from app.services.ontology_auto_review import auto_review_topics
 from app.services.ontology_review import (
     ReviewError,
     approve_topic,
@@ -36,6 +41,9 @@ async def _run(args: argparse.Namespace) -> int:
                     f"{topic.name}"
                 )
             return 0
+
+        if args.command == "auto":
+            return await _run_auto(session, args)
 
         try:
             if args.command == "approve":
@@ -67,6 +75,50 @@ async def _run(args: argparse.Namespace) -> int:
     return 1
 
 
+async def _run_auto(session, args: argparse.Namespace) -> int:
+    """Пакетно проверяет все provisional-темы теми же правилами и LLM."""
+    topics = await list_review_topics(session, status="provisional")
+    if not topics:
+        print("Provisional-тем нет")
+        return 0
+
+    settings = get_settings()
+    if args.limit is not None:
+        settings = settings.model_copy(
+            update={"ontology_auto_review_max_topics": max(0, args.limit)}
+        )
+
+    provider = create_llm_provider(settings)
+    embedder = create_embedding_provider(settings)
+    try:
+        decisions = await auto_review_topics(
+            session,
+            [topic.id for topic in topics],
+            provider=provider,
+            embedder=embedder,
+            settings=settings,
+        )
+        await session.commit()
+    except Exception as exc:  # noqa: BLE001 — CLI должен показать причину, а не traceback
+        await session.rollback()
+        print(f"Ошибка авто-ревью: {exc}", file=sys.stderr)
+        return 1
+    finally:
+        await provider.close()
+
+    if not decisions:
+        print("Новых данных для авто-ревью нет")
+        return 0
+    for decision in decisions:
+        target = f" -> {decision.target_key}" if decision.target_key else ""
+        print(
+            f"{decision.topic_key}\t{decision.action}{target}\t"
+            f"confidence={decision.confidence:.2f}\tsource={decision.source}\t"
+            f"{decision.reason}"
+        )
+    return 0
+
+
 def _parser() -> argparse.ArgumentParser:
     """Собирает CLI-парсер."""
     parser = argparse.ArgumentParser(description="Ревью provisional-тем онтологии AgentHR")
@@ -77,6 +129,16 @@ def _parser() -> argparse.ArgumentParser:
         "--status",
         default="provisional",
         choices=("canonical", "provisional", "merged", "rejected"),
+    )
+
+    auto_parser = subparsers.add_parser(
+        "auto", help="автоматически проверить все provisional-темы"
+    )
+    auto_parser.add_argument(
+        "--limit",
+        type=int,
+        default=None,
+        help="максимум тем за прогон (по умолчанию из настроек)",
     )
 
     for command, help_text in (

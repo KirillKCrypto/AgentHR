@@ -105,6 +105,15 @@ provisional-тема, запись в `topic_aliases` и кандидат в `to
 исторические NULL и делает `topic_id` обязательным. Лимит `AUTO_TOPIC_LIMIT`
 (по умолчанию 10) отправляет overflow в одну review-тему.
 
+После сохранения вакансии или резюме provisional-темы проверяются автоматически
+(`app/services/ontology_auto_review.py`): точный alias и высокая семантическая
+близость дают merge, повторяющиеся упоминания — approve, спорные темы уходят в
+DeepSeek с порогом уверенности. Остальное остаётся provisional с
+`auto_review_decision = keep`. Автопроверка best-effort и не ломает загрузку
+документа. Настройки: `ONTOLOGY_AUTO_REVIEW_ENABLED`,
+`ONTOLOGY_AUTO_REVIEW_MIN_CONFIDENCE`, `ONTOLOGY_AUTO_MERGE_SIMILARITY`,
+`ONTOLOGY_AUTO_APPROVE_MIN_DOCUMENTS`, `ONTOLOGY_AUTO_REVIEW_MAX_TOPICS`.
+
 ## Анализ и нормализация
 
 - `app/services/analysis.py` — извлечение требований вакансии и навыков резюме
@@ -119,7 +128,10 @@ provisional-тема, запись в `topic_aliases` и кандидат в `to
 - `app/services/evaluation.py` — метрики качества извлечения (precision / recall / F1).
 - `app/services/ontology_review.py` — approve/reject/merge provisional-тем; merge
   переносит навыки, состояния профиля, алиасы, кандидатов и рёбра `REQUIRES`.
-  CLI: `uv run python -m app.ontology.review list|approve|reject|merge`.
+  CLI: `uv run python -m app.ontology.review list|auto|approve|reject|merge`.
+- `app/services/ontology_auto_review.py` — автоматическое ревью provisional-тем:
+  правила merge/approve, LLM только для спорных случаев, аудит с `actor="auto"`,
+  best-effort вызов после сохранения вакансии/резюме.
 - `app/services/profile.py` — запись документов и профиль знаний: `analyze_vacancy` /
   `save_vacancy_analysis`, `analyze_resume` / `save_resume_analysis`, `rebuild_profile`,
   `get_profile`, `compute_gaps`, `update_skill_proficiency`, `weighted_estimate`.

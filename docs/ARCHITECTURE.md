@@ -334,6 +334,14 @@ JWT-токенов в SPA; дашборд → `GET /me` с access-токеном
   - `vacancy_skills.criticality` (`must_have`/`nice_to_have`);
   - gap-анализ отдаёт `critical_count`, `critical_weight`, `critical_gap_count`;
   - критический гейт — на этапе 6.
+- Миграция `a4b5c6d7e8f9` — автоматическое ревью тем:
+  - `topics.auto_reviewed_at`, `auto_review_decision` (`approve`/`merge`/`keep`),
+    `auto_review_confidence`, `auto_reviewed_occurrences`;
+  - после сохранения документа `app/services/ontology_auto_review.py` применяет
+    правила merge/approve, затем LLM только для спорных тем;
+  - каждое решение — в `ontology_review_actions` с `actor="auto"`; неуверенные
+    темы остаются provisional, CLI `python -m app.ontology.review auto` —
+    повторный пакетный прогон.
 - Подключение: `DATABASE_URL` из `backend/.env` (локальный дефолт в `app/core/config.py`);
   движок и сессии — `backend/app/db/session.py` (asyncpg, `pool_pre_ping`).
 - Миграции: Alembic (async-шаблон), URL берётся в `alembic/env.py` из настроек;

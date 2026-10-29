@@ -128,7 +128,8 @@
 
 Provisional-тема участвует в матчинге следующих документов, поэтому одно и то же
 написание переиспользуется, а не создаётся заново. Она ещё не считается
-подтверждённой: ревью, merge и политика readiness для неё — следующий этап.
+подтверждённой: после сохранения документа запускается автоматическое ревью
+(см. 2.3), а нерешённые темы остаются на ручную проверку.
 
 ### 2.2. Backfill и защита от взрыва онтологии
 
@@ -146,18 +147,47 @@ provisional-тем на документ. Если лимит исчерпан, 
 привязываются к одной теме «Новые навыки (на ревью)»: `raw_name` сохраняется,
 `topic_id` остаётся заполненным, а онтология не растёт бесконтрольно.
 
-### 2.3. Ревью, merge и аудит
+### 2.3. Автоматическое ревью, merge и аудит
 
-Админский интерфейс — CLI `python -m app.ontology.review`:
+После `commit` сохранения вакансии или резюме выполняется best-effort автопроверка
+созданных provisional-тем (`app/services/ontology_auto_review.py`). Ошибка ревью
+не ломает загрузку документа: изменения откатываются, документ остаётся сохранённым.
+
+Политика гибридная:
+
+1. **Правила.** Точное совпадение с canonical-темой/алиасом или косинусная
+   близость не ниже `ONTOLOGY_AUTO_MERGE_SIMILARITY` (по умолчанию `0.9`) →
+   `merge`. Тема, упомянутая в `ONTOLOGY_AUTO_APPROVE_MIN_DOCUMENTS` документах
+   (по умолчанию 2) и не имеющая близкой canonical-темы → `approve`.
+2. **LLM только для спорных тем.** DeepSeek получает название, свидетельства и
+   top-5 ближайших canonical-тем и выбирает `approve` / `merge` / `keep`.
+   Решение применяется, только если `confidence` не ниже
+   `ONTOLOGY_AUTO_REVIEW_MIN_CONFIDENCE` (по умолчанию `0.75`); `merge`
+   разрешён только в тему из показанного списка.
+3. **Безопасный fallback.** Всё остальное остаётся `provisional`:
+   `auto_review_decision = keep`, `auto_review_confidence`,
+   `auto_reviewed_at`. Служебная тема «Новые навыки (на ревью)» всегда
+   остаётся на ручной разбор. Повторная проверка выполняется, когда кандидат
+   накопил новые упоминания (`auto_reviewed_occurrences`).
+
+Каждое решение пишется в `ontology_review_actions` с `actor = "auto"` и деталями
+(источник решения, уверенность, причина, число документов). После `approve`
+навыки получают `match_method = auto_approve`, после `merge` — `auto_merge`.
+Предохранитель `ONTOLOGY_AUTO_REVIEW_MAX_TOPICS` (по умолчанию 20) ограничивает
+число тем и LLM-вызовов за один прогон.
+
+Ручной CLI остаётся fallback и средством пакетной проверки:
 
 ```bash
 uv run python -m app.ontology.review list
+uv run python -m app.ontology.review auto            # повторный прогон всех provisional-тем
+uv run python -m app.ontology.review auto --limit 50
 uv run python -m app.ontology.review approve <key> --actor reviewer
 uv run python -m app.ontology.review reject <key> --actor reviewer
 uv run python -m app.ontology.review merge <source_key> --into <target_key> --actor reviewer
 ```
 
-Правила:
+Правила ручных действий:
 
 - `approve` переводит provisional в canonical;
 - `reject` разрешён только для темы без ссылок из резюме/вакансий, иначе
