@@ -133,6 +133,8 @@ provisional-тема, запись в `topic_aliases` и кандидат в `to
 - `coverage_all` — взвешенное покрытие всех требований, включая provisional;
   `confirmed_readiness` — только canonical-требования (`null`, если их нет).
   Дополнительно отдаются `provisional_count`, `provisional_weight`, `confirmed_weight`.
+- Группы требований: `OR` засчитывается по лучшему варианту, `AND` — по минимуму;
+  `requirement_group` / `requirement_logic` сохраняются в `vacancy_skills`.
 - В профиле и разрывах есть `status` / `topic_status`; UI показывает непроверенные
   темы отдельно и помечает их «на проверке».
 - `POST /analysis` не вызывает LLM: извлечение выполняется при загрузке документов.

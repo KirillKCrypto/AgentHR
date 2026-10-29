@@ -382,6 +382,13 @@ export interface components {
             topic_name?: string | null;
             /** Topic Status */
             topic_status?: string | null;
+            /** Requirement Group */
+            requirement_group?: string | null;
+            /**
+             * Requirement Logic
+             * @default SINGLE
+             */
+            requirement_logic: string;
         };
         /** HTTPValidationError */
         HTTPValidationError: {
@@ -563,6 +570,13 @@ export interface components {
              */
             match_method: string;
             topic?: components["schemas"]["TopicBrief"] | null;
+            /** Requirement Group */
+            requirement_group?: string | null;
+            /**
+             * Requirement Logic
+             * @default SINGLE
+             */
+            requirement_logic: string;
         };
         /**
          * TokenResponse

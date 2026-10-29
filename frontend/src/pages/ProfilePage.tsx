@@ -454,6 +454,7 @@ function GapsView({ gaps, hasTopics }: { gaps: GapAnalysisRead; hasTopics: boole
               <TableHead>Требуется</TableHead>
               <TableHead>В профиле</TableHead>
               <TableHead>Разрыв</TableHead>
+              <TableHead>Логика</TableHead>
               <TableHead>Статус</TableHead>
             </TableRow>
           </TableHeader>
@@ -472,6 +473,13 @@ function GapsView({ gaps, hasTopics }: { gaps: GapAnalysisRead; hasTopics: boole
                 <TableCell>{item.required_level}</TableCell>
                 <TableCell>{item.user_level}</TableCell>
                 <TableCell>{item.gap}</TableCell>
+                <TableCell>
+                  {item.requirement_logic === 'SINGLE' ? (
+                    <span className="text-muted-foreground">—</span>
+                  ) : (
+                    <Badge variant="outline">{item.requirement_logic}</Badge>
+                  )}
+                </TableCell>
                 <TableCell>
                   {item.satisfied ? (
                     <Badge>закрыто</Badge>

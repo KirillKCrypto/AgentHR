@@ -80,6 +80,8 @@ class SkillEntry:
     evidence: str | None
     match_method: str
     topic: TopicBriefData | None = None
+    requirement_group: str | None = None
+    requirement_logic: str = "SINGLE"
 
 
 @dataclass(frozen=True)
@@ -130,6 +132,8 @@ class GapItem:
     topic_key: str | None = None
     topic_name: str | None = None
     topic_status: str | None = None
+    requirement_group: str | None = None
+    requirement_logic: str = "SINGLE"
 
 
 @dataclass(frozen=True)
@@ -229,6 +233,8 @@ async def save_vacancy_analysis(
                 raw_name=_truncate(skill.name, 200),
                 required_level=skill.level,
                 weight=skill.weight,
+                requirement_group=skill.group,
+                requirement_logic=skill.logic,
                 confidence=skill.confidence,
                 evidence=skill.evidence,
                 match_method=match.method,
@@ -442,10 +448,7 @@ async def compute_gaps(
     }
 
     items: list[GapItem] = []
-    weighted_all_done = 0.0
-    weighted_all_total = 0.0
-    weighted_confirmed_done = 0.0
-    confirmed_weight = 0.0
+    calculations: list[tuple[VacancySkill, GapItem, float, str | None]] = []
     provisional_count = 0
     provisional_weight = 0.0
     unmatched_count = 0
@@ -456,35 +459,69 @@ async def compute_gaps(
         user_level = state.proficiency if state is not None else 0
         gap = max(0, skill.required_level - user_level)
         topic_status = topic.status if topic is not None else None
+        logic = skill.requirement_logic or "SINGLE"
 
-        items.append(
-            GapItem(
-                skill_name=skill.raw_name,
-                required_level=skill.required_level,
-                user_level=user_level,
-                gap=gap,
-                satisfied=gap == 0,
-                weight=skill.weight,
-                topic_key=topic.key if topic is not None else None,
-                topic_name=topic.name if topic is not None else None,
-                topic_status=topic_status,
-            )
+        item = GapItem(
+            skill_name=skill.raw_name,
+            required_level=skill.required_level,
+            user_level=user_level,
+            gap=gap,
+            satisfied=gap == 0,
+            weight=skill.weight,
+            topic_key=topic.key if topic is not None else None,
+            topic_name=topic.name if topic is not None else None,
+            topic_status=topic_status,
+            requirement_group=skill.requirement_group,
+            requirement_logic=logic,
         )
+        items.append(item)
 
         if topic is None or topic_status not in ("canonical", "provisional"):
             unmatched_count += 1
+            calculations.append((skill, item, 0.0, topic_status))
             continue
 
         ratio = 1.0 if skill.required_level <= 0 else min(1.0, user_level / skill.required_level)
-        weighted_all_done += skill.weight * ratio
-        weighted_all_total += skill.weight
-
+        calculations.append((skill, item, ratio, topic_status))
         if topic_status == "provisional":
             provisional_count += 1
             provisional_weight += skill.weight
+
+    grouped: dict[str, list[tuple[VacancySkill, GapItem, float, str | None]]] = {}
+    for calculation in calculations:
+        skill = calculation[0]
+        logic = skill.requirement_logic or "SINGLE"
+        if skill.requirement_group and logic in ("AND", "OR"):
+            key = f"group:{skill.requirement_group}"
         else:
-            weighted_confirmed_done += skill.weight * ratio
-            confirmed_weight += skill.weight
+            key = f"skill:{skill.id}"
+        grouped.setdefault(key, []).append(calculation)
+
+    weighted_all_done = 0.0
+    weighted_all_total = 0.0
+    weighted_confirmed_done = 0.0
+    confirmed_weight = 0.0
+
+    for group in grouped.values():
+        logic = group[0][0].requirement_logic or "SINGLE"
+        ratios = [ratio for _, _, ratio, _ in group]
+        weights = [item.weight for _, item, _, _ in group]
+        if logic == "OR":
+            group_ratio = max(ratios)
+            group_weight = max(weights)
+        elif logic == "AND":
+            group_ratio = min(ratios)
+            group_weight = sum(weights)
+        else:
+            group_ratio = ratios[0]
+            group_weight = weights[0]
+
+        weighted_all_done += group_weight * group_ratio
+        weighted_all_total += group_weight
+
+        if all(topic_status == "canonical" for _, _, _, topic_status in group):
+            weighted_confirmed_done += group_weight * group_ratio
+            confirmed_weight += group_weight
 
     if weighted_all_total > 0:
         coverage_all = weighted_all_done / weighted_all_total
@@ -548,6 +585,8 @@ async def load_vacancy_skills(
             evidence=skill.evidence,
             match_method=skill.match_method,
             topic=_topic_brief(topic),
+            requirement_group=skill.requirement_group,
+            requirement_logic=skill.requirement_logic,
         )
         for skill, topic in rows
     )

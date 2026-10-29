@@ -46,6 +46,8 @@ class SkillRead(BaseModel):
         description="exact | alias | fuzzy | embedding | provisional | backfill | none"
     )
     topic: TopicBrief | None = None
+    requirement_group: str | None = None
+    requirement_logic: str = "SINGLE"
 
 
 class VacancyRead(BaseModel):
@@ -136,6 +138,8 @@ class GapItemRead(BaseModel):
     topic_key: str | None = None
     topic_name: str | None = None
     topic_status: str | None = None
+    requirement_group: str | None = None
+    requirement_logic: str = "SINGLE"
 
 
 class GapAnalysisRead(BaseModel):

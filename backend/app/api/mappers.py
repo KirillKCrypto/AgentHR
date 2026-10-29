@@ -69,6 +69,8 @@ def skill_read(entry: SkillEntry) -> SkillRead:
         evidence=entry.evidence,
         match_method=entry.match_method,
         topic=topic_brief(entry.topic),
+        requirement_group=entry.requirement_group,
+        requirement_logic=entry.requirement_logic,
     )
 
 
@@ -124,6 +126,8 @@ def gap_analysis_read(report: GapReport) -> GapAnalysisRead:
                 topic_key=item.topic_key,
                 topic_name=item.topic_name,
                 topic_status=item.topic_status,
+                requirement_group=item.requirement_group,
+                requirement_logic=item.requirement_logic,
             )
             for item in report.items
         ],

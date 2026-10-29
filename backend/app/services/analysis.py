@@ -23,6 +23,11 @@ VACANCY_SYSTEM_PROMPT = (
     "- weight — важность навыка для этой вакансии, число 0..1.\n"
     "- evidence — короткая цитата из текста вакансии, подтверждающая навык.\n"
     "- confidence — уверенность в извлечении, число 0..1.\n"
+    '- group — необязательный идентификатор группы требований (например, "req_1"). '
+    "Одинаковый group у нескольких навыков означает, что они связаны логикой.\n"
+    "- logic — SINGLE для обычного требования, OR для альтернативы "
+    '("R or Java", "Python или Go"), AND для конъюнкции '
+    '("Docker and Kubernetes"). Если сомневаешься — SINGLE.\n'
     "Не выдумывай навыки, которых нет в тексте. Если вакансия не содержит требований — "
     "верни пустой список skills."
 )
@@ -49,6 +54,12 @@ _SKILL_SCHEMA: dict[str, Any] = {
         "weight": {"type": "number", "minimum": 0, "maximum": 1},
         "evidence": {"type": ["string", "null"]},
         "confidence": {"type": "number", "minimum": 0, "maximum": 1},
+        "group": {"type": ["string", "null"], "description": "Идентификатор группы требований"},
+        "logic": {
+            "type": "string",
+            "enum": ["SINGLE", "AND", "OR"],
+            "description": "Логика группы требований",
+        },
     },
 }
 
@@ -102,6 +113,8 @@ class ExtractedSkill:
     weight: float = 1.0
     evidence: str | None = None
     confidence: float = 0.5
+    group: str | None = None
+    logic: str = "SINGLE"
 
     @property
     def is_named(self) -> bool:
@@ -201,13 +214,28 @@ def _skill_items(data: dict[str, Any]) -> list[dict[str, Any]]:
 def _parse_skill(item: dict[str, Any], *, level_field: str) -> ExtractedSkill:
     """Разбирает один навык: значения вне диапазона обрезаются."""
     name = item.get("name")
+    group = _optional_str(item.get("group"))
+    logic = _normalize_logic(item.get("logic"))
+    # AND/OR без group не может быть группой: не выдаём ложную логику.
+    if group is None:
+        logic = "SINGLE"
     return ExtractedSkill(
         name=name.strip() if isinstance(name, str) else "",
         level=_clamp_int(item.get(level_field)),
         weight=_clamp_float(item.get("weight"), default=1.0),
         evidence=_optional_str(item.get("evidence")),
         confidence=_clamp_float(item.get("confidence"), default=0.5),
+        group=group[:50] if group is not None else None,
+        logic=logic,
     )
+
+
+def _normalize_logic(value: Any) -> str:
+    """Приводит логику требования к SINGLE / AND / OR."""
+    if not isinstance(value, str):
+        return "SINGLE"
+    logic = value.strip().upper()
+    return logic if logic in {"SINGLE", "AND", "OR"} else "SINGLE"
 
 
 def _clamp_int(value: Any, minimum: int = 0, maximum: int = 100) -> int:

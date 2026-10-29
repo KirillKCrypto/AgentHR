@@ -743,7 +743,7 @@ dev-группа (pytest, pytest-asyncio, httpx2, ruff), конфигураци�
 
 **Important:** веса источников — `manual 1.0 / interview 0.9 / assessment 0.8 / resume 0.6`;
 потолок уверенности `0.95`; `coverage_all` включает provisional-темы,
-`confirmed_readiness` — только canonical.
+`confirmed_readiness` — только canonical; группы `OR` считаются по max, `AND` — по min.
 
 #### `backend/app/agent/analysis_tools.py`
 
@@ -1384,11 +1384,11 @@ API доступен снаружи по `localhost:${API_PORT}` (по умол�
 | Запуск инфраструктуры и API | `infra/docker-compose.yml` (сервисы `postgres`, `api`) | реализовано |
 | Backend-приложение (локально) | `backend/app/main.py` (uvicorn) | каркас, auth, Agent Harness и доменные API реализованы |
 | Backend-приложение (контейнер) | `backend/docker/entrypoint.sh` → uvicorn | миграции + API, healthy |
-| Миграции БД | `backend/alembic/` (`uv run alembic ...`) | 7 миграций: pgvector, users, agent_actions, граф знаний, provisional-темы, backfill + `NOT NULL`, аудит ревью |
+| Миграции БД | `backend/alembic/` (`uv run alembic ...`) | 8 миграций: pgvector, users, agent_actions, граф знаний, provisional-темы, backfill + `NOT NULL`, аудит ревью, группы требований |
 | Сид онтологии | `backend/app/ontology/seed.py` (`uv run python -m app.ontology.seed`) | 89 canonical-тем, 75 рёбер `REQUIRES`, 233 алиаса, идемпотентно |
 | Ревью онтологии | `backend/app/ontology/review.py` (`uv run python -m app.ontology.review ...`) | list / approve / reject / merge + аудит |
 | Eval качества извлечения | `backend/scripts/eval_extraction.py` | golden-набор из 5 кейсов; требует живого LLM |
-| Прогон тестов backend | `backend/tests/` (pytest) | 155 тестов, 3 пропускаются без флагов живого LLM/эмбеддингов |
+| Прогон тестов backend | `backend/tests/` (pytest) | 157 тестов, 3 пропускаются без флагов живого LLM/эмбеддингов |
 | Frontend dev-сервер | `frontend/` (`npm run dev`) | вход/регистрация через API |
 | Генерация типов API | `frontend/` (`npm run generate:api`, нужен backend) | скрипт готов |
 | Сборка frontend | `npm run build` (tsc + vite) | проходит |

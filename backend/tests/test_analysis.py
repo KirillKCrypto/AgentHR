@@ -48,6 +48,72 @@ async def test_extract_vacancy_requirements() -> None:
     assert result.skills[0].confidence == 0.9
 
 
+async def test_vacancy_requirement_groups_are_parsed() -> None:
+    """OR/AND-группы и их логика сохраняются, мусорные значения сбрасываются."""
+    provider = _provider(
+        {
+            "title": None,
+            "company": None,
+            "level": None,
+            "skills": [
+                {
+                    "name": "R",
+                    "required_level": 60,
+                    "weight": 1.0,
+                    "evidence": "R or Java",
+                    "confidence": 0.8,
+                    "group": "g1",
+                    "logic": "OR",
+                },
+                {
+                    "name": "Java",
+                    "required_level": 60,
+                    "weight": 1.0,
+                    "evidence": "R or Java",
+                    "confidence": 0.8,
+                    "group": "g1",
+                    "logic": "OR",
+                },
+                {
+                    "name": "Docker",
+                    "required_level": 70,
+                    "weight": 0.8,
+                    "evidence": "Docker and Kubernetes",
+                    "confidence": 0.8,
+                    "group": "g2",
+                    "logic": "AND",
+                },
+                {
+                    "name": "Kubernetes",
+                    "required_level": 70,
+                    "weight": 0.8,
+                    "evidence": "Docker and Kubernetes",
+                    "confidence": 0.8,
+                    "group": "g2",
+                    "logic": "AND",
+                },
+                {
+                    "name": "SQL",
+                    "required_level": 50,
+                    "weight": 0.5,
+                    "evidence": "SQL",
+                    "confidence": 0.8,
+                    "logic": "OR",
+                },
+            ],
+        }
+    )
+    result = await extract_vacancy_requirements(provider, "Вакансия")
+
+    assert [(skill.name, skill.group, skill.logic) for skill in result.skills] == [
+        ("R", "g1", "OR"),
+        ("Java", "g1", "OR"),
+        ("Docker", "g2", "AND"),
+        ("Kubernetes", "g2", "AND"),
+        ("SQL", None, "SINGLE"),
+    ]
+
+
 async def test_extract_resume_skills() -> None:
     """Навыки и опыт из резюме разбираются в структуру."""
     provider = _provider(

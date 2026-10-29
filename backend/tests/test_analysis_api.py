@@ -97,6 +97,118 @@ async def test_analysis_returns_gaps_and_readiness(api_user: ApiUser) -> None:
     assert body["gaps"]["confirmed_weight"] == pytest.approx(2.1, abs=0.001)
 
 
+async def test_or_and_requirement_groups_affect_readiness(api_user: ApiUser) -> None:
+    """OR берёт лучший вариант, AND требует все элементы группы."""
+    api_user.provider.responses["vacancy_requirements"] = {
+        "title": "Grouped vacancy",
+        "company": "Acme",
+        "level": "middle",
+        "skills": [
+            {
+                "name": "Python",
+                "required_level": 70,
+                "weight": 1.0,
+                "evidence": "Python or Java",
+                "confidence": 0.9,
+                "group": "g1",
+                "logic": "OR",
+            },
+            {
+                "name": "Java",
+                "required_level": 70,
+                "weight": 1.0,
+                "evidence": "Python or Java",
+                "confidence": 0.9,
+                "group": "g1",
+                "logic": "OR",
+            },
+            {
+                "name": "Docker",
+                "required_level": 70,
+                "weight": 1.0,
+                "evidence": "Docker and Kubernetes",
+                "confidence": 0.9,
+                "group": "g2",
+                "logic": "AND",
+            },
+            {
+                "name": "Kubernetes",
+                "required_level": 70,
+                "weight": 1.0,
+                "evidence": "Docker and Kubernetes",
+                "confidence": 0.9,
+                "group": "g2",
+                "logic": "AND",
+            },
+            {
+                "name": "SQL",
+                "required_level": 70,
+                "weight": 1.0,
+                "evidence": "SQL",
+                "confidence": 0.9,
+            },
+        ],
+    }
+    api_user.provider.responses["resume_skills"] = {
+        "experience_years": 2.0,
+        "self_level": "middle",
+        "skills": [
+            {
+                "name": "Python",
+                "proficiency": 80,
+                "evidence": "Python",
+                "confidence": 0.9,
+            },
+            {
+                "name": "Docker",
+                "proficiency": 70,
+                "evidence": "Docker",
+                "confidence": 0.9,
+            },
+            {
+                "name": "SQL",
+                "proficiency": 80,
+                "evidence": "SQL",
+                "confidence": 0.9,
+            },
+        ],
+    }
+    vacancy_response = await api_user.client.post(
+        "/vacancies",
+        json={"title": "Grouped vacancy", "raw_text": "Python or Java; Docker and Kubernetes; SQL"},
+        headers=api_user.headers,
+    )
+    assert vacancy_response.status_code == 201, vacancy_response.text
+    resume_response = await api_user.client.post(
+        "/resumes",
+        json={"title": "Резюме", "raw_text": "Python, Docker, SQL"},
+        headers=api_user.headers,
+    )
+    assert resume_response.status_code == 201, resume_response.text
+
+    analysis = await api_user.client.post(
+        "/analysis",
+        json={
+            "vacancy_id": vacancy_response.json()["id"],
+            "resume_id": resume_response.json()["id"],
+        },
+        headers=api_user.headers,
+    )
+    assert analysis.status_code == 200, analysis.text
+    gaps = analysis.json()["gaps"]
+    items = {item["skill_name"]: item for item in gaps["items"]}
+
+    # OR: Python закрывает группу; AND: Kubernetes не закрыт; SQL закрыт.
+    # (1.0 + 0.0 + 1.0) / (1.0 + 2.0 + 1.0) = 0.5
+    assert gaps["coverage_all"] == pytest.approx(0.5, abs=0.001)
+    assert gaps["confirmed_readiness"] == pytest.approx(0.5, abs=0.001)
+    assert gaps["confirmed_weight"] == pytest.approx(4.0, abs=0.001)
+    assert items["Java"]["requirement_group"] == "g1"
+    assert items["Java"]["requirement_logic"] == "OR"
+    assert items["Kubernetes"]["requirement_group"] == "g2"
+    assert items["Kubernetes"]["requirement_logic"] == "AND"
+
+
 async def test_documents_are_isolated_by_user(api_user: ApiUser, second_user: ApiUser) -> None:
     """Чужой пользователь не видит документы и анализ."""
     vacancy = await _create_vacancy(api_user)

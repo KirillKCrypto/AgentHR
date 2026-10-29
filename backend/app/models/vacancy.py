@@ -61,6 +61,10 @@ class VacancySkill(Base):
         ),
         CheckConstraint("weight >= 0 AND weight <= 1", name="ck_vacancy_skills_weight"),
         CheckConstraint("confidence >= 0 AND confidence <= 1", name="ck_vacancy_skills_confidence"),
+        CheckConstraint(
+            "requirement_logic IN ('SINGLE', 'AND', 'OR')",
+            name="ck_vacancy_skills_requirement_logic",
+        ),
         Index("ix_vacancy_skills_vacancy_topic", "vacancy_id", "topic_id"),
     )
 
@@ -82,6 +86,12 @@ class VacancySkill(Base):
     required_level: Mapped[int] = mapped_column(Integer, default=0, server_default=text("0"))
     # Важность навыка для вакансии, 0..1
     weight: Mapped[float] = mapped_column(Float, default=1.0, server_default=text("1.0"))
+    # Группа требований: одинаковый group объединяет альтернативы/конъюнкции.
+    requirement_group: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    # SINGLE | AND | OR
+    requirement_logic: Mapped[str] = mapped_column(
+        String(10), default="SINGLE", server_default=text("'SINGLE'")
+    )
     # Уверенность извлечения, 0..1
     confidence: Mapped[float] = mapped_column(Float, default=0.5, server_default=text("0.5"))
     evidence: Mapped[str | None] = mapped_column(Text, nullable=True)

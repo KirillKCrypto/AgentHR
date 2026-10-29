@@ -193,6 +193,8 @@ def build_analysis_tools(
                     "skill_name": item.skill_name,
                     "topic_key": item.topic_key,
                     "topic_status": item.topic_status,
+                    "requirement_group": item.requirement_group,
+                    "requirement_logic": item.requirement_logic,
                     "required_level": item.required_level,
                     "user_level": item.user_level,
                     "gap": item.gap,
@@ -336,6 +338,8 @@ def _skill_payload(skill: SkillEntry) -> dict[str, Any]:
         "level": skill.level,
         "confidence": skill.confidence,
         "match_method": skill.match_method,
+        "requirement_group": skill.requirement_group,
+        "requirement_logic": skill.requirement_logic,
     }
 
 
