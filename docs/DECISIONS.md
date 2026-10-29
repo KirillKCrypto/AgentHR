@@ -29,6 +29,7 @@
 | Backfill legacy NULL | миграция заполнила старые `topic_id`, затем `NOT NULL` и FK `RESTRICT` |
 | Лимит `AUTO_TOPIC_LIMIT` | не даёт онтологии взрываться; overflow идёт в одну review-тему |
 | Ревью через CLI | в проекте нет ролей/админ-аутентификации; CLI безопаснее публичного API |
+| Автоматическое ревью provisional-тем | сначала правила (точный alias или близость ≥ `ONTOLOGY_AUTO_MERGE_SIMILARITY` → merge; упоминания в нескольких документах → approve), затем LLM только для спорных тем; решение применяется при `confidence` ≥ порога, merge — только в top-5 кандидатов; остальное остаётся provisional на ручную проверку; аудит с `actor="auto"`; запуск best-effort после сохранения документа |
 | Две метрики покрытия | `coverage_all` включает provisional, `confirmed_readiness` — только canonical |
 | Группы `AND/OR` | `OR` — max, `AND` — min; для confirmed группа должна быть полностью canonical |
 | Criticality и рубрика уровней | `must_have` / `nice_to_have`; `required_level` 0–100 по якорям; критический гейт — позже |

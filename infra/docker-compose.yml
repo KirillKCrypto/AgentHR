@@ -45,6 +45,12 @@ services:
       # Эмбеддинги: none (по умолчанию) или local (нужен образ с --extra embeddings)
       # 0 — все новые навыки сразу в review-тему
       AUTO_TOPIC_LIMIT: ${AUTO_TOPIC_LIMIT:-10}
+      # Автоматическое ревью provisional-тем после сохранения документа
+      ONTOLOGY_AUTO_REVIEW_ENABLED: ${ONTOLOGY_AUTO_REVIEW_ENABLED:-true}
+      ONTOLOGY_AUTO_REVIEW_MIN_CONFIDENCE: ${ONTOLOGY_AUTO_REVIEW_MIN_CONFIDENCE:-0.75}
+      ONTOLOGY_AUTO_MERGE_SIMILARITY: ${ONTOLOGY_AUTO_MERGE_SIMILARITY:-0.9}
+      ONTOLOGY_AUTO_APPROVE_MIN_DOCUMENTS: ${ONTOLOGY_AUTO_APPROVE_MIN_DOCUMENTS:-2}
+      ONTOLOGY_AUTO_REVIEW_MAX_TOPICS: ${ONTOLOGY_AUTO_REVIEW_MAX_TOPICS:-20}
       EMBEDDING_PROVIDER: ${EMBEDDING_PROVIDER:-none}
       EMBEDDING_MODEL: ${EMBEDDING_MODEL:-sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2}
       EMBEDDING_THRESHOLD: ${EMBEDDING_THRESHOLD:-0.35}
