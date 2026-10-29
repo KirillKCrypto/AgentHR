@@ -54,5 +54,5 @@ npm run generate:api # обновить src/api/schema.d.ts из OpenAPI (нуж
 - Tailwind 4 подключён через `@tailwindcss/vite`; тема — в `src/index.css`
 - Никаких анимаций и кастомных визуализаций без явного запроса
 
-Экраны продукта (по `AGENTS.md` §7): реализованы `/`, `/login`, `/vacancies/new`, `/profile`;
+Экраны продукта (по [`docs/ROADMAP.md`](../docs/ROADMAP.md) §5): реализованы `/`, `/login`, `/vacancies/new`, `/profile`;
 `/plans/:id`, `/interview/:id`, `/reports/:id` — по плану M3–M5.
