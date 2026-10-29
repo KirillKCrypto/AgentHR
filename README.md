@@ -31,7 +31,7 @@ LLM + Agent Harness + Tool Calling + Knowledge Graph + Persistent Memory + Adapt
 |---|---|
 | Backend | Python 3.13, FastAPI |
 | Agent Harness | Deep Agents (LangGraph, LangChain core) |
-| LLM | OpenAI (провайдер-агностичный слой) |
+| LLM | DeepSeek (OpenAI-совместимый слой, провайдер-агностичный) |
 | Database | PostgreSQL 16 + pgvector |
 | Knowledge Graph | Реляционная модель в Postgres |
 | Frontend | React, TypeScript, Vite, TanStack Query, shadcn/ui |
@@ -54,7 +54,7 @@ LLM + Agent Harness + Tool Calling + Knowledge Graph + Persistent Memory + Adapt
 Проект в разработке. M0 «Фундамент» (неделя 1) и M1 «Agent Harness» (неделя 2) закрыты:
 инфраструктура (PostgreSQL + pgvector и backend API в Docker Compose), база данных,
 аутентификация, слой LLM, Agent Harness на Deep Agents (лимиты и аудит в `agent_actions`),
-frontend со входом через UI. Для живого ответа LLM нужен ключ OpenAI.
+frontend со входом через UI. Для живого ответа LLM нужен ключ DeepSeek (см. `backend/README.md`).
 M2 «Понимание кандидата» закрыт: схема графа знаний и документов, онтология v2
 (89 атомарных навыков, 75 пререквизитов) и идемпотентный сид, извлечение навыков и нормализация, профиль
 знаний и gap-анализ, доменные REST API (`/vacancies`, `/resumes`, `/profile`, `/analysis`),

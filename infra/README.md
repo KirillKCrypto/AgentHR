@@ -44,8 +44,10 @@ docker compose exec postgres psql -U agenthr -d agenthr -c "\dt"
 ## Настройки API
 
 Передаются в контейнер `api` из `infra/.env` (шаблон — `.env.example`): `API_PORT`,
-`JWT_SECRET_KEY`, `LLM_PROVIDER`, `OPENAI_API_KEY`, `OPENAI_MODEL`, `CORS_ORIGINS`.
-По умолчанию `LLM_PROVIDER=mock` — сеть не нужна.
+`JWT_SECRET_KEY`, `LLM_PROVIDER`, `OPENAI_API_KEY`, `OPENAI_MODEL`, `OPENAI_BASE_URL`,
+`LLM_STRUCTURED_MODE`, `CORS_ORIGINS`. По умолчанию `LLM_PROVIDER=mock` — сеть не нужна.
+Основной провайдер — DeepSeek: `LLM_PROVIDER=openai`, `OPENAI_BASE_URL=https://api.deepseek.com`,
+`OPENAI_MODEL=deepseek-flash`, `LLM_STRUCTURED_MODE=json_object`.
 
 ## Остановка
 

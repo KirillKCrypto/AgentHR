@@ -95,7 +95,7 @@ AgentHR/
 │   │   │   ├── base.py        (типы и Protocol LLMProvider)
 │   │   │   ├── factory.py     (выбор провайдера по настройкам)
 │   │   │   ├── mock.py        (MockProvider для тестов)
-│   │   │   └── openai.py      (OpenAIProvider, SDK openai)
+│   │   │   └── openai.py      (OpenAIProvider, SDK openai, DeepSeek/OpenAI-совместимые API)
 │   │   ├── models/
 │   │   │   ├── __init__.py    (импортирует все модели для Alembic)
 │   │   │   ├── agent_action.py (модель AgentAction)
@@ -223,7 +223,8 @@ AgentHR/
 
 **Назначение:** backend-приложение AgentHR. Реализованы: FastAPI-точка входа
 (`app/main.py`: CORS, роутеры, `/health`, `/health/db`, обработчик `LLMError`), JWT-аутентификация
-(`app/api/`, `app/core/security.py`), слой LLM (`app/llm/`: интерфейс, mock- и OpenAI-провайдеры),
+(`app/api/`, `app/core/security.py`), слой LLM (`app/llm/`: интерфейс, mock- и OpenAI-совместимый
+провайдеры, основной — DeepSeek),
 агентский слой (`app/agent/`: реестр Tools, middleware аудита и лимитов, harness на Deep Agents,
 доменные инструменты), онтология v2 с сидом (`app/ontology/`), сервисный слой
 (`app/services/`: извлечение, нормализация, профиль и gap-анализ), доменные REST-эндпоинты
@@ -371,7 +372,8 @@ AI-агента и его Tools, граф знаний, план на 8 неде
 **Responsibility:** настройки приложения (`Settings`) через pydantic-settings; читает переменные
 окружения и `backend/.env`; `get_settings()` кэширует экземпляр. Переменные: `APP_NAME`,
 `ENVIRONMENT`, `DATABASE_URL`, `JWT_*`, `ACCESS_TOKEN_EXPIRE_MINUTES`,
-`REFRESH_TOKEN_EXPIRE_DAYS`, `LLM_PROVIDER`, `OPENAI_API_KEY`, `OPENAI_MODEL`, `CORS_ORIGINS`.
+`REFRESH_TOKEN_EXPIRE_DAYS`, `LLM_PROVIDER`, `OPENAI_API_KEY`, `OPENAI_MODEL`, `OPENAI_BASE_URL`,
+`LLM_STRUCTURED_MODE`, `CORS_ORIGINS`.
 
 **Depends on:** `pydantic-settings`.
 
@@ -790,10 +792,11 @@ dev-группа (pytest, pytest-asyncio, httpx2, ruff), конфигураци�
 **Role:** LLM (интеграция)
 
 **Responsibility:** `OpenAIProvider` на официальном SDK (`AsyncOpenAI`): function calling
-(`generate_with_tools`), структурированный вывод по JSON Schema (`generate_structured`,
-`response_format: json_schema`, `strict`), конвертация сообщений и usage. При отказе шлюза
-от strict-схемы или сбое запроса — один резервный запрос с описанием схемы в промпте.
-Таймаут и повторы — из настроек; ошибки SDK оборачиваются в `LLMError`.
+(`generate_with_tools`), структурированный вывод по JSON Schema (`generate_structured`).
+Режим задаётся `LLM_STRUCTURED_MODE`: `json_schema` — `response_format: json_schema` со
+`strict` и откатом в промпт; `json_object` — схема в промпте + `response_format: json_object`
+(DeepSeek); `prompt` — только схема в промпте. Конвертация сообщений и usage; таймаут и
+повторы — из настроек; ошибки SDK оборачиваются в `LLMError`.
 
 **Depends on:** `openai`, `backend/app/llm/base.py`.
 
@@ -807,7 +810,9 @@ dev-группа (pytest, pytest-asyncio, httpx2, ruff), конфигураци�
 **Role:** LLM (конфигурация)
 
 **Responsibility:** `create_llm_provider(settings)` — выбор провайдера по `LLM_PROVIDER`
-(`mock` по умолчанию; `openai` требует `OPENAI_API_KEY` и `OPENAI_MODEL`).
+(`mock` по умолчанию; `openai` требует `OPENAI_API_KEY` и `OPENAI_MODEL`; для DeepSeek —
+`OPENAI_BASE_URL=https://api.deepseek.com`, `OPENAI_MODEL=deepseek-flash`,
+`LLM_STRUCTURED_MODE=json_object`).
 
 **Depends on:** `backend/app/core/config.py`, `backend/app/llm/*`.
 
@@ -948,8 +953,8 @@ preflight `OPTIONS /auth/login` разрешён.
 **Role:** TEST
 
 **Responsibility:** тесты слоя LLM без сети (MockProvider: tool calls, structured, ошибки;
-фабрика: mock по умолчанию, требования к openai-конфигурации) + живой тест OpenAI
-со `skipif` без `OPENAI_API_KEY`/`OPENAI_MODEL`.
+фабрика: mock по умолчанию, требования к openai-конфигурации, режимы structured output) +
+живой тест внешнего API со `skipif` без `OPENAI_API_KEY`/`OPENAI_MODEL`.
 
 **Depends on:** `backend/app/llm/*`.
 
@@ -1069,8 +1074,8 @@ preflight `OPTIONS /auth/login` разрешён.
 **Role:** CONFIG (шаблон)
 
 **Responsibility:** шаблон локальных настроек backend: `APP_NAME`, `ENVIRONMENT`, `DATABASE_URL`,
-`JWT_*`, `LLM_PROVIDER`, `OPENAI_API_KEY`, `OPENAI_MODEL`, `CORS_ORIGINS`. Копируется
-в `backend/.env` (в git не попадает).
+`JWT_*`, `LLM_PROVIDER`, `OPENAI_API_KEY`, `OPENAI_MODEL`, `OPENAI_BASE_URL`,
+`LLM_STRUCTURED_MODE`, `CORS_ORIGINS`. Копируется в `backend/.env` (в git не попадает).
 
 **Depends on:** —
 
@@ -1163,7 +1168,7 @@ Tailwind 4, shadcn/ui: Base UI, lucide, cn, cva), скрипты `dev` / `build`
 
 **Responsibility:** `extract_vacancy_requirements` и `extract_resume_skills` — извлечение
 требований вакансии и навыков резюме через структурированный вывод LLM (жёсткая JSON Schema,
-совместимая со `strict`-режимом OpenAI). Значения вне 0..100 обрезаются, навыки без названия
+совместимая с режимом strict). Значения вне 0..100 обрезаются, навыки без названия
 отбрасываются, пустой текст — понятная ошибка.
 
 **Depends on:** `backend/app/llm/base.py`.
@@ -1253,7 +1258,7 @@ recall / F1 и точность сопоставления с темами; `--m
 **Depends on:** `backend/app/services/analysis.py`, `backend/app/services/evaluation.py`,
 `backend/tests/fixtures/extraction_golden.py`.
 
-**Used by:** разработчики (нужен `LLM_PROVIDER=openai` с ключом).
+**Used by:** разработчики (нужен `LLM_PROVIDER=openai` с ключом DeepSeek).
 
 ### Уровень 3 — вспомогательные
 
@@ -1309,7 +1314,7 @@ app/main.py ──▶ app/core/config.py ──▶ pydantic-settings (backend/.e
     ├── app/api/routes/analysis.py ───┘                              ──▶ app/models/* (vacancies, resumes, user_skill_states)
     │        └──▶ app/api/mappers.py ──▶ app/schemas/analysis.py
     │
-    └── app/api/deps.py ──▶ app/llm/factory.py ──▶ MockProvider / OpenAIProvider (SDK openai)
+    └── app/api/deps.py ──▶ app/llm/factory.py ──▶ MockProvider / OpenAIProvider (DeepSeek/OpenAI)
 
 app/agent/analysis_tools.py ──▶ app/services/{analysis,profile}.py (tools привязаны к user_id)
 
@@ -1334,7 +1339,7 @@ alembic/env.py ──▶ config (settings) + Base.metadata ──▶ мигра�
 
 tests/* ──▶ app.main (TestClient / AsyncClient); /health/db — через dependency_overrides;
             test_user_model.py и test_auth.py ──▶ реальная БД (skip, если недоступна);
-            test_llm.py ──▶ MockProvider (без сети), OpenAI — skip без ключа
+            test_llm.py ──▶ MockProvider (без сети), внешний API — skip без ключа
 ```
 
 **Frontend** (запросы к backend через единый клиент; CORS разрешает `http://localhost:5173`):
@@ -1408,10 +1413,11 @@ API доступен снаружи по `localhost:${API_PORT}` (по умол�
 | `POSTGRES_PORT` | порт БД на хосте (по умолчанию `5433`; 5432 часто занят локальным PostgreSQL) | нет |
 | `API_PORT` | порт API-контейнера на хосте (по умолчанию `8000`) | нет |
 | `JWT_SECRET_KEY` | секрет JWT для контейнера API (пусто → dev-дефолт кода) | да |
-| `LLM_PROVIDER` | провайдер LLM в контейнере: `mock` (по умолчанию) или `openai` | нет |
-| `OPENAI_API_KEY` | ключ OpenAI (или совместимого шлюза) для контейнера API | да |
-| `OPENAI_MODEL` | модель OpenAI для контейнера API | нет |
-| `OPENAI_BASE_URL` | базовый URL OpenAI-совместимого шлюза (пусто — `api.openai.com`) | нет |
+| `LLM_PROVIDER` | провайдер LLM в контейнере: `mock` (по умолчанию) или `openai` (DeepSeek) | нет |
+| `OPENAI_API_KEY` | ключ DeepSeek (или другого OpenAI-совместимого API) для контейнера API | да |
+| `OPENAI_MODEL` | модель API для контейнера API (`deepseek-flash`) | нет |
+| `OPENAI_BASE_URL` | базовый URL OpenAI-совместимого API (`https://api.deepseek.com`) | нет |
+| `LLM_STRUCTURED_MODE` | режим structured output: `json_schema`, `json_object` (DeepSeek), `prompt` | нет |
 | `CORS_ORIGINS` | браузерные источники (JSON-массив) для контейнера API | нет |
 
 ### `backend/.env.example` (и локальный `backend/.env`)
@@ -1426,9 +1432,10 @@ API доступен снаружи по `localhost:${API_PORT}` (по умол�
 | `ACCESS_TOKEN_EXPIRE_MINUTES` | время жизни access-токена (по умолчанию 30) | нет |
 | `REFRESH_TOKEN_EXPIRE_DAYS` | время жизни refresh-токена (по умолчанию 30) | нет |
 | `LLM_PROVIDER` | провайдер LLM: `mock` (по умолчанию) или `openai` | нет |
-| `OPENAI_API_KEY` | ключ OpenAI (или совместимого шлюза; нужен для `LLM_PROVIDER=openai`) | да |
-| `OPENAI_MODEL` | модель OpenAI (нужна для `LLM_PROVIDER=openai`) | нет |
-| `OPENAI_BASE_URL` | базовый URL OpenAI-совместимого шлюза (пусто — `api.openai.com`) | нет |
+| `OPENAI_API_KEY` | ключ DeepSeek (или другого OpenAI-совместимого API; нужен для `LLM_PROVIDER=openai`) | да |
+| `OPENAI_MODEL` | модель API (нужна для `LLM_PROVIDER=openai`; для DeepSeek — `deepseek-flash`) | нет |
+| `OPENAI_BASE_URL` | базовый URL OpenAI-совместимого API (для DeepSeek — `https://api.deepseek.com`) | нет |
+| `LLM_STRUCTURED_MODE` | режим structured output: `json_schema`, `json_object` (DeepSeek), `prompt` | нет |
 | `OPENAI_TIMEOUT_SECONDS` | таймаут одного запроса к LLM, сек (по умолчанию 30) | нет |
 | `OPENAI_MAX_RETRIES` | повторы SDK (по умолчанию 0; резервный запрос делает сам провайдер) | нет |
 | `CORS_ORIGINS` | браузерные источники (JSON-массив; по умолчанию `["http://localhost:5173"]`) | нет |
@@ -1502,10 +1509,11 @@ API доступен снаружи по `localhost:${API_PORT}` (по умол�
 
 **Факт:** слой LLM реализован: провайдер-агностичный интерфейс, `MockProvider`
 (по умолчанию, без сети) и `OpenAIProvider` на официальном SDK; живые вызовы выполняются
-при `LLM_PROVIDER=openai` с ключом и моделью, в том числе через OpenAI-совместимый шлюз
-(`OPENAI_BASE_URL`). Модель вызывается из HTTP-контура при загрузке вакансии и резюме;
-`POST /analysis` работает без LLM. При недоступности модели API отвечает 502, причина
-пишется в лог. Frontend и backend связаны по REST (CORS для dev-сервера).
+при `LLM_PROVIDER=openai` с ключом и моделью. Основной провайдер — DeepSeek
+(`OPENAI_BASE_URL=https://api.deepseek.com`, `OPENAI_MODEL=deepseek-flash`,
+`LLM_STRUCTURED_MODE=json_object`). Модель вызывается из HTTP-контура при загрузке вакансии
+и резюме; `POST /analysis` работает без LLM. При недоступности модели API отвечает 502,
+причина пишется в лог. Frontend и backend связаны по REST (CORS для dev-сервера).
 
 **План** ([`AGENTS.md`](../AGENTS.md) §6): использование LLM в продукте — через Agent Harness
 (LLM выбирает инструменты, Harness их исполняет и пишет audit-лог). Данные в LLM: тексты
@@ -1526,7 +1534,7 @@ API доступен снаружи по `localhost:${API_PORT}` (по умол�
 - `test_auth.py` — интеграционные тесты auth (register/login/me/refresh + негативные кейсы)
   через `httpx2.AsyncClient` + `ASGITransport`;
 - `test_cors.py` — CORS-заголовки и preflight для frontend-origin;
-- `test_llm.py` — MockProvider и фабрика без сети; живой тест OpenAI пропускается без ключа;
+- `test_llm.py` — MockProvider и фабрика без сети; режимы structured output; живой тест внешнего API пропускается без ключа;
 - `test_agent_tools.py` — реестр инструментов и адаптер для LangChain: дубликаты имён, `specs()`,
   валидация аргументов, дословная JSON Schema, исполнение обработчика, ошибки и таймаут (без БД);
 - `test_agent_deep_harness.py` — основной harness (Deep Agents) на мок-LLM: полный цикл

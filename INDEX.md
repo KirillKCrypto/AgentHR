@@ -26,7 +26,7 @@ AgentHR — интеллектуальная агентская система �
   frontend — вход и регистрация через API (`frontend/`). Из чеклиста старта
   ([`AGENTS.md`](AGENTS.md), §12) выполнены пункты 1–7 и 10; пункт 4 выполняется поэтапно;
   пункты 8, 9, 11 не начаты. Дальше — M2 (недели 3–4): вакансии/резюме → профиль знаний.
-  Для живого ответа LLM нужен ключ OpenAI.
+  Для живого ответа LLM нужен ключ DeepSeek.
 
 ---
 
@@ -60,8 +60,9 @@ uv run uvicorn app.main:app --reload          # http://127.0.0.1:8000 (+ /docs)
 uv run pytest                                 # тесты
 ```
 
-По умолчанию `LLM_PROVIDER=mock` — сеть не нужна. Для реального вызова задайте
-`LLM_PROVIDER=openai`, `OPENAI_API_KEY`, `OPENAI_MODEL` (в `backend/.env` при локальном запуске
+По умолчанию `LLM_PROVIDER=mock` — сеть не нужна. Основной провайдер — DeepSeek:
+`LLM_PROVIDER=openai`, `OPENAI_BASE_URL=https://api.deepseek.com`, `OPENAI_MODEL=deepseek-flash`,
+`OPENAI_API_KEY`, `LLM_STRUCTURED_MODE=json_object` (в `backend/.env` при локальном запуске
 или в `infra/.env` для контейнера).
 
 **3. Frontend** (`frontend/`, нужен запущенный backend):
@@ -202,7 +203,7 @@ loading/error, сохранение токенов (`src/lib/tokens.ts`), ред
    │                                                 - POST /auth/register, /auth/login, /auth/refresh
    │                                                 - GET /me (Bearer access-токен)
    │                                                 - CORS: http://localhost:5173
-   │                                                 - слой LLM: MockProvider / OpenAIProvider
+   │                                                 - слой LLM: MockProvider / OpenAIProvider (DeepSeek)
    │                                                 - модель User (app/models/)
    │                                                 - Alembic-миграции (pgvector, users)
    └── npm run dev (frontend/) ──▶ Vite dev-сервер (SPA)
@@ -213,7 +214,7 @@ loading/error, сохранение токенов (`src/lib/tokens.ts`), ред
 
 Backend подключается к БД по `localhost:5433` (локальный запуск) или `postgres:5432`
 (в контейнере) — asyncpg; пароли — argon2id-хеши, токены — JWT.
-LLM по умолчанию — mock (сеть не нужна); OpenAI включается настройками.
+LLM по умолчанию — mock (сеть не нужна); DeepSeek включается настройками.
 
 **Целевая архитектура (план, не реализована)** — [`AGENTS.md`](AGENTS.md) §2:
 
@@ -261,7 +262,7 @@ Backend API (FastAPI)
 | `backend/app/api/deps.py` | `get_current_user` (Bearer-защита эндпоинтов) |
 | `backend/app/db/session.py` | async-движок, фабрика сессий, зависимость `get_db` |
 | `backend/app/models/user.py` | ORM-модель `User` |
-| `backend/app/llm/` | слой LLM: интерфейс (`base.py`), `MockProvider`, `OpenAIProvider`, фабрика |
+| `backend/app/llm/` | слой LLM: интерфейс (`base.py`), `MockProvider`, `OpenAIProvider` (DeepSeek/OpenAI-совместимые API), фабрика |
 | `backend/app/agent/` | Agent Harness на Deep Agents: `deep_harness.py` (цикл `create_deep_agent`), `middleware.py` (аудит и лимиты), `langchain_model.py`/`langchain_tools.py` (адаптеры LangChain), `tools.py` (реестр Tools с JSON Schema), `audit.py` (логгер) |
 | `backend/app/models/agent_action.py` | ORM-модель записи аудит-лога (`agent_actions`) |
 | `backend/alembic/` | миграции схемы (async) |
@@ -393,7 +394,7 @@ INDEX.md                    — главная точка входа (этот �
 | Где запуск API в Docker? | `infra/docker-compose.yml` (сервис `api`) + `backend/Dockerfile` и `backend/docker/entrypoint.sh` |
 | Где API? | Роутеры — `backend/app/api/routes/` (auth, users); health — `backend/app/main.py`; остальное — план ([`AGENTS.md`](AGENTS.md) §2–3) |
 | Где аутентификация? | Backend: `backend/app/core/security.py` + `backend/app/api/deps.py`; frontend: `frontend/src/pages/LoginPage.tsx` + `frontend/src/lib/tokens.ts` |
-| Где LLM-слой? | `backend/app/llm/` (`base.py` — интерфейс, `mock.py` / `openai.py` — реализации, `factory.py` — выбор по `LLM_PROVIDER`) |
+| Где LLM-слой? | `backend/app/llm/` (`base.py` — интерфейс, `mock.py` / `openai.py` — реализации, `factory.py` — выбор по `LLM_PROVIDER`; основной провайдер — DeepSeek) |
 | Где Agent Harness? | `backend/app/agent/` (`deep_harness.py` — цикл на Deep Agents; `middleware.py` — аудит и лимиты; `tools.py` — реестр; `langchain_model.py` — адаптер модели); записи — в таблице `agent_actions` |
 | Где фронтенд? | `frontend/` (каркас + вход: маршруты — `src/App.tsx`, экраны — `src/pages/`, запуск — `npm run dev`) |
 | Где API-клиент frontend / типы API? | `frontend/src/api/client.ts`; типы — `frontend/src/api/schema.d.ts` (`npm run generate:api`) |

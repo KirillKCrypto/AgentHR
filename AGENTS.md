@@ -212,7 +212,7 @@ embeddings (pgvector: source_type, source_id, vector, model, metadata)
 |---|---|
 | Backend | **Python 3.13 + FastAPI** |
 | Agent Harness | **Deep Agents** (поверх LangGraph + LangChain core) |
-| LLM | Провайдер-агностично: **OpenAI** (запасной — Anthropic); function-calling + структурный JSON |
+| LLM | Провайдер-агностично: **DeepSeek** (основной, `deepseek-flash`; запасной — OpenAI / Anthropic); function-calling + структурный JSON |
 | Database | **PostgreSQL 16** |
 | Vector store | **pgvector** |
 | Knowledge Graph | Реляционная модель в Postgres (`topics` + `topic_prerequisites` + `user_skill_states`) |
@@ -350,6 +350,7 @@ E2E-тест сценария · mini-eval (3–5 эталонных приме�
 | LangGraph как Harness | Явный граф состояний + checkpointing + контроль tool-calling |
 | Deep Agents как основной Harness (обязательно) | Решение команды (окт. 2026): цикл агента строится на `deepagents.create_deep_agent` (готовый harness: контекст, планирование, сабагенты, память). Наши правила сохраняются собственными middleware: аудит каждого шага в `agent_actions`, лимиты шагов/токенов/времени, ошибки инструментов возвращаются модели. Ручная сборка графа и свой исполнитель tool-calls не используются и удалены из кода |
 | Дефолтный состав агента (Deep Agents) | Решение команды (окт. 2026): агент получает штатный набор Deep Agents — инструменты файловой системы (управление контекстом) и сабагента `task`; отключать их не стали. Итог: мультиагентность присутствует как штатная возможность harness'а, но собственной мультиагентной логики в MVP нет |
+| DeepSeek — основной LLM-провайдер | Решение команды (окт. 2026): основной провайдер — DeepSeek (`https://api.deepseek.com`, `deepseek-flash`) через OpenAI-совместимый SDK. Режим `LLM_STRUCTURED_MODE=json_object`, так как DeepSeek не поддерживает `response_format=json_schema`; слой остаётся провайдер-агностичным — OpenAI подключается сменой URL и модели |
 | Postgres + pgvector, одна БД | Меньше инфраструктуры; векторный поиск без второй системы |
 | Граф в Postgres на MVP | Реляционная БД по требованию; репозиторий-граница для будущей миграции |
 | React + TS, а не Python-UI | Реалтайм-стриминг интервью, кастомные визуализации, качественная кодогенерация агентом |

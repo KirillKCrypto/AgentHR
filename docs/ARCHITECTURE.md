@@ -14,7 +14,7 @@ M0 «Фундамент» (неделя 1) и M1 «Agent Harness» (неделя
 (PostgreSQL 16 + pgvector в Docker Compose), backend (FastAPI: health, JWT-аутентификация,
 слой LLM, Agent Harness на Deep Agents — реестр Tools, middleware аудита и лимитов, checkpointer,
 аудит в `agent_actions`; миграции, тесты) и frontend (SPA со входом и регистрацией через API).
-Для живого ответа LLM нужен ключ OpenAI; доменные модели данных и внешние интеграции
+Для живого ответа LLM нужен ключ DeepSeek; доменные модели данных и внешние интеграции
 в рантайме — в плане (дальше — M2: вакансии/резюме → профиль знаний).
 
 Целевая архитектура — агентская система (не чат-бот): `LLM + Agent Harness + Tool Calling +
@@ -119,8 +119,9 @@ Backend API (FastAPI)          ← auth, бизнес-логика, владел
 роутеров, обработчик `LLMError` → 502), JWT-аутентификация (`app/api/`: `register`, `login`,
 `refresh`, `/me`; `app/core/security.py`: argon2id + PyJWT), слой LLM (`app/llm/`:
 провайдер-агностичный интерфейс `LLMProvider`, `MockProvider` для тестов без сети,
-`OpenAIProvider` — function calling и структурированный вывод по JSON Schema с резервным
-режимом «схема в промпте»; фабрика по `LLM_PROVIDER`), доменные REST-эндпоинты
+`OpenAIProvider` — function calling и структурированный вывод по JSON Schema с режимами
+`json_schema` / `json_object` / `prompt` (основной провайдер — DeepSeek, `json_object`);
+фабрика по `LLM_PROVIDER`), доменные REST-эндпоинты
 (`/vacancies`, `/resumes`, `/profile`, `/profile/gaps`, `/analysis`), сервисный слой
 (`app/services/`: извлечение, нормализация, профиль знаний и gap-анализ), настройки
 `app/core/config.py` (pydantic-settings), слой БД `app/db/` (async-движок, фабрика сессий,
@@ -351,20 +352,22 @@ SQLAlchemy 2 (async); `agent_actions` — обязательный audit-лог;
 **Факт:** слой LLM реализован и по умолчанию использует `MockProvider` (без сети);
 `OpenAIProvider` (официальный SDK) активируется настройками и выполняет живые вызовы при
 заданных `OPENAI_API_KEY` и `OPENAI_MODEL`; `OPENAI_BASE_URL` позволяет работать через
-OpenAI-совместимый шлюз. Загрузка вакансии и резюме вызывает модель из HTTP-контура
-(`POST /vacancies`, `POST /resumes`); `POST /analysis` модель не вызывает.
-Структурированный вывод сначала использует `response_format=json_schema`, при отказе шлюза
-повторяется с описанием схемы в промпте. Ошибки SDK и сети превращаются в `LLMError` → 502.
+OpenAI-совместимый API. Основной провайдер проекта — DeepSeek (`https://api.deepseek.com`,
+модель `deepseek-flash`); `LLM_STRUCTURED_MODE=json_object` передаёт схему в промпте, так как
+DeepSeek не поддерживает `response_format=json_schema`. Загрузка вакансии и резюме вызывает
+модель из HTTP-контура (`POST /vacancies`, `POST /resumes`); `POST /analysis` модель не вызывает.
+В режиме `json_schema` структурированный вывод сначала использует штатную схему, при отказе
+API повторяется с описанием схемы в промпте. Ошибки SDK и сети превращаются в `LLMError` → 502.
 Frontend и backend связаны по REST (CORS-разрешение для dev-сервера).
 
 **План** ([`AGENTS.md`](../AGENTS.md) §6, §10):
 
 | Параметр | Значение |
 |---|---|
-| Integration | LLM-провайдер (OpenAI или совместимый шлюз; запасной — Anthropic), провайдер-агностичный слой |
+| Integration | LLM-провайдер (DeepSeek, OpenAI или совместимый API; запасной — Anthropic), провайдер-агностичный слой |
 | Purpose | анализ, планирование, генерация вопросов, оценка ответов |
 | Location | `backend/app/llm/`; вызовы из сервисного слоя и (далее) из агентского цикла |
-| Configuration | `LLM_PROVIDER`, `OPENAI_API_KEY`, `OPENAI_MODEL`, `OPENAI_BASE_URL`, таймауты/повторы |
+| Configuration | `LLM_PROVIDER`, `OPENAI_API_KEY`, `OPENAI_MODEL`, `OPENAI_BASE_URL`, `LLM_STRUCTURED_MODE`, таймауты/повторы |
 | Data exchanged | тексты промптов/ответов, структурированный JSON (tool-calls, оценки) |
 | Failure handling | таймаут запроса, один резервный запрос без strict-схемы, 502 в API, audit-лог |
 
@@ -382,10 +385,11 @@ Frontend и backend связаны по REST (CORS-разрешение для d
 | `POSTGRES_PORT` | порт БД на хосте (по умолчанию `5433`) | нет |
 | `API_PORT` | порт API-контейнера на хосте (по умолчанию `8000`) | нет |
 | `JWT_SECRET_KEY` | секрет JWT для контейнера API (пусто → dev-дефолт кода) | да |
-| `LLM_PROVIDER` | провайдер LLM в контейнере (`mock` по умолчанию) | нет |
-| `OPENAI_API_KEY` | ключ OpenAI (или совместимого шлюза) для контейнера API | да |
-| `OPENAI_MODEL` | модель OpenAI для контейнера API | нет |
-| `OPENAI_BASE_URL` | базовый URL OpenAI-совместимого шлюза (пусто — `api.openai.com`) | нет |
+| `LLM_PROVIDER` | провайдер LLM в контейнере (`mock` по умолчанию, `openai` для DeepSeek/OpenAI) | нет |
+| `OPENAI_API_KEY` | ключ DeepSeek (или другого OpenAI-совместимого API) для контейнера API | да |
+| `OPENAI_MODEL` | модель API для контейнера API (для DeepSeek — `deepseek-flash`) | нет |
+| `OPENAI_BASE_URL` | базовый URL OpenAI-совместимого API (для DeepSeek — `https://api.deepseek.com`) | нет |
+| `LLM_STRUCTURED_MODE` | режим структурированного вывода: `json_schema`, `json_object` (DeepSeek), `prompt` | нет |
 | `CORS_ORIGINS` | браузерные источники (JSON-массив) для контейнера API | нет |
 
 **Backend** — `backend/.env` (копия `backend/.env.example`):
@@ -400,9 +404,10 @@ Frontend и backend связаны по REST (CORS-разрешение для d
 | `ACCESS_TOKEN_EXPIRE_MINUTES` | время жизни access-токена (по умолчанию 30) | нет |
 | `REFRESH_TOKEN_EXPIRE_DAYS` | время жизни refresh-токена (по умолчанию 30) | нет |
 | `LLM_PROVIDER` | провайдер LLM: `mock` (по умолчанию) или `openai` | нет |
-| `OPENAI_API_KEY` | ключ OpenAI (или совместимого шлюза) для `LLM_PROVIDER=openai` | да |
-| `OPENAI_MODEL` | модель OpenAI (для `LLM_PROVIDER=openai`) | нет |
-| `OPENAI_BASE_URL` | базовый URL OpenAI-совместимого шлюза (пусто — `api.openai.com`) | нет |
+| `OPENAI_API_KEY` | ключ DeepSeek (или другого OpenAI-совместимого API) для `LLM_PROVIDER=openai` | да |
+| `OPENAI_MODEL` | модель API (для DeepSeek — `deepseek-flash`) | нет |
+| `OPENAI_BASE_URL` | базовый URL OpenAI-совместимого API (для DeepSeek — `https://api.deepseek.com`) | нет |
+| `LLM_STRUCTURED_MODE` | режим структурированного вывода: `json_schema`, `json_object` (DeepSeek), `prompt` | нет |
 | `OPENAI_TIMEOUT_SECONDS` | таймаут одного запроса к LLM, сек (по умолчанию 30) | нет |
 | `OPENAI_MAX_RETRIES` | повторы SDK при ошибках (по умолчанию 0: резервный запрос делает провайдер) | нет |
 | `CORS_ORIGINS` | браузерные источники (по умолчанию `["http://localhost:5173"]`) | нет |
@@ -494,7 +499,7 @@ Frontend: `ApiError` со статусом; на `/login` показываютс
   отсутствие/битый/просроченный токен, refresh вместо access) через `httpx2.AsyncClient`
   и `ASGITransport`;
 - `test_cors.py` — CORS-заголовок и preflight для frontend-origin;
-- `test_llm.py` — MockProvider и фабрика без сети; живой вызов OpenAI пропускается без ключа;
+- `test_llm.py` — MockProvider и фабрика без сети; режимы структурированного вывода; живой вызов внешнего API пропускается без ключа;
 - `test_agent_tools.py` — реестр инструментов и адаптер для LangChain: валидация аргументов,
   дословная JSON Schema, исполнение обработчика, ошибки и таймаут (без БД);
 - `test_agent_deep_harness.py` — основной harness (Deep Agents) на мок-LLM: полный цикл

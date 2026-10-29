@@ -1,7 +1,7 @@
 # Backend
 
 Backend-приложение AgentHR на FastAPI. Реализованы: каркас, health-эндпоинты,
-JWT-аутентификация, слой LLM (mock/OpenAI), подключение к БД, Agent Harness на Deep Agents,
+JWT-аутентификация, слой LLM (mock/DeepSeek), подключение к БД, Agent Harness на Deep Agents,
 модели User/AgentAction/граф знаний и онтология v2 с идемпотентным сидом, доменные REST API
 (вакансии, резюме, профиль знаний, gap-анализ) и агентские tools поверх сервисного слоя.
 
@@ -56,13 +56,16 @@ docker compose up -d --build    # agenthr-api на http://127.0.0.1:8000
 ## LLM
 
 - По умолчанию `LLM_PROVIDER=mock` — детерминированный провайдер для тестов, сеть не нужна.
-- Для реальных вызовов: `LLM_PROVIDER=openai`, `OPENAI_API_KEY`, `OPENAI_MODEL` в `backend/.env`.
-  Для OpenAI-совместимых шлюзов задаётся `OPENAI_BASE_URL` (пусто — официальный `api.openai.com`).
+- Основной провайдер — DeepSeek: `LLM_PROVIDER=openai`, `OPENAI_BASE_URL=https://api.deepseek.com`,
+  `OPENAI_MODEL=deepseek-flash`, `OPENAI_API_KEY` в `backend/.env`. Слой OpenAI-совместимый,
+  поэтому официальный OpenAI подключается сменой базового URL и модели.
 - Интерфейс (`app/llm/base.py`): `generate_with_tools` (function calling) и
   `generate_structured` (структурированный JSON по схеме).
-- Структурированный вывод: сначала штатный `response_format=json_schema`; если шлюз его
-  не поддерживает или запрос не прошёл, провайдер один раз повторяет запрос с описанием
-  схемы в промпте. Ответ очищается от markdown-обёртки и разбирается как JSON-объект.
+- Структурированный вывод задаётся `LLM_STRUCTURED_MODE`:
+  `json_schema` — штатный `response_format=json_schema` с откатом в промпт (OpenAI);
+  `json_object` — схема в промпте + `response_format=json_object` (DeepSeek, по умолчанию
+  для него); `prompt` — только схема в промпте, без `response_format`.
+  Ответ очищается от markdown-обёртки и разбирается как JSON-объект.
 - Таймауты и повторы: `OPENAI_TIMEOUT_SECONDS` (по умолчанию 30) и `OPENAI_MAX_RETRIES`
   (по умолчанию 0 — резервный запрос делает сам провайдер). Ошибки SDK и сети превращаются
   в `LLMError`; HTTP-контур отвечает 502 с понятным текстом, причина пишется в лог.
@@ -166,7 +169,7 @@ Golden-набор лежит в `tests/fixtures/extraction_golden.py`: текс�
 uv run python scripts/eval_extraction.py --min-f1 0.8 --show-skills
 ```
 
-Для живого прогона нужен `LLM_PROVIDER=openai` с ключом и моделью.
+Для живого прогона нужен `LLM_PROVIDER=openai` с ключом DeepSeek и моделью.
 
 ## Тесты и линтер
 
@@ -223,7 +226,7 @@ URL БД берётся из настроек (`backend/.env`, переменн�
 
 `JWT_SECRET_KEY` в коде — только dev-дефолт; в продакшене обязательно задавать через окружение.
 Refresh-токены stateless: отзыв до истечения не поддерживается (осознанный компромисс MVP).
-Ключ `OPENAI_API_KEY` — только через окружение.
+Ключ `OPENAI_API_KEY` (DeepSeek или другого OpenAI-совместимого провайдера) — только через окружение.
 
 Дальше по плану (см. `AGENTS.md`): M3–M4 — планировщик подготовки, сессии интервью
 (`next_question`, `evaluate_answer`, `adjust_difficulty`), WebSocket-стриминг и отчёты.
