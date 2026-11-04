@@ -10,7 +10,8 @@
 | M0. Фундамент | ✅ |
 | M1. Agent Harness | ✅ |
 | M2. Понимание кандидата | ✅ |
-| Онтология: provisional-темы, backfill, ревью | ✅ |
+| Онтология: provisional-темы, backfill, ручное ревью | ✅ |
+| Онтология: автоматическое ревью provisional-тем | ✅ |
 | Онтология: `coverage_all` / `confirmed_readiness` | ✅ |
 | Онтология: группы `AND/OR` | ✅ |
 | Онтология: `criticality` и рубрика уровней | ✅ |

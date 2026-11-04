@@ -334,6 +334,7 @@ readiness = critical_gate × readiness
 | 2.1 | Инвариант `topic_id`: provisional-темы, `TopicAlias`, resolver | сделано |
 | 2.2 | Backfill legacy NULL, `NOT NULL`, `RESTRICT`, лимит тем на документ | сделано |
 | 2.3 | CLI ревью: list/approve/reject/merge, перенос связей, аудит | сделано |
+| 2.3.1 | Автоматическое ревью provisional-тем: правила + LLM + аудит | сделано |
 | 2.4 | `coverage_all` / `confirmed_readiness`, отдельный блок provisional в UI | сделано |
 | 3 | `requirement_group` + `logic` в `vacancy_skills`, групповая оценка | сделано |
 | 4 | `criticality`, `required_level` по рубрике в извлечении вакансии | сделано |
