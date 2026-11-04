@@ -5,13 +5,13 @@ import re
 import uuid
 from collections.abc import Sequence
 
-from sqlalchemy import func, select
+from sqlalchemy import func, select, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import Settings, get_settings
 from app.embeddings.base import EmbeddingProvider
-from app.models import Topic, TopicAlias, TopicCandidate
+from app.models import ResumeSkill, Topic, TopicAlias, TopicCandidate, VacancySkill
 from app.ontology.topics import ONTOLOGY_TOPICS, ONTOLOGY_VERSION
 from app.services.normalization import (
     DEFAULT_EMBEDDING_THRESHOLD,
@@ -50,17 +50,31 @@ async def load_topic_index(
     session: AsyncSession,
     *,
     statuses: Sequence[str] = ("canonical", "provisional"),
+    exclude_ids: Sequence[uuid.UUID] = (),
 ) -> TopicIndex:
-    """Строит индекс тем выбранных статусов (по умолчанию canonical и provisional)."""
-    topics = (
-        await session.scalars(
-            select(Topic).where(Topic.status.in_(tuple(statuses))).order_by(Topic.key)
-        )
-    ).all()
-    # Canonical-темы идут первыми: индекс использует setdefault, поэтому при
-    # одинаковом названии (например, legacy provisional-тема и тема из пакета)
-    # точное совпадение должно вести в canonical, а не в ожидающую ревью тему.
-    topics = sorted(topics, key=lambda topic: (topic.status != "canonical", topic.key))
+    """Строит индекс тем выбранных статусов (по умолчанию canonical и provisional).
+
+    `exclude_ids` исключает проверяемые темы: иначе авто-ревью нашло бы тему
+    по её собственному алиасу и попыталось слить её саму с собой.
+    """
+    excluded = set(exclude_ids)
+    topics = [
+        topic
+        for topic in (
+            await session.scalars(
+                select(Topic).where(Topic.status.in_(tuple(statuses))).order_by(Topic.key)
+            )
+        ).all()
+        if topic.id not in excluded
+    ]
+    # Canonical-темы идут первыми, внутри canonical — темы из пакета (origin
+    # seed). Индекс использует setdefault, поэтому при одинаковом названии
+    # (например, подтверждённая вручную тема и тема из пакета) точное
+    # совпадение должно вести в тему пакета, а не в дубликат.
+    topics = sorted(
+        topics,
+        key=lambda topic: (topic.status != "canonical", topic.origin != "seed", topic.key),
+    )
     topic_ids = {topic.id for topic in topics}
     alias_rows = (
         await session.scalars(select(TopicAlias).where(TopicAlias.status == "active"))
@@ -175,6 +189,14 @@ async def _resolve_or_create_topic(
     if alias is not None:
         topic = await session.get(Topic, alias.topic_id)
         if topic is not None and topic.status not in ("merged", "rejected"):
+            await _record_repeated_mention(
+                session,
+                topic,
+                name,
+                evidence,
+                source_type=source_type,
+                source_id=source_id,
+            )
             return topic, False
 
     candidate = await session.scalar(
@@ -183,11 +205,27 @@ async def _resolve_or_create_topic(
     if candidate is not None and candidate.topic_id is not None:
         topic = await session.get(Topic, candidate.topic_id)
         if topic is not None and topic.status not in ("merged", "rejected"):
+            await _record_repeated_mention(
+                session,
+                topic,
+                name,
+                evidence,
+                source_type=source_type,
+                source_id=source_id,
+            )
             return topic, False
 
     topic_key = _auto_topic_key(normalized)
     existing_topic = await session.scalar(select(Topic).where(Topic.key == topic_key))
     if existing_topic is not None and existing_topic.status not in ("merged", "rejected"):
+        await _record_repeated_mention(
+            session,
+            existing_topic,
+            name,
+            evidence,
+            source_type=source_type,
+            source_id=source_id,
+        )
         return existing_topic, False
 
     if not allow_create:
@@ -316,6 +354,107 @@ async def _record_alias_and_candidate(
 def _clip(value: str, limit: int) -> str:
     """Обрезает строку до лимита поля БД."""
     return (value or "").strip()[:limit]
+
+
+async def _record_repeated_mention(
+    session: AsyncSession,
+    topic: Topic,
+    name: str,
+    evidence: str | None,
+    *,
+    source_type: str,
+    source_id: uuid.UUID,
+) -> None:
+    """Копит упоминания навыка в уже существующей provisional-теме.
+
+    Без этого повторное упоминание не увеличивает `occurrences` и число
+    источников: авто-ревью считало бы, что новых данных нет, и не перепроверяло
+    тему. Подтверждённые темы не трогаем — у них нет очереди ревью.
+    """
+    if topic.status != "provisional":
+        return
+    await _record_alias_and_candidate(
+        session,
+        topic,
+        name,
+        evidence,
+        source_type=source_type,
+        source_id=source_id,
+    )
+
+
+async def detach_candidate_topic(
+    session: AsyncSession,
+    source_topic: Topic,
+    candidate: TopicCandidate,
+) -> Topic:
+    """Выносит кандидата из служебной темы переполнения в отдельную тему.
+
+    Навыки документа и алиас переносятся в новую provisional-тему, чтобы её
+    можно было проверить обычными правилами ревью: подтвердить или слить.
+    """
+    normalized = candidate.normalized_name
+    await session.execute(select(func.pg_advisory_xact_lock(func.hashtext(normalized))))
+
+    topic = await _find_reusable_topic(session, normalized)
+    if topic is None:
+        topic = Topic(
+            key=await _free_topic_key(session, _auto_topic_key(normalized)),
+            name=_clip(candidate.name, 120) or normalized,
+            description=(
+                candidate.suggested_description
+                or (
+                    f"Автоматически созданная тема для навыка «{_clip(candidate.name, 200)}». "
+                    "Требует проверки и подтверждения."
+                )
+            ),
+            category="auto",
+            aliases=[],
+            ontology_version=ONTOLOGY_VERSION,
+            is_auto_generated=True,
+            status="provisional",
+            origin="auto",
+        )
+        session.add(topic)
+        await session.flush()
+
+    await session.execute(
+        update(TopicAlias)
+        .where(TopicAlias.normalized_alias == normalized)
+        .values(topic_id=topic.id)
+    )
+    candidate.topic_id = topic.id
+
+    for model in (ResumeSkill, VacancySkill):
+        skills = (
+            await session.scalars(select(model).where(model.topic_id == source_topic.id))
+        ).all()
+        for skill in skills:
+            if _clip(normalize_name(skill.raw_name), 200) == normalized:
+                skill.topic_id = topic.id
+
+    await session.flush()
+    return topic
+
+
+async def _find_reusable_topic(session: AsyncSession, normalized: str) -> Topic | None:
+    """Ищет provisional-тему, созданную ранее для этого же нормализованного имени."""
+    topic = await session.scalar(select(Topic).where(Topic.key == _auto_topic_key(normalized)))
+    if topic is None or topic.category == "auto_review":
+        return None
+    if topic.status != "provisional":
+        return None
+    return topic
+
+
+async def _free_topic_key(session: AsyncSession, base: str) -> str:
+    """Подбирает свободный ключ темы, если детерминированный уже занят."""
+    key = base
+    counter = 1
+    while await session.scalar(select(Topic.id).where(Topic.key == key)) is not None:
+        counter += 1
+        key = f"{base[:57]}-{counter}"
+    return key
 
 
 def _auto_topic_key(normalized: str) -> str:

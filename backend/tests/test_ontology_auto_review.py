@@ -27,7 +27,7 @@ from app.models import (
     UserSkillState,
     VacancySkill,
 )
-from app.services.normalization import TopicIndex, TopicRecord, normalize_name
+from app.services.normalization import TopicIndex, TopicMatch, TopicRecord, normalize_name
 from app.services.ontology_auto_review import (
     _decide,
     _needs_review,
@@ -36,7 +36,7 @@ from app.services.ontology_auto_review import (
     _TopicFacts,
     run_auto_review,
 )
-from app.services.topics import load_topic_index
+from app.services.topics import load_topic_index, resolve_or_create_topics
 from tests.conftest import ApiUser
 
 
@@ -251,6 +251,44 @@ async def test_llm_low_confidence_keeps_topic() -> None:
     assert decision.source == "llm"
     assert "ниже порога" in decision.reason
     assert provider.calls == ["ontology_review"]
+
+
+async def test_llm_failure_does_not_mark_topic_reviewed(seeded_db: None) -> None:
+    """Недоступная LLM не снимает тему с очереди: следующий прогон повторит попытку."""
+    name = f"Offline Review Skill {uuid4().hex[:8]}"
+    topic_key = _key("offline")
+    provider = ReviewStub(error=True)
+    try:
+        async with async_session_factory() as session:
+            topic = await _make_topic(session, name=name, key_prefix="offline")
+            topic_key = topic.key
+            session.add(
+                TopicCandidate(
+                    name=name,
+                    normalized_name=normalize_name(name),
+                    topic_id=topic.id,
+                    status="auto_created",
+                    occurrences=1,
+                    sources=[],
+                )
+            )
+            await session.commit()
+
+            first = await run_auto_review(session, [topic.id], provider=provider)
+            second = await run_auto_review(session, [topic.id], provider=provider)
+
+        assert len(first) == 1
+        assert first[0].source == "fallback"
+        assert len(second) == 1
+        assert second[0].source == "fallback"
+
+        async with async_session_factory() as session:
+            topic = await session.scalar(select(Topic).where(Topic.key == topic_key))
+
+        assert topic.status == "provisional"
+        assert topic.auto_reviewed_at is None
+    finally:
+        await _cleanup([topic_key])
 
 
 async def test_llm_merge_target_must_be_among_candidates() -> None:
@@ -743,3 +781,330 @@ async def _cleanup_topic_by_name(name: str) -> None:
             )
             await session.execute(delete(Topic).where(Topic.id == topic_id))
         await session.commit()
+
+
+async def test_rule_merges_into_existing_provisional_topic(seeded_db: None) -> None:
+    """Новый навык видит уже существующую provisional-тему и сливается в неё."""
+    target_name = f"Existing Review Skill {uuid4().hex[:8]}"
+    source_name = f"Existing Review Alias {uuid4().hex[:8]}"
+    target_key = _key("prov-target")
+    source_key = _key("prov-source")
+    try:
+        async with async_session_factory() as session:
+            target = await _make_topic(
+                session, name=target_name, status="provisional", key_prefix="prov-target"
+            )
+            target_key = target.key
+            session.add(
+                TopicAlias(
+                    topic_id=target.id,
+                    alias=source_name,
+                    normalized_alias=normalize_name(source_name),
+                    source="manual",
+                    status="active",
+                )
+            )
+            source = await _make_topic(
+                session, name=source_name, status="provisional", key_prefix="prov-source"
+            )
+            source_key = source.key
+            await session.commit()
+
+            decisions = await run_auto_review(session, [source.id])
+
+        assert len(decisions) == 1
+        assert decisions[0].action == "merge"
+        assert decisions[0].target_key == target_key
+
+        async with async_session_factory() as session:
+            source = await session.scalar(select(Topic).where(Topic.key == source_key))
+            target = await session.scalar(select(Topic).where(Topic.key == target_key))
+
+        assert source.status == "merged"
+        assert target.status == "provisional"
+    finally:
+        await _cleanup([source_key, target_key])
+
+
+async def test_topic_with_own_alias_is_not_merged_into_itself(seeded_db: None) -> None:
+    """Проверяемая тема исключена из индекса, иначе она слилась бы сама с собой."""
+    name = f"Self Alias Skill {uuid4().hex[:8]}"
+    topic_key = _key("self")
+    provider = ReviewStub({"decision": "keep", "confidence": 0.1, "reason": "недостаточно данных"})
+    try:
+        async with async_session_factory() as session:
+            topic = await _make_topic(session, name=name, key_prefix="self")
+            topic_key = topic.key
+            session.add(
+                TopicAlias(
+                    topic_id=topic.id,
+                    alias=name,
+                    normalized_alias=normalize_name(name),
+                    source="auto",
+                    status="active",
+                )
+            )
+            session.add(
+                TopicCandidate(
+                    name=name,
+                    normalized_name=normalize_name(name),
+                    topic_id=topic.id,
+                    status="auto_created",
+                    occurrences=1,
+                    sources=[],
+                )
+            )
+            await session.commit()
+
+            decisions = await run_auto_review(session, [topic.id], provider=provider)
+
+        assert len(decisions) == 1
+        assert decisions[0].action == "keep"
+        assert decisions[0].source == "llm"
+    finally:
+        await _cleanup([topic_key])
+
+
+async def test_repeated_mentions_accumulate_and_trigger_approve(seeded_db: None) -> None:
+    """Повторное упоминание копит документы и даёт правилу подтвердить тему."""
+    name = f"Repeat Practice {uuid4().hex[:10]}"
+    email = f"auto-repeat-{uuid4().hex}@example.com"
+    topic_key = _key("repeat")
+    try:
+        async with async_session_factory() as session:
+            user = User(email=email, password_hash="test")
+            session.add(user)
+            await session.flush()
+
+            topic_ids: list[Any] = []
+            for _ in range(2):
+                resume = Resume(user_id=user.id, title=None, raw_text="test")
+                session.add(resume)
+                await session.flush()
+                matches = await resolve_or_create_topics(
+                    session,
+                    [(name, "повторное упоминание")],
+                    [TopicMatch(None, "none", 0.0, None)],
+                    source_type="resume",
+                    source_id=resume.id,
+                )
+                topic_key = matches[0].topic_key or topic_key
+                topic_ids.append(matches[0].topic_id)
+
+            assert topic_ids[0] == topic_ids[1]
+            candidate = await session.scalar(
+                select(TopicCandidate).where(
+                    TopicCandidate.normalized_name == normalize_name(name)
+                )
+            )
+            assert candidate is not None
+            assert candidate.occurrences == 2
+            assert len(candidate.sources) == 2
+            await session.commit()
+
+            decisions = await run_auto_review(session, [topic_ids[0]], provider=None)
+
+        assert len(decisions) == 1
+        assert decisions[0].action == "approve"
+        assert decisions[0].source == "rule"
+
+        async with async_session_factory() as session:
+            topic = await session.scalar(select(Topic).where(Topic.key == topic_key))
+
+        assert topic.status == "canonical"
+    finally:
+        await _cleanup([topic_key], email)
+
+
+async def test_overflow_candidate_is_promoted_individually(seeded_db: None) -> None:
+    """Навык из темы переполнения получает отдельную тему и подтверждается."""
+    name = f"Overflow Skill {uuid4().hex[:8]}"
+    email = f"auto-overflow-{uuid4().hex}@example.com"
+    overflow_key = _key("overflow")
+    promoted_key: str | None = None
+    provider = ReviewStub(
+        {
+            "decision": "approve",
+            "confidence": 0.92,
+            "reason": "самостоятельный навык",
+            "name": name,
+            "description": "Навык из теста переполнения",
+            "category": "testing",
+            "aliases": [],
+        }
+    )
+    try:
+        async with async_session_factory() as session:
+            overflow = await _make_topic(session, name="Новые навыки (на ревью)", key_prefix="overflow")
+            overflow_key = overflow.key
+            overflow.category = "auto_review"
+
+            user = User(email=email, password_hash="test")
+            session.add(user)
+            await session.flush()
+            resume = Resume(user_id=user.id, title=None, raw_text="test")
+            session.add(resume)
+            await session.flush()
+            session.add(
+                TopicCandidate(
+                    name=name,
+                    normalized_name=normalize_name(name),
+                    topic_id=overflow.id,
+                    status="auto_created",
+                    occurrences=1,
+                    sources=[{"type": "resume", "id": str(resume.id), "evidence": "из теста"}],
+                )
+            )
+            session.add(
+                TopicAlias(
+                    topic_id=overflow.id,
+                    alias=name,
+                    normalized_alias=normalize_name(name),
+                    source="auto",
+                    status="active",
+                )
+            )
+            session.add(
+                ResumeSkill(
+                    resume_id=resume.id,
+                    topic_id=overflow.id,
+                    raw_name=name,
+                    proficiency=40,
+                    confidence=0.5,
+                    match_method="provisional",
+                )
+            )
+            await session.commit()
+
+            decisions = await run_auto_review(session, [overflow.id], provider=provider)
+
+        assert len(decisions) == 1
+        assert decisions[0].action == "approve"
+        assert decisions[0].topic_key != overflow_key
+        promoted_key = decisions[0].topic_key
+
+        async with async_session_factory() as session:
+            overflow = await session.scalar(select(Topic).where(Topic.key == overflow_key))
+            promoted = await session.scalar(select(Topic).where(Topic.key == promoted_key))
+            candidate = await session.scalar(
+                select(TopicCandidate).where(TopicCandidate.normalized_name == normalize_name(name))
+            )
+            skill = await session.scalar(select(ResumeSkill).where(ResumeSkill.raw_name == name))
+            alias = await session.scalar(
+                select(TopicAlias).where(TopicAlias.normalized_alias == normalize_name(name))
+            )
+            action = await session.scalar(
+                select(OntologyReviewAction).where(
+                    OntologyReviewAction.source_topic_id == promoted.id,
+                    OntologyReviewAction.action == "approve",
+                )
+            )
+
+        assert overflow.status == "provisional"
+        assert promoted.status == "canonical"
+        assert candidate.status == "approved"
+        assert candidate.topic_id == promoted.id
+        assert skill.topic_id == promoted.id
+        assert skill.match_method == "auto_approve"
+        assert alias.topic_id == promoted.id
+        assert action.details["overflow_topic"] == overflow_key
+        assert action.actor == "auto"
+    finally:
+        await _cleanup([overflow_key, promoted_key], email)
+        await _cleanup_topic_by_name(name)
+
+
+async def test_kept_overflow_candidate_is_not_rechecked(seeded_db: None) -> None:
+    """Кандидат, оставленный в теме переполнения, не тратит LLM повторно."""
+    name = f"Overflow Keep Skill {uuid4().hex[:8]}"
+    overflow_key = _key("overflow-keep")
+    provider = ReviewStub(
+        {"decision": "approve", "confidence": 0.4, "reason": "недостаточно данных"}
+    )
+    try:
+        async with async_session_factory() as session:
+            overflow = await _make_topic(
+                session, name="Новые навыки (на ревью)", key_prefix="overflow-keep"
+            )
+            overflow_key = overflow.key
+            overflow.category = "auto_review"
+            session.add(
+                TopicCandidate(
+                    name=name,
+                    normalized_name=normalize_name(name),
+                    topic_id=overflow.id,
+                    status="auto_created",
+                    occurrences=1,
+                    sources=[],
+                )
+            )
+            await session.commit()
+
+            first = await run_auto_review(session, [overflow.id], provider=provider)
+            calls_after_first = len(provider.calls)
+            second = await run_auto_review(session, [overflow.id], provider=provider)
+
+        assert len(first) == 1
+        assert first[0].action == "keep"
+        assert second == []
+        assert len(provider.calls) == calls_after_first
+
+        async with async_session_factory() as session:
+            candidate = await session.scalar(
+                select(TopicCandidate).where(TopicCandidate.normalized_name == normalize_name(name))
+            )
+
+        assert candidate.status == "auto_kept"
+    finally:
+        await _cleanup([overflow_key])
+
+
+async def test_approve_updates_fuzzy_matched_skill_method(seeded_db: None) -> None:
+    """Навык, попавший в provisional-тему через fuzzy, тоже помечается auto_approve."""
+    name = f"Fuzzy Matched Skill {uuid4().hex[:8]}"
+    topic_key = _key("fuzzy")
+    email = f"auto-fuzzy-{uuid4().hex}@example.com"
+    provider = ReviewStub(
+        {"decision": "approve", "confidence": 0.91, "reason": "самостоятельный навык"}
+    )
+    try:
+        async with async_session_factory() as session:
+            topic = await _make_topic(session, name=name, key_prefix="fuzzy")
+            topic_key = topic.key
+
+            user = User(email=email, password_hash="test")
+            session.add(user)
+            await session.flush()
+            resume = Resume(user_id=user.id, title=None, raw_text="test")
+            session.add(resume)
+            await session.flush()
+            session.add(
+                TopicCandidate(
+                    name=name,
+                    normalized_name=normalize_name(name),
+                    topic_id=topic.id,
+                    status="auto_created",
+                    occurrences=1,
+                    sources=[{"type": "resume", "id": str(resume.id), "evidence": "из теста"}],
+                )
+            )
+            session.add(
+                ResumeSkill(
+                    resume_id=resume.id,
+                    topic_id=topic.id,
+                    raw_name=name,
+                    proficiency=40,
+                    confidence=0.5,
+                    match_method="fuzzy",
+                )
+            )
+            await session.commit()
+
+            await run_auto_review(session, [topic.id], provider=provider)
+
+        async with async_session_factory() as session:
+            skill = await session.scalar(select(ResumeSkill).where(ResumeSkill.raw_name == name))
+
+        assert skill.match_method == "auto_approve"
+    finally:
+        await _cleanup([topic_key], email)

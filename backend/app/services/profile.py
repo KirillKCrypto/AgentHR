@@ -233,7 +233,7 @@ async def save_vacancy_analysis(
         source_type="vacancy",
         source_id=vacancy.id,
     )
-    new_topic_ids = [match.topic_id for match in matches if match.method == "provisional"]
+    touched_topic_ids = [match.topic_id for match in matches]
 
     for skill, match in zip(skills, matches, strict=True):
         session.add(
@@ -258,7 +258,7 @@ async def save_vacancy_analysis(
     # Автопроверка новых тем: best-effort, ошибка не должна ломать загрузку.
     await run_auto_review(
         session,
-        new_topic_ids,
+        touched_topic_ids,
         provider=provider,
         embedder=embedder,
     )
@@ -311,7 +311,7 @@ async def save_resume_analysis(
         source_type="resume",
         source_id=resume.id,
     )
-    new_topic_ids = [match.topic_id for match in matches if match.method == "provisional"]
+    touched_topic_ids = [match.topic_id for match in matches]
 
     for skill, match in zip(skills, matches, strict=True):
         session.add(
@@ -333,7 +333,7 @@ async def save_resume_analysis(
     # с учётом merge/approve, иначе срез останется на старой теме.
     await run_auto_review(
         session,
-        new_topic_ids,
+        touched_topic_ids,
         provider=provider,
         embedder=embedder,
     )

@@ -1,11 +1,20 @@
 """Интеграционный тест сида онтологии (требуется запущенная БД из infra/)."""
 
+from uuid import uuid4
+
 import pytest
 from sqlalchemy import delete, func, select, text
 from sqlalchemy.exc import SQLAlchemyError
 
 from app.db.session import async_session_factory, engine
-from app.models import ResumeSkill, Topic, TopicAlias, TopicPrerequisite, VacancySkill
+from app.models import (
+    OntologyReviewAction,
+    ResumeSkill,
+    Topic,
+    TopicAlias,
+    TopicPrerequisite,
+    VacancySkill,
+)
 from app.ontology import ONTOLOGY_TOPICS, ONTOLOGY_VERSION
 from app.ontology.seed import seed_ontology
 from app.services.topics import create_skill_matcher, load_topic_index
@@ -152,6 +161,47 @@ async def test_seed_restores_changed_description() -> None:
         assert restored.description.strip()
     finally:
         await engine.dispose()
+
+
+async def test_seed_merges_duplicate_canonical_topic(seeded_db: None) -> None:
+    """Canonical-дубликат темы пакета сливается в неё, а не остаётся рядом."""
+    duplicate_key = f"test-duplicate-python-{uuid4().hex[:8]}"
+    try:
+        async with async_session_factory() as session:
+            session.add(
+                Topic(
+                    key=duplicate_key,
+                    name="Python",
+                    description="Дубликат темы Python",
+                    category="auto",
+                    aliases=[],
+                    is_auto_generated=True,
+                    status="canonical",
+                    origin="auto",
+                )
+            )
+            await session.commit()
+
+            result = await seed_ontology(session)
+
+        async with async_session_factory() as session:
+            duplicate = await session.scalar(select(Topic).where(Topic.key == duplicate_key))
+            target = await session.scalar(select(Topic).where(Topic.key == "python"))
+
+        assert result.topics_merged >= 1
+        assert duplicate.status == "merged"
+        assert duplicate.canonical_topic_id == target.id
+    finally:
+        async with async_session_factory() as session:
+            duplicate = await session.scalar(select(Topic).where(Topic.key == duplicate_key))
+            if duplicate is not None:
+                await session.execute(
+                    delete(OntologyReviewAction).where(
+                        OntologyReviewAction.source_topic_id == duplicate.id
+                    )
+                )
+                await session.delete(duplicate)
+                await session.commit()
 
 
 async def test_seed_keeps_auto_generated_topics() -> None:

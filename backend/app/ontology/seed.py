@@ -19,6 +19,7 @@ from app.db.session import async_session_factory
 from app.models import Topic, TopicAlias, TopicPrerequisite
 from app.ontology.topics import ONTOLOGY_TOPICS, ONTOLOGY_VERSION
 from app.services.normalization import normalize_name
+from app.services.ontology_review import merge_topics
 
 
 @dataclass
@@ -27,13 +28,15 @@ class SeedResult:
 
     topics_created: int = 0
     topics_updated: int = 0
+    topics_merged: int = 0
     edges_created: int = 0
     edges_removed: int = 0
 
     def summary(self) -> str:
         """Краткая сводка для CLI и логов."""
         return (
-            f"темы: +{self.topics_created} новых, {self.topics_updated} обновлено; "
+            f"темы: +{self.topics_created} новых, {self.topics_updated} обновлено, "
+            f"{self.topics_merged} дубликатов слито; "
             f"связи: +{self.edges_created}, -{self.edges_removed}"
         )
 
@@ -166,8 +169,49 @@ async def seed_ontology(session: AsyncSession, *, version: int = ONTOLOGY_VERSIO
         )
         result.edges_created += 1
 
+    result.topics_merged = await _merge_duplicate_topics(session, seeded_ids)
+
     await session.commit()
     return result
+
+
+async def _merge_duplicate_topics(
+    session: AsyncSession,
+    seeded_ids: dict[str, Topic],
+) -> int:
+    """Сливает canonical-дубликаты в одноимённые темы пакета.
+
+    Пока сид не был обязательным, часть тем подтвердилась автоматически и
+    получила ключи `auto-*`. Если такая тема называется так же, как тема
+    пакета, профиль раздваивается: навыки делятся между двумя canonical-темами.
+    Слияние переносит навыки, состояния, алиасы и рёбра в тему пакета, а
+    дубликат оставляет в статусе `merged` с записью в аудите.
+    """
+    targets = {normalize_name(topic.name): topic for topic in seeded_ids.values()}
+    duplicates = (
+        await session.scalars(
+            select(Topic).where(Topic.status == "canonical", Topic.origin != "seed")
+        )
+    ).all()
+
+    merged = 0
+    for duplicate in duplicates:
+        target = targets.get(normalize_name(duplicate.name))
+        if target is None or target.id == duplicate.id:
+            continue
+        # merge_topics принимает только provisional-источник: временно
+        # переводим дубликат, чтобы переиспользовать проверенный перенос связей.
+        duplicate.status = "provisional"
+        await session.flush()
+        await merge_topics(
+            session,
+            duplicate.key,
+            target.key,
+            actor="seed",
+            details={"reason": "canonical topic duplicates packaged ontology topic"},
+        )
+        merged += 1
+    return merged
 
 
 async def main() -> None:

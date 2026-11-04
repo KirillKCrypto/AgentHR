@@ -14,6 +14,7 @@ openai, Deep Agents (LangGraph + LangChain core). Образ контейнер�
 uv sync
 Copy-Item .env.example .env              # один раз, локальные настройки не коммитятся
 uv run alembic upgrade head              # применить миграции (нужна запущенная БД из infra/)
+uv run python -m app.ontology.seed       # засеять онтологию (идемпотентно, нужна БД)
 uv run uvicorn app.main:app --reload     # http://127.0.0.1:8000, документация — /docs
 ```
 
@@ -26,8 +27,8 @@ docker compose up -d --build    # agenthr-api на http://127.0.0.1:8000
 
 - Образ — `backend/Dockerfile`: `python:3.13-slim` + uv, зависимости из `uv.lock`
   (`uv sync --frozen --no-dev`).
-- `docker/entrypoint.sh` при старте применяет миграции (`alembic upgrade head`) и запускает
-  uvicorn на `0.0.0.0:8000`.
+- `docker/entrypoint.sh` при старте применяет миграции (`alembic upgrade head`), синхронизирует
+  онтологию пакета (`python -m app.ontology.seed`) и запускает uvicorn на `0.0.0.0:8000`.
 - Настройки контейнера — в `infra/.env`; `DATABASE_URL` внутри compose-сети указывает на
   `postgres:5432` (задаётся в `infra/docker-compose.yml`).
 - Тесты и ruff в образ не входят (dev-зависимости) — запускайте их локально через `uv run`.
@@ -103,16 +104,23 @@ uv run python -m app.ontology.seed    # засеять онтологию (ну�
 provisional-тема, запись в `topic_aliases` и кандидат в `topic_candidates` на ревью.
 Новые названия не остаются с `topic_id = NULL`; миграция `c9a1d2e3f4b5` заполняет
 исторические NULL и делает `topic_id` обязательным. Лимит `AUTO_TOPIC_LIMIT`
-(по умолчанию 10) отправляет overflow в одну review-тему.
+(по умолчанию 10) отправляет overflow в одну review-тему, а авто-ревью разбирает
+её кандидатов по одному: подтверждённые получают собственную тему, остальные
+остаются в очереди. Повторное упоминание навыка увеличивает `occurrences` и
+число источников даже у существующей provisional-темы — по этим данным работает
+правило approve.
 
-После сохранения вакансии или резюме provisional-темы проверяются автоматически
-(`app/services/ontology_auto_review.py`): точный alias и высокая семантическая
-близость дают merge, повторяющиеся упоминания — approve, спорные темы уходят в
-DeepSeek с порогом уверенности. Остальное остаётся provisional с
-`auto_review_decision = keep`. Автопроверка best-effort и не ломает загрузку
-документа. Настройки: `ONTOLOGY_AUTO_REVIEW_ENABLED`,
-`ONTOLOGY_AUTO_REVIEW_MIN_CONFIDENCE`, `ONTOLOGY_AUTO_MERGE_SIMILARITY`,
-`ONTOLOGY_AUTO_APPROVE_MIN_DOCUMENTS`, `ONTOLOGY_AUTO_REVIEW_MAX_TOPICS`.
+После сохранения вакансии или резюме проверяются все provisional-темы, которых
+коснулся документ, включая совпавшие через fuzzy/embedding. В индекс для правил
+и LLM входят и canonical, и provisional-темы, поэтому новый навык видит уже
+существующие в БД темы и сливается с ними вместо создания дубликата. Точный
+alias и высокая семантическая близость дают merge, повторяющиеся упоминания в
+двух и более документах — approve, спорные темы уходят в DeepSeek с порогом
+уверенности. Остальное остаётся provisional с `auto_review_decision = keep`.
+Автопроверка best-effort и не ломает загрузку документа. Настройки:
+`ONTOLOGY_AUTO_REVIEW_ENABLED`, `ONTOLOGY_AUTO_REVIEW_MIN_CONFIDENCE`,
+`ONTOLOGY_AUTO_MERGE_SIMILARITY`, `ONTOLOGY_AUTO_APPROVE_MIN_DOCUMENTS`,
+`ONTOLOGY_AUTO_REVIEW_MAX_TOPICS`.
 
 ## Анализ и нормализация
 
@@ -217,7 +225,7 @@ URL БД берётся из настроек (`backend/.env`, переменн�
 - `app/agent/` — harness на Deep Agents, реестр Tools (JSON Schema), middleware аудита/лимитов,
   доменные инструменты (`analysis_tools.py`)
 - `Dockerfile` — образ backend (uv, без dev-зависимостей)
-- `docker/entrypoint.sh` — старт контейнера: `alembic upgrade head` → uvicorn
+- `docker/entrypoint.sh` — старт контейнера: `alembic upgrade head` → сид онтологии → uvicorn
 - `app/db/session.py` — async-движок, фабрика сессий, зависимость `get_db`
 - `app/db/base.py` — базовый класс моделей (`Base`)
 - `app/llm/` — слой LLM: `base.py` (интерфейс), `mock.py`, `openai.py`, `factory.py`

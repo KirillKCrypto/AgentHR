@@ -18,7 +18,7 @@
 import logging
 import uuid
 from collections.abc import Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import UTC, datetime
 from difflib import SequenceMatcher
 from typing import Any, Literal
@@ -37,7 +37,7 @@ from app.services.ontology_review import (
     merge_topics,
     record_review_action,
 )
-from app.services.topics import load_topic_index
+from app.services.topics import detach_candidate_topic, load_topic_index
 
 logger = logging.getLogger(__name__)
 
@@ -79,13 +79,23 @@ class _SimilarTopic:
 
 @dataclass(frozen=True)
 class _TopicFacts:
-    """Данные provisional-темы, нужные правилам и LLM."""
+    """Данные provisional-темы, нужные правилам и LLM.
+
+    Для служебной темы переполнения факты строятся по одному кандидату:
+    `topic` указывает на тему переполнения, `candidate` — на проверяемый навык.
+    """
 
     topic: Topic
     names: tuple[str, ...]
     document_count: int
     occurrences: int
     evidence: tuple[str, ...]
+    candidate: TopicCandidate | None = None
+
+    @property
+    def is_candidate(self) -> bool:
+        """Проверяется отдельный навык из темы переполнения."""
+        return self.candidate is not None
 
 
 @dataclass(frozen=True)
@@ -114,7 +124,7 @@ REVIEW_SCHEMA: dict[str, Any] = {
         },
         "target_key": {
             "type": ["string", "null"],
-            "description": "Ключ canonical-темы для merge (только из списка кандидатов)",
+            "description": "Ключ темы для merge (только из списка кандидатов)",
         },
         "confidence": {
             "type": "number",
@@ -145,18 +155,22 @@ REVIEW_SCHEMA: dict[str, Any] = {
 
 REVIEW_SYSTEM_PROMPT = (
     "Ты — куратор онтологии технических навыков для подготовки к собеседованиям.\n"
-    "Тебе показывают новую тему, автоматически созданную из навыков вакансий и резюме, "
-    "и ближайшие существующие темы онтологии.\n"
+    "Тебе показывают тему, автоматически созданную из навыка вакансии или резюме, "
+    "и ближайшие существующие темы онтологии, включая ожидающие проверки.\n"
     "Выбери одно решение:\n"
-    "- approve — это самостоятельный реальный навык, которому нужна собственная тема;\n"
+    "- approve — это реальный самостоятельный навык, технология или практика, "
+    "которой нужна собственная тема;\n"
     "- merge — это синоним, вариант написания или подвид одной из перечисленных тем "
     "(target_key обязателен и должен быть из списка);\n"
-    "- keep — данных мало, навык выглядит как опечатка/мусор или ты не уверен.\n"
+    "- keep — это не навык (общее требование, условие работы, опечатка или мусор) "
+    "либо данных действительно недостаточно, чтобы отличить его от существующей темы.\n"
     "Правила:\n"
+    "- Одно упоминание — нормальный признак реального навыка. Не понижай уверенность "
+    "только потому, что тема встретилась один раз.\n"
     "- Не выдумывай target_key, которого нет в списке.\n"
     "- Не дроби онтологию: близкие синонимы лучше merge, чем approve.\n"
     "- В aliases перечисли только реальные синонимы названия, без общих слов.\n"
-    "- Если сомневаешься — keep и снижай confidence."
+    "- Если колеблешься между approve и merge, выбирай merge в ближайшую тему."
 )
 
 
@@ -185,10 +199,22 @@ async def auto_review_topics(
     if not topics:
         return []
 
-    index = await load_topic_index(session, statuses=("canonical",))
+    # В индекс входят и provisional-темы: иначе новый навык не увидит уже
+    # существующую тему из БД и создаст дубликат. Проверяемые темы исключаем,
+    # чтобы правило точного совпадения не нашло тему по её собственному алиасу.
+    index = await load_topic_index(
+        session,
+        statuses=("canonical", "provisional"),
+        exclude_ids=ids,
+    )
 
     facts_list: list[_TopicFacts] = []
     for topic in topics:
+        if topic.category == "auto_review":
+            # Тема переполнения хранит разнородные навыки: проверяем каждого
+            # кандидата отдельно, иначе они навсегда остаются без ревью.
+            facts_list.extend(await _overflow_facts(session, topic))
+            continue
         facts = await _load_facts(session, topic)
         if _needs_review(topic, facts.occurrences):
             facts_list.append(facts)
@@ -216,11 +242,11 @@ async def auto_review_topics(
             )
             # Savepoint: ошибка одной темы не откатывает решения по остальным.
             async with session.begin_nested():
-                await _apply(session, facts, decision)
+                applied = await _apply(session, facts, decision)
             # Решения независимы: фиксируем каждое, чтобы следующее не ждало
             # конца прогона и не держало транзакцию во время LLM-вызова.
             await session.commit()
-            decisions.append(decision)
+            decisions.append(applied)
         except (ReviewError, ValueError) as exc:
             await session.rollback()
             logger.warning(
@@ -273,8 +299,8 @@ async def _decide(
     topic = facts.topic
 
     # Служебная тема переполнения объединяет разнородные навыки. Подтверждать
-    # или сливать её целиком нельзя — только ручной разбор.
-    if topic.category == "auto_review":
+    # или сливать её целиком нельзя — только разбирать кандидатов по одному.
+    if topic.category == "auto_review" and not facts.is_candidate:
         return AutoReviewDecision(
             topic_key=topic.key,
             action="keep",
@@ -422,7 +448,7 @@ def _review_prompt(facts: _TopicFacts, similar: Sequence[_SimilarTopic]) -> str:
         lines.append("- свидетельства:")
         lines.extend(f"  * {item}" for item in facts.evidence[:5])
     lines.append("")
-    lines.append("Ближайшие canonical-темы:")
+    lines.append("Ближайшие темы онтологии:")
     if similar:
         for item in similar[:TOP_CANDIDATES]:
             lines.append(
@@ -472,8 +498,13 @@ async def _apply(
     session: AsyncSession,
     facts: _TopicFacts,
     decision: AutoReviewDecision,
-) -> None:
-    """Применяет решение и фиксирует его в аудите."""
+    *,
+    extra_details: dict[str, Any] | None = None,
+) -> AutoReviewDecision:
+    """Применяет решение, фиксирует его в аудите и возвращает итоговое решение."""
+    if facts.is_candidate:
+        return await _apply_candidate(session, facts, decision)
+
     topic = facts.topic
     details = {
         "decision": decision.action,
@@ -485,6 +516,8 @@ async def _apply(
     }
     if decision.target_key:
         details["target_key"] = decision.target_key
+    if extra_details:
+        details.update(extra_details)
 
     if decision.action == "merge":
         if not decision.target_key:
@@ -506,11 +539,66 @@ async def _apply(
     else:
         record_review_action(session, "keep", topic, actor=AUTO_ACTOR, details=details)
 
+    # LLM была недоступна: не считаем тему проверенной, иначе она выпадет из
+    # очереди до появления новых упоминаний и вообще не получит ревью.
+    if decision.source == "fallback":
+        await session.flush()
+        return decision
+
     topic.auto_reviewed_at = datetime.now(UTC)
     topic.auto_review_decision = decision.action
     topic.auto_review_confidence = decision.confidence
     topic.auto_reviewed_occurrences = facts.occurrences
     await session.flush()
+    return decision
+
+
+async def _apply_candidate(
+    session: AsyncSession,
+    facts: _TopicFacts,
+    decision: AutoReviewDecision,
+) -> AutoReviewDecision:
+    """Применяет решение к отдельному навыку из темы переполнения.
+
+    `keep` только помечает кандидата, поэтому тема переполнения не считается
+    проверенной и остальные кандидаты получают шанс на следующем прогоне.
+    Для `approve` и `merge` кандидат сначала выносится в отдельную
+    provisional-тему и дальше идёт общим путём.
+    """
+    topic = facts.topic
+    candidate = facts.candidate
+    if candidate is None:
+        raise ReviewError("Для решения по кандидату нужен TopicCandidate")
+
+    details = {
+        "decision": decision.action,
+        "source": decision.source,
+        "confidence": decision.confidence,
+        "reason": decision.reason,
+        "candidate": candidate.name,
+        "overflow_topic": topic.key,
+        "occurrences": facts.occurrences,
+        "documents": facts.document_count,
+    }
+    if decision.target_key:
+        details["target_key"] = decision.target_key
+
+    if decision.action == "keep":
+        # При недоступной LLM кандидата не помечаем: следующий прогон должен
+        # попробовать снова, иначе навык навсегда останется без ревью.
+        if decision.source != "fallback":
+            candidate.status = "auto_kept"
+        record_review_action(session, "keep", topic, actor=AUTO_ACTOR, details=details)
+        await session.flush()
+        return decision
+
+    promoted = await detach_candidate_topic(session, topic, candidate)
+    return await _apply(
+        session,
+        replace(facts, topic=promoted, candidate=None),
+        replace(decision, topic_key=promoted.key),
+        extra_details=details,
+    )
 
 
 async def _set_match_method(
@@ -518,12 +606,15 @@ async def _set_match_method(
     topic_id: uuid.UUID,
     method: str,
 ) -> None:
-    """Обновляет метод сопоставления у навыков, пришедших из provisional-темы."""
+    """Обновляет метод сопоставления у навыков проверенной provisional-темы.
+
+    Навык мог попасть в provisional-тему не только через `provisional`, но и
+    через fuzzy/embedding. После решения он всё равно относится к автоматически
+    проверенной теме, поэтому метод обновляется для всех строк темы.
+    """
     for model in (ResumeSkill, VacancySkill):
         await session.execute(
-            update(model)
-            .where(model.topic_id == topic_id, model.match_method == "provisional")
-            .values(match_method=method)
+            update(model).where(model.topic_id == topic_id).values(match_method=method)
         )
 
 
@@ -563,6 +654,51 @@ async def _enrich_topic(
     topic.aliases = current_aliases
 
 
+async def _overflow_facts(session: AsyncSession, topic: Topic) -> list[_TopicFacts]:
+    """Строит факты по каждому непроверенному навыку темы переполнения."""
+    candidates = (
+        await session.scalars(
+            select(TopicCandidate).where(
+                TopicCandidate.topic_id == topic.id,
+                TopicCandidate.status.in_(("new", "auto_created")),
+            )
+        )
+    ).all()
+    return [_candidate_facts(topic, candidate) for candidate in candidates]
+
+
+def _candidate_facts(topic: Topic, candidate: TopicCandidate) -> _TopicFacts:
+    """Факты одного навыка из темы переполнения."""
+    sources, evidence = _source_stats(candidate.sources or [])
+    return _TopicFacts(
+        topic=topic,
+        names=(candidate.name,),
+        document_count=len(sources),
+        occurrences=max(1, candidate.occurrences or 1),
+        evidence=tuple(evidence),
+        candidate=candidate,
+    )
+
+
+def _source_stats(
+    sources: Sequence[Any],
+) -> tuple[set[tuple[str, str]], list[str]]:
+    """Считает уникальные документы и собирает свидетельства из источников."""
+    documents: set[tuple[str, str]] = set()
+    evidence: list[str] = []
+    for source in sources:
+        if not isinstance(source, dict):
+            continue
+        source_type = source.get("type")
+        source_id = source.get("id")
+        if source_type and source_id:
+            documents.add((str(source_type), str(source_id)))
+        text = _clean(source.get("evidence"), 240)
+        if text and text not in evidence:
+            evidence.append(text)
+    return documents, evidence
+
+
 async def _load_facts(session: AsyncSession, topic: Topic) -> _TopicFacts:
     """Собирает названия, упоминания и свидетельства по теме."""
     candidates = (
@@ -597,15 +733,10 @@ async def _load_facts(session: AsyncSession, topic: Topic) -> _TopicFacts:
     occurrences = 0
     for candidate in candidates:
         occurrences += max(1, candidate.occurrences or 1)
-        for source in candidate.sources or []:
-            if not isinstance(source, dict):
-                continue
-            source_type = source.get("type")
-            source_id = source.get("id")
-            if source_type and source_id:
-                sources.add((str(source_type), str(source_id)))
-            text = _clean(source.get("evidence"), 240)
-            if text and text not in evidence:
+        candidate_sources, candidate_evidence = _source_stats(candidate.sources or [])
+        sources |= candidate_sources
+        for text in candidate_evidence:
+            if text not in evidence:
                 evidence.append(text)
 
     return _TopicFacts(
