@@ -170,7 +170,7 @@ provisional-тем на документ. Если лимит исчерпан, 
 3. **LLM только для спорных тем.** DeepSeek получает название, свидетельства и
    top-5 ближайших тем онтологии (canonical и provisional) и выбирает
    `approve` / `merge` / `keep`. Решение применяется, только если `confidence`
-   не ниже `ONTOLOGY_AUTO_REVIEW_MIN_CONFIDENCE` (по умолчанию `0.75`); `merge`
+   не ниже `ONTOLOGY_AUTO_REVIEW_MIN_CONFIDENCE` (по умолчанию `0.7`); `merge`
    разрешён только в тему из показанного списка.
 4. **Безопасный fallback.** Всё остальное остаётся `provisional`:
    `auto_review_decision = keep`, `auto_review_confidence`,
