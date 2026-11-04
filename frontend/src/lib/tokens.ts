@@ -1,9 +1,11 @@
 const ACCESS_TOKEN_KEY = 'agenthr.access_token'
 const REFRESH_TOKEN_KEY = 'agenthr.refresh_token'
+const AUTH_EVENT = 'agenthr:auth-changed'
 
 export function saveTokens(tokens: { access_token: string; refresh_token: string }): void {
   localStorage.setItem(ACCESS_TOKEN_KEY, tokens.access_token)
   localStorage.setItem(REFRESH_TOKEN_KEY, tokens.refresh_token)
+  notifyAuthChanged()
 }
 
 export function getAccessToken(): string | null {
@@ -13,4 +15,19 @@ export function getAccessToken(): string | null {
 export function clearTokens(): void {
   localStorage.removeItem(ACCESS_TOKEN_KEY)
   localStorage.removeItem(REFRESH_TOKEN_KEY)
+  notifyAuthChanged()
+}
+
+/** Подписка на смену токенов: шапка обновляется сразу после входа или выхода. */
+export function subscribeAuth(listener: () => void): () => void {
+  window.addEventListener(AUTH_EVENT, listener)
+  window.addEventListener('storage', listener)
+  return () => {
+    window.removeEventListener(AUTH_EVENT, listener)
+    window.removeEventListener('storage', listener)
+  }
+}
+
+function notifyAuthChanged(): void {
+  window.dispatchEvent(new Event(AUTH_EVENT))
 }
