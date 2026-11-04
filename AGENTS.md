@@ -27,7 +27,9 @@ LLM + Agent Harness + Tool Calling + Knowledge Graph + Persistent Memory + Adapt
 - **Онтология:** этапы 1–4 закрыты — 89 canonical-тем, provisional-темы,
   backfill, CLI ревью, автоматическое ревью, `coverage_all` / `confirmed_readiness`,
   группы `AND/OR`, `criticality`.
-- **Следующий этап онтологии:** `evidence_type` / `verified_level`.
+- **Assessment MVP:** 160 вопросов по 8 темам (20 на тему), тест из 10 вопросов,
+  `claimed_level` / `verified_level`, один тест на тему.
+- **Следующий этап:** адаптивный выбор вопросов и открытые ответы.
 - **Следующая веха продукта:** M3 — план подготовки и сессия интервью.
 
 Подробный статус и план: [`docs/ONTOLOGY.md`](docs/ONTOLOGY.md),
@@ -128,6 +130,7 @@ cd backend
 uv run python -m app.ontology.seed
 uv run python -m app.ontology.review list
 uv run python -m app.ontology.review auto
+uv run python -m app.assessment.seed
 ```
 
 ## 7. Правила работы агента
@@ -151,6 +154,7 @@ uv run python -m app.ontology.review auto
 | [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) | архитектура, компоненты, потоки данных, модель данных | перед изменением архитектуры |
 | [`docs/PROJECT_MAP.md`](docs/PROJECT_MAP.md) | карта модулей и файлов, миграции, точки входа | перед поиском кода |
 | [`docs/ONTOLOGY.md`](docs/ONTOLOGY.md) | онтология, provisional-темы, gap-анализ, план этапов | при работе с навыками и оценкой |
+| [`docs/ASSESSMENT.md`](docs/ASSESSMENT.md) | мини-тесты, банк вопросов, скоринг | при работе с проверкой навыков |
 | [`docs/ROADMAP.md`](docs/ROADMAP.md) | вехи, 8-недельный план, экраны, тестирование, риски | при планировании |
 | [`docs/DECISIONS.md`](docs/DECISIONS.md) | зафиксированные решения и компромиссы | перед спорным выбором |
 | [`docs/GLOSSARY.md`](docs/GLOSSARY.md) | термины проекта | при незнакомом термине |

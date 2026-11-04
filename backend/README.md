@@ -51,7 +51,11 @@ docker compose up -d --build    # agenthr-api на http://127.0.0.1:8000
 - `GET /profile` — профиль знаний: уровень по темам онтологии + навыки вне онтологии;
 - `GET /profile/gaps?vacancy_id=...` — разрывы между вакансией и профилем;
 - `POST /analysis` — совместный анализ загруженных документов `{vacancy_id, resume_id}`:
-  документы, профиль и разрывы одним ответом (без вызовов LLM — только чтение и расчёт).
+  документы, профиль и разрывы одним ответом (без вызовов LLM — только чтение и расчёт);
+- `GET /assessments/topics` — темы с доступными мини-тестами;
+- `POST /assessments/{topic_key}/start` — старт или продолжение попытки;
+- `POST /assessments/{attempt_id}/answers` — ответ на вопрос;
+- `POST /assessments/{attempt_id}/finish` — результат, разбор и обновление `verified_level`.
 
 Доменные эндпоинты требуют access-токен и изолированы по владельцу: чужой документ
 возвращает 404, а не 403 — существование чужих записей не раскрывается.
@@ -129,6 +133,9 @@ canonical-темой «Прочее (авто-ревью)». Provisional-ста�
 
 - `app/services/documents.py` — извлечение текста из PDF/DOCX для `POST /resumes/upload`:
   лимит 5 МБ, защита от zip-бомб, отказ для сканов без текстового слоя.
+- `app/services/assessment.py` — мини-тесты: старт, ответы, детерминированный
+  скоринг, `verified_level`; банк — 20 вопросов на тему (`questions.py` +
+  `questions_extra.py`), тест — 10 вопросов (по 2 на сложность), один раз на тему.
 - `app/services/analysis.py` — извлечение требований вакансии и навыков резюме
   (`extract_vacancy_requirements`, `extract_resume_skills`) через структурированный вывод LLM:
   JSON Schema, значения вне 0..100 обрезаются, пустые навыки отбрасываются.
@@ -161,6 +168,8 @@ canonical-темой «Прочее (авто-ревью)». Provisional-ста�
 - `coverage_all` — взвешенное покрытие всех требований, включая provisional;
   `confirmed_readiness` — только canonical-требования (`null`, если их нет).
   Дополнительно отдаются `provisional_count`, `provisional_weight`, `confirmed_weight`.
+- `claimed_level` — уровень из резюме, `verified_level` — из мини-теста;
+  `proficiency` — эффективный уровень для readiness.
 - Группы требований: `OR` засчитывается по лучшему варианту, `AND` — по минимуму;
   `requirement_group` / `requirement_logic` сохраняются в `vacancy_skills`.
 - `criticality` (`must_have` / `nice_to_have`) сохраняется в `vacancy_skills`;

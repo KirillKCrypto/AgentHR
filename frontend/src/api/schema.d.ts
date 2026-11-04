@@ -259,6 +259,86 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/assessments/topics": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Read Assessment Topics
+         * @description Темы, для которых доступны мини-тесты.
+         */
+        get: operations["read_assessment_topics_assessments_topics_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/assessments/{topic_key}/start": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Start Topic Assessment
+         * @description Стартует тест или возвращает активную попытку.
+         */
+        post: operations["start_topic_assessment_assessments__topic_key__start_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/assessments/{attempt_id}/answers": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Answer Assessment Question
+         * @description Принимает ответ на вопрос.
+         */
+        post: operations["answer_assessment_question_assessments__attempt_id__answers_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/assessments/{attempt_id}/finish": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Finish Attempt
+         * @description Завершает тест и возвращает разбор.
+         */
+        post: operations["finish_attempt_assessments__attempt_id__finish_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/health": {
         parameters: {
             query?: never;
@@ -328,6 +408,149 @@ export interface components {
             resume: components["schemas"]["ResumeRead"];
             profile: components["schemas"]["ProfileRead"];
             gaps: components["schemas"]["GapAnalysisRead"];
+        };
+        /**
+         * AssessmentAnswerRead
+         * @description Прогресс попытки.
+         */
+        AssessmentAnswerRead: {
+            /**
+             * Question Id
+             * Format: uuid
+             */
+            question_id: string;
+            /** Answered Count */
+            answered_count: number;
+            /** Total */
+            total: number;
+        };
+        /**
+         * AssessmentAnswerRequest
+         * @description Ответ на вопрос.
+         */
+        AssessmentAnswerRequest: {
+            /**
+             * Question Id
+             * Format: uuid
+             */
+            question_id: string;
+            /** Answer Key */
+            answer_key: string;
+        };
+        /**
+         * AssessmentFinishRead
+         * @description Результат теста.
+         */
+        AssessmentFinishRead: {
+            /**
+             * Attempt Id
+             * Format: uuid
+             */
+            attempt_id: string;
+            /** Topic Key */
+            topic_key?: string | null;
+            /** Topic Name */
+            topic_name?: string | null;
+            /** Test Level */
+            test_level: number;
+            /** Confidence */
+            confidence: number;
+            /** Score */
+            score: number;
+            /** Correct Count */
+            correct_count: number;
+            /** Total */
+            total: number;
+            /** Items */
+            items: components["schemas"]["AssessmentResultItem"][];
+        };
+        /**
+         * AssessmentOption
+         * @description Вариант ответа.
+         */
+        AssessmentOption: {
+            /** Key */
+            key: string;
+            /** Text */
+            text: string;
+        };
+        /**
+         * AssessmentQuestionRead
+         * @description Вопрос без правильного ответа.
+         */
+        AssessmentQuestionRead: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Difficulty */
+            difficulty: number;
+            /** Kind */
+            kind: string;
+            /** Prompt */
+            prompt: string;
+            /** Options */
+            options: components["schemas"]["AssessmentOption"][];
+        };
+        /**
+         * AssessmentResultItem
+         * @description Разбор одного вопроса.
+         */
+        AssessmentResultItem: {
+            /**
+             * Question Id
+             * Format: uuid
+             */
+            question_id: string;
+            /** Prompt */
+            prompt: string;
+            /** Answer Key */
+            answer_key?: string | null;
+            /** Correct Key */
+            correct_key: string;
+            /** Is Correct */
+            is_correct: boolean;
+            /** Explanation */
+            explanation: string;
+        };
+        /**
+         * AssessmentStartRead
+         * @description Старт попытки.
+         */
+        AssessmentStartRead: {
+            /**
+             * Attempt Id
+             * Format: uuid
+             */
+            attempt_id: string;
+            /** Topic Key */
+            topic_key: string;
+            /** Topic Name */
+            topic_name: string;
+            /** Questions */
+            questions: components["schemas"]["AssessmentQuestionRead"][];
+        };
+        /**
+         * AssessmentTopicRead
+         * @description Доступная тема теста и статус прохождения.
+         */
+        AssessmentTopicRead: {
+            /** Topic Key */
+            topic_key: string;
+            /** Topic Name */
+            topic_name: string;
+            /** Question Count */
+            question_count: number;
+            /**
+             * Completed
+             * @default false
+             */
+            completed: boolean;
+            /** Test Level */
+            test_level?: number | null;
+            /** Attempt Id */
+            attempt_id?: string | null;
         };
         /** Body_upload_resume_resumes_upload_post */
         Body_upload_resume_resumes_upload_post: {
@@ -501,6 +724,15 @@ export interface components {
             confidence: number;
             /** Source */
             source: string;
+            /** Claimed Level */
+            claimed_level?: number | null;
+            /** Verified Level */
+            verified_level?: number | null;
+            /**
+             * Evidence Strength
+             * @default 0.4
+             */
+            evidence_strength: number;
             /** Last Assessed */
             last_assessed?: string | null;
             /**
@@ -1184,6 +1416,123 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["AnalysisResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    read_assessment_topics_assessments_topics_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AssessmentTopicRead"][];
+                };
+            };
+        };
+    };
+    start_topic_assessment_assessments__topic_key__start_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                topic_key: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AssessmentStartRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    answer_assessment_question_assessments__attempt_id__answers_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                attempt_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AssessmentAnswerRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AssessmentAnswerRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    finish_attempt_assessments__attempt_id__finish_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                attempt_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AssessmentFinishRead"];
                 };
             };
             /** @description Validation Error */

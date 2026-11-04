@@ -63,7 +63,8 @@ export function ResumeUploadCard({
 
       await queryClient.invalidateQueries({ queryKey: ['profile'] })
       setSuccess(
-        `Резюме сохранено. Извлечено навыков: ${resume.skills.length}. Профиль обновлён.`,
+        `Резюме сохранено. Извлечено навыков: ${resume.skills.length}. ` +
+          'Профиль обновлён — проверьте навыки в блоке ниже.',
       )
       setText('')
       setFile(null)

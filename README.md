@@ -15,6 +15,7 @@ LLM + Agent Harness + Tool Calling + Knowledge Graph + Persistent Memory + Adapt
 - загрузка резюме текстом или файлом PDF/DOCX, профиль знаний с коэффициентом 0–100;
 - загрузка вакансии отдельно: извлечение требований и сравнение с готовым профилем;
 - извлечение навыков и нормализация к онтологии;
+- мини-тесты по ключевым навыкам: `claimed_level` vs `verified_level`;
 - gap-анализ: требуется / в профиле / разрыв / достаточно;
 - provisional-темы для новых навыков, автоматическое ревью;
 - группы требований `AND/OR` и критичность `must_have` / `nice_to_have`;
@@ -62,7 +63,9 @@ npm.cmd run dev
 
 M0–M2 закрыты. Онтология: этапы 1–4 закрыты (provisional-темы, backfill,
 автоматическое и ручное ревью, две метрики покрытия, `AND/OR`, criticality).
-Следующий этап — evidence/verified level; следующая продуктовая веха — M3.
+Добавлены мини-тесты: 8 тем × 20 вопросов, тест из 10 вопросов,
+`claimed_level` и `verified_level`, один тест на тему.
+Следующий этап — расширение банка и адаптивные тесты; следующая веха — M3.
 
 ## Документация
 
@@ -71,6 +74,7 @@ M0–M2 закрыты. Онтология: этапы 1–4 закрыты (pro
 - [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) — архитектура и потоки данных.
 - [`docs/PROJECT_MAP.md`](docs/PROJECT_MAP.md) — карта модулей и файлов.
 - [`docs/ONTOLOGY.md`](docs/ONTOLOGY.md) — онтология и оценка.
+- [`docs/ASSESSMENT.md`](docs/ASSESSMENT.md) — мини-тесты и verified level.
 - [`docs/ROADMAP.md`](docs/ROADMAP.md) — план, экраны, тесты, риски.
 - [`docs/DECISIONS.md`](docs/DECISIONS.md) — принятые решения.
 - [`docs/GLOSSARY.md`](docs/GLOSSARY.md) — термины.

@@ -26,16 +26,17 @@ backend/
 │   ├── api/
 │   │   ├── deps.py             auth, LLM, embedder
 │   │   ├── mappers.py          доменные объекты → Pydantic
-│   │   └── routes/             auth, users, vacancies, resumes, profile, analysis
+│   │   └── routes/             auth, users, vacancies, resumes, profile, analysis, assessments
 │   ├── core/                   config, JWT/пароли
 │   ├── db/                     async engine, Base
 │   ├── embeddings/             none/local/mock эмбеддинги
 │   ├── llm/                    base, mock, openai (DeepSeek/OpenAI-совместимый), factory
-│   ├── models/                 User, AgentAction, Topic, Vacancy, Resume, ...
+│   ├── assessment/             вопросы и сид мини-тестов
+│   ├── models/                 User, AgentAction, Topic, Vacancy, Resume, Assessment...
 │   ├── ontology/               topics.py, seed.py, graph.py, review.py
 │   ├── schemas/                Pydantic-схемы API
 │   └── services/               analysis, documents, normalization, profile, topics,
-│                               ontology_review, ontology_auto_review
+│                               ontology_review, ontology_auto_review, assessment
 ├── alembic/versions/           миграции
 ├── docker/entrypoint.sh        миграции + uvicorn
 ├── Dockerfile
@@ -54,6 +55,7 @@ backend/
 | Provisional-темы / resolver | `app/services/topics.py` |
 | Ручное ревью | `app/services/ontology_review.py`, `app/ontology/review.py` |
 | Автоматическое ревью | `app/services/ontology_auto_review.py` |
+| Мини-тесты навыков | `app/assessment/`, `app/services/assessment.py` |
 | Профиль и gap-анализ | `app/services/profile.py` |
 | REST API | `app/api/routes/` |
 | Agent Harness и tools | `app/agent/` |
@@ -105,6 +107,8 @@ infra/
 8. `e2f3a4b5c6d7` — группы требований `AND/OR`
 9. `f3a4b5c6d7e8` — критичность `must_have` / `nice_to_have`
 10. `a4b5c6d7e8f9` — поля автоматического ревью тем
+11. `b5c6d7e8f9a0` — assessment: вопросы, попытки, ответы, claimed/verified
+12. `c6d7e8f9a0b1` — запрет повторного завершённого теста
 
 Новое состояние — только через новую миграцию.
 
@@ -119,6 +123,7 @@ infra/
 | Сид онтологии | `cd backend && uv run python -m app.ontology.seed` |
 | Ревью онтологии | `cd backend && uv run python -m app.ontology.review list` |
 | Авто-ревью | `cd backend && uv run python -m app.ontology.review auto` |
+| Сид тестов | `cd backend && uv run python -m app.assessment.seed` |
 | Тесты | `cd backend && uv run pytest -q` |
 | Frontend build | `cd frontend && npm.cmd run build` |
 

@@ -11,6 +11,7 @@ from sqlalchemy import select, text
 from sqlalchemy.exc import SQLAlchemyError
 
 from app.api.deps import get_embedder, get_llm_provider
+from app.assessment.seed import seed_assessment_questions
 from app.db.session import async_session_factory, engine
 from app.llm.base import (
     ChatMessage,
@@ -26,8 +27,7 @@ from app.ontology.seed import seed_ontology
 PASSWORD = "correct-horse-battery-staple"
 
 VACANCY_TEXT = (
-    "Ищем Python-разработчика. Опыт Python от 3 лет, знание PostgreSQL, "
-    "Kafka будет плюсом."
+    "Ищем Python-разработчика. Опыт Python от 3 лет, знание PostgreSQL, Kafka будет плюсом."
 )
 RESUME_TEXT = "3 года на Python. Писал SQL-запросы. Собирал Docker-образы."
 
@@ -138,6 +138,7 @@ async def seeded_db() -> AsyncGenerator[None]:
 
     async with async_session_factory() as session:
         await seed_ontology(session)
+        await seed_assessment_questions(session)
 
     yield
 
@@ -160,9 +161,7 @@ async def _register_user(
 ) -> ApiUser:
     """Регистрирует пользователя через API и возвращает его контекст."""
     email = f"analysis-{uuid4().hex}@example.com"
-    response = await client.post(
-        "/auth/register", json={"email": email, "password": PASSWORD}
-    )
+    response = await client.post("/auth/register", json={"email": email, "password": PASSWORD})
     assert response.status_code == 201
     user_id = response.json()["id"]
 

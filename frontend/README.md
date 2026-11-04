@@ -27,7 +27,8 @@ npm run generate:api # обновить src/api/schema.d.ts из OpenAPI (нуж
 - `src/pages/` — экраны: `DashboardPage` (`/`), `LoginPage` (`/login`),
   `VacancyUploadPage` (`/vacancies/new`), `ProfilePage` (`/profile`), `NotFoundPage` (404)
 - `src/components/` — `ResumeUploadCard` (текст или PDF/DOCX), `VacancyAssessment`
-  (готовность, коэффициенты и разрывы), `ui/` — компоненты shadcn/ui
+  (готовность, коэффициенты и разрывы), `SkillAssessmentCard` (тест из 10 вопросов,
+  один раз на тему, с разбором), `ui/` — компоненты shadcn/ui
 - `src/api/` — `client.ts` (единый клиент: auth, вакансии, резюме, профиль, разрывы,
   `/analysis`, `ApiError`), `schema.d.ts` (типы из OpenAPI, генерируется)
 - `src/lib/` — `tokens.ts` (токены в localStorage), `useAuthToken.ts` (токен + сброс сессии
@@ -49,6 +50,8 @@ npm run generate:api # обновить src/api/schema.d.ts из OpenAPI (нуж
   в этой форме не требуется. Если профиль пуст, экран предлагает загрузить резюме.
 - Профиль и сохранённые вакансии: `/profile` → `GET /profile` + `GET /vacancies`; для
   выбранной вакансии — `GET /profile/gaps`; параметр `?vacancy=<id>` предвыбирает вакансию.
+- Проверка навыков: `/profile` → `GET /assessments/topics` → `POST /assessments/{topic}/start`
+  → ответы → `POST /assessments/{attempt}/finish`; обновляет `verified_level` в профиле.
 - Явные состояния loading / error / empty / ready на всех доменных экранах.
 
 ## Соглашения
