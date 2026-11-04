@@ -152,6 +152,29 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/resumes/upload": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Upload Resume
+         * @description Принимает PDF/DOCX, извлекает текст и сохраняет резюме.
+         *
+         *     Сам файл не сохраняется: в БД попадает только текст. Сканы без текстового
+         *     слоя отклоняются с понятной ошибкой.
+         */
+        post: operations["upload_resume_resumes_upload_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/resumes/{resume_id}": {
         parameters: {
             query?: never;
@@ -305,6 +328,13 @@ export interface components {
             resume: components["schemas"]["ResumeRead"];
             profile: components["schemas"]["ProfileRead"];
             gaps: components["schemas"]["GapAnalysisRead"];
+        };
+        /** Body_upload_resume_resumes_upload_post */
+        Body_upload_resume_resumes_upload_post: {
+            /** File */
+            file: string;
+            /** Title */
+            title?: string | null;
         };
         /**
          * GapAnalysisRead
@@ -996,6 +1026,39 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": components["schemas"]["ResumeCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ResumeRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    upload_resume_resumes_upload_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "multipart/form-data": components["schemas"]["Body_upload_resume_resumes_upload_post"];
             };
         };
         responses: {

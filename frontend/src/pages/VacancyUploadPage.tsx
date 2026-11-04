@@ -1,18 +1,16 @@
-import { useQueryClient } from '@tanstack/react-query'
-import { useState, type FormEvent } from 'react'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { useEffect, useState, type FormEvent } from 'react'
 import { Link } from 'react-router'
 
 import {
   ApiError,
-  createResume,
   createVacancy,
-  runAnalysis,
-  type AnalysisResponse,
+  fetchGaps,
+  fetchProfile,
   type GapAnalysisRead,
-  type SkillRead,
+  type VacancyRead,
 } from '@/api/client'
-import { Badge } from '@/components/ui/badge'
-import { Button, buttonVariants } from '@/components/ui/button'
+import { buttonVariants, Button } from '@/components/ui/button'
 import {
   Card,
   CardContent,
@@ -22,27 +20,10 @@ import {
 } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { Progress } from '@/components/ui/progress'
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from '@/components/ui/table'
 import { Textarea } from '@/components/ui/textarea'
+import { VacancyAssessment } from '@/components/VacancyAssessment'
 import { errorMessage } from '@/lib/errors'
-import { matchMethodLabel } from '@/lib/labels'
 import { useAuthToken } from '@/lib/useAuthToken'
-
-type Stage = 'vacancy' | 'resume' | 'analysis'
-
-const STAGE_LABELS: Record<Stage, string> = {
-  vacancy: 'Анализируем вакансию…',
-  resume: 'Анализируем резюме…',
-  analysis: 'Считаем разрывы…',
-}
 
 export default function VacancyUploadPage() {
   const queryClient = useQueryClient()
@@ -50,26 +31,40 @@ export default function VacancyUploadPage() {
   const [title, setTitle] = useState('')
   const [company, setCompany] = useState('')
   const [vacancyText, setVacancyText] = useState('')
-  const [resumeText, setResumeText] = useState('')
-  const [stage, setStage] = useState<Stage | null>(null)
+  const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [analysis, setAnalysis] = useState<AnalysisResponse | null>(null)
+  const [vacancy, setVacancy] = useState<VacancyRead | null>(null)
+  const [gaps, setGaps] = useState<GapAnalysisRead | null>(null)
+
+  const profileQuery = useQuery({
+    queryKey: ['profile', token],
+    queryFn: () => fetchProfile(token as string),
+    enabled: token !== null,
+    retry: false,
+  })
+
+  useEffect(() => {
+    if (profileQuery.error instanceof ApiError && profileQuery.error.status === 401) {
+      expire()
+    }
+  }, [profileQuery.error, expire])
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
     if (token === null) {
       return
     }
-    if (vacancyText.trim() === '' || resumeText.trim() === '') {
-      setError('Вставьте текст вакансии и резюме.')
+    if (vacancyText.trim() === '') {
+      setError('Вставьте текст вакансии.')
       return
     }
 
     setError(null)
-    setAnalysis(null)
+    setVacancy(null)
+    setGaps(null)
+    setBusy(true)
     try {
-      setStage('vacancy')
-      const vacancy = await createVacancy(
+      const created = await createVacancy(
         {
           title: title.trim() || null,
           company: company.trim() || null,
@@ -77,21 +72,10 @@ export default function VacancyUploadPage() {
         },
         token,
       )
-
-      setStage('resume')
-      const resume = await createResume({ raw_text: resumeText.trim() }, token)
-
-      setStage('analysis')
-      const result = await runAnalysis(
-        { vacancy_id: vacancy.id, resume_id: resume.id },
-        token,
-      )
-      setAnalysis(result)
-
-      await Promise.all([
-        queryClient.invalidateQueries({ queryKey: ['profile'] }),
-        queryClient.invalidateQueries({ queryKey: ['vacancies'] }),
-      ])
+      setVacancy(created)
+      const report = await fetchGaps(created.id, token)
+      setGaps(report)
+      await queryClient.invalidateQueries({ queryKey: ['vacancies'] })
     } catch (err) {
       if (err instanceof ApiError && err.status === 401) {
         expire()
@@ -99,7 +83,7 @@ export default function VacancyUploadPage() {
       }
       setError(errorMessage(err))
     } finally {
-      setStage(null)
+      setBusy(false)
     }
   }
 
@@ -107,8 +91,8 @@ export default function VacancyUploadPage() {
     return (
       <Card>
         <CardHeader>
-          <CardTitle>Новая подготовка</CardTitle>
-          <CardDescription>Войдите, чтобы загрузить вакансию и резюме.</CardDescription>
+          <CardTitle>Проверка вакансии</CardTitle>
+          <CardDescription>Войдите, чтобы проверить вакансию по своему профилю.</CardDescription>
         </CardHeader>
         <CardContent>
           <Link to="/login" className={buttonVariants()}>
@@ -119,20 +103,30 @@ export default function VacancyUploadPage() {
     )
   }
 
-  const submitting = stage !== null
+  const hasProfile = (profileQuery.data?.topics.length ?? 0) > 0
 
   return (
     <div className="flex flex-col gap-6">
       <Card>
         <CardHeader>
-          <CardTitle>Новая подготовка</CardTitle>
+          <CardTitle>Проверка вакансии</CardTitle>
           <CardDescription>
-            Вставьте текст вакансии и резюме — AgentHR извлечёт навыки, соберёт профиль
-            знаний и покажет разрывы.
+            Шаг 2. Вставьте описание вакансии — AgentHR извлечёт требования, сопоставит их с
+            вашим профилем и покажет, каких уровней не хватает.
           </CardDescription>
         </CardHeader>
         <CardContent>
           <form className="flex flex-col gap-5" onSubmit={handleSubmit}>
+            {!profileQuery.isPending && !hasProfile ? (
+              <p className="text-sm text-muted-foreground">
+                Профиль пока пуст. Сначала{' '}
+                <Link to="/profile" className="underline underline-offset-4">
+                  загрузите резюме
+                </Link>
+                , иначе все требования будут разрывами.
+              </p>
+            ) : null}
+
             <div className="grid grid-cols-2 gap-4">
               <div className="flex flex-col gap-2">
                 <Label htmlFor="vacancy-title">Название вакансии</Label>
@@ -159,266 +153,30 @@ export default function VacancyUploadPage() {
               <Textarea
                 id="vacancy-text"
                 required
-                rows={8}
+                rows={10}
                 placeholder="Скопируйте описание вакансии: обязанности, требования, технологии."
                 value={vacancyText}
                 onChange={(event) => setVacancyText(event.target.value)}
               />
             </div>
 
-            <div className="flex flex-col gap-2">
-              <Label htmlFor="resume-text">Текст резюме</Label>
-              <Textarea
-                id="resume-text"
-                required
-                rows={8}
-                placeholder="Вставьте текст резюме: опыт, проекты, технологии."
-                value={resumeText}
-                onChange={(event) => setResumeText(event.target.value)}
-              />
-            </div>
-
             {error ? <p className="text-sm text-destructive">{error}</p> : null}
 
             <div className="flex flex-wrap items-center gap-3">
-              <Button type="submit" disabled={submitting}>
-                {stage ? STAGE_LABELS[stage] : 'Анализировать'}
+              <Button type="submit" disabled={busy}>
+                {busy ? 'Проверяем вакансию…' : 'Проверить вакансию'}
               </Button>
-              {analysis ? (
-                <Button type="button" variant="outline" onClick={() => setAnalysis(null)}>
-                  Скрыть результат
-                </Button>
-              ) : null}
               <span className="text-xs text-muted-foreground">
-                Парсинг PDF/DOCX не поддерживается — только текст.
+                Парсинг файлов вакансии не поддерживается — только текст.
               </span>
             </div>
           </form>
         </CardContent>
       </Card>
 
-      {analysis ? <AnalysisResult analysis={analysis} /> : null}
+      {vacancy && gaps ? (
+        <VacancyAssessment vacancy={vacancy} gaps={gaps} hasProfile={hasProfile} />
+      ) : null}
     </div>
-  )
-}
-
-function AnalysisResult({ analysis }: { analysis: AnalysisResponse }) {
-  const { vacancy, resume, gaps } = analysis
-  const coverage = Math.round(gaps.coverage_all * 100)
-  const confirmed =
-    gaps.confirmed_readiness === null || gaps.confirmed_readiness === undefined
-      ? null
-      : Math.round(gaps.confirmed_readiness * 100)
-  const satisfied = gaps.items.filter((item) => item.satisfied).length
-
-  return (
-    <div className="flex flex-col gap-6">
-      <Card>
-        <CardHeader>
-          <CardTitle>Покрытие требований</CardTitle>
-          <CardDescription>
-            {vacancy.title ?? 'Без названия'}
-            {vacancy.company ? ` · ${vacancy.company}` : ''}
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="flex flex-col gap-4">
-          <div className="grid gap-4 sm:grid-cols-2">
-            <div className="flex flex-col gap-1">
-              <span className="text-3xl font-medium">{coverage}%</span>
-              <span className="text-sm text-muted-foreground">все требования</span>
-              <Progress value={coverage} />
-            </div>
-            <div className="flex flex-col gap-1">
-              <span className="text-3xl font-medium">
-                {confirmed === null ? '—' : `${confirmed}%`}
-              </span>
-              <span className="text-sm text-muted-foreground">
-                подтверждённая готовность
-              </span>
-              {confirmed === null ? (
-                <span className="text-xs text-muted-foreground">
-                  нет подтверждённых требований
-                </span>
-              ) : (
-                <Progress value={confirmed} />
-              )}
-            </div>
-          </div>
-          <div className="flex items-end justify-between">
-            <span className="text-sm text-muted-foreground">
-              {satisfied} из {gaps.items.length} требований закрыто
-            </span>
-          </div>
-          {gaps.provisional_count > 0 ? (
-            <p className="text-sm text-muted-foreground">
-              {gaps.provisional_count} требований опираются на непроверенные темы (вес{' '}
-              {gaps.provisional_weight.toFixed(2)}). Они входят в покрытие, но не в
-              подтверждённую готовность.
-            </p>
-          ) : null}
-          {gaps.critical_gap_count > 0 ? (
-            <p className="text-sm text-destructive">
-              {gaps.critical_gap_count} обязательных требований не закрыто.
-            </p>
-          ) : null}
-          {gaps.unmatched_count > 0 ? (
-            <p className="text-sm text-muted-foreground">
-              {gaps.unmatched_count} навык(ов) вне онтологии — показаны в разрывах,
-              но не входят в покрытие.
-            </p>
-          ) : null}
-          <div>
-            <Link to="/profile" className={buttonVariants({ variant: 'outline' })}>
-              Открыть профиль знаний
-            </Link>
-          </div>
-        </CardContent>
-      </Card>
-
-      <SkillsCard title="Требования вакансии" skills={vacancy.skills} showWeight />
-
-      <GapsCard gaps={gaps} />
-
-      <SkillsCard title="Навыки из резюме" skills={resume.skills} />
-    </div>
-  )
-}
-
-function SkillsCard({
-  title,
-  skills,
-  showWeight = false,
-}: {
-  title: string
-  skills: SkillRead[]
-  showWeight?: boolean
-}) {
-  return (
-    <Card>
-      <CardHeader>
-        <CardTitle>{title}</CardTitle>
-      </CardHeader>
-      <CardContent>
-        {skills.length === 0 ? (
-          <p className="text-sm text-muted-foreground">Навыки не найдены.</p>
-        ) : (
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Навык</TableHead>
-                <TableHead>Тема</TableHead>
-                <TableHead>Уровень</TableHead>
-                {showWeight ? <TableHead>Вес</TableHead> : null}
-                <TableHead>Метод</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {skills.map((skill) => (
-                <TableRow key={skill.id}>
-                  <TableCell>{skill.raw_name}</TableCell>
-                  <TableCell>
-                    <div className="flex flex-wrap items-center gap-2">
-                      {skill.topic ? (
-                        skill.topic.name
-                      ) : (
-                        <Badge variant="secondary">вне онтологии</Badge>
-                      )}
-                      {skill.topic?.status === 'provisional' ? (
-                        <Badge variant="secondary">на проверке</Badge>
-                      ) : null}
-                    </div>
-                  </TableCell>
-                  <TableCell>{skill.level}</TableCell>
-                  {showWeight ? (
-                    <TableCell>
-                      {skill.weight === null || skill.weight === undefined
-                        ? '—'
-                        : skill.weight.toFixed(2)}
-                    </TableCell>
-                  ) : null}
-                  <TableCell className="text-muted-foreground">
-                    {matchMethodLabel(skill.match_method)}
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        )}
-      </CardContent>
-    </Card>
-  )
-}
-
-function GapsCard({ gaps }: { gaps: GapAnalysisRead }) {
-  return (
-    <Card>
-      <CardHeader>
-        <CardTitle>Разрывы</CardTitle>
-        <CardDescription>
-          Чем больше разрыв, тем важнее тема для подготовки.
-        </CardDescription>
-      </CardHeader>
-      <CardContent>
-        {gaps.items.length === 0 ? (
-          <p className="text-sm text-muted-foreground">Требований в вакансии нет.</p>
-        ) : (
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Навык</TableHead>
-                <TableHead>Тема</TableHead>
-                <TableHead>Требуется</TableHead>
-                <TableHead>В профиле</TableHead>
-                <TableHead>Разрыв</TableHead>
-                <TableHead>Критичность</TableHead>
-                <TableHead>Логика</TableHead>
-                <TableHead>Статус</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {gaps.items.map((item) => (
-                <TableRow key={item.skill_name}>
-                  <TableCell>{item.skill_name}</TableCell>
-                  <TableCell>
-                    <div className="flex flex-wrap items-center gap-2">
-                      {item.topic_name ?? (
-                        <Badge variant="outline">вне онтологии</Badge>
-                      )}
-                      {item.topic_status === 'provisional' ? (
-                        <Badge variant="secondary">на проверке</Badge>
-                      ) : null}
-                    </div>
-                  </TableCell>
-                  <TableCell>{item.required_level}</TableCell>
-                  <TableCell>{item.user_level}</TableCell>
-                  <TableCell>{item.gap}</TableCell>
-                  <TableCell>
-                    {item.criticality === 'must_have' ? (
-                      <Badge>обязательно</Badge>
-                    ) : (
-                      <Badge variant="outline">желательно</Badge>
-                    )}
-                  </TableCell>
-                  <TableCell>
-                    {item.requirement_logic === 'SINGLE' ? (
-                      <span className="text-muted-foreground">—</span>
-                    ) : (
-                      <Badge variant="outline">{item.requirement_logic}</Badge>
-                    )}
-                  </TableCell>
-                  <TableCell>
-                    {item.satisfied ? (
-                      <Badge>закрыто</Badge>
-                    ) : (
-                      <Badge variant="destructive">разрыв</Badge>
-                    )}
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        )}
-      </CardContent>
-    </Card>
   )
 }

@@ -20,6 +20,7 @@ import {
   CardTitle,
 } from '@/components/ui/card'
 import { Progress } from '@/components/ui/progress'
+import { ResumeUploadCard } from '@/components/ResumeUploadCard'
 import {
   Table,
   TableBody,
@@ -150,13 +151,13 @@ export default function ProfilePage() {
         <CardHeader>
           <CardTitle>Профиль знаний</CardTitle>
           <CardDescription>
-            Оценки по темам онтологии и навыки вне словаря. Профиль обновляется
-            при загрузке резюме и переиспользуется между вакансиями.
+            Сначала загрузите резюме — AgentHR извлечёт навыки и оценит уровень по каждой
+            теме от 0 до 100. Затем проверьте вакансию: профиль переиспользуется.
           </CardDescription>
         </CardHeader>
         <CardContent className="flex flex-wrap gap-2">
           <Link to="/vacancies/new" className={buttonVariants()}>
-            Новая подготовка
+            Проверить вакансию
           </Link>
           <Button
             variant="outline"
@@ -170,19 +171,16 @@ export default function ProfilePage() {
         </CardContent>
       </Card>
 
+      <ResumeUploadCard token={token} onUnauthorized={expire} />
+
       {isEmpty ? (
         <Card>
           <CardHeader>
             <CardTitle>Профиль пока пуст</CardTitle>
             <CardDescription>
-              Загрузите вакансию и резюме — темы и пробелы появятся здесь.
+              Загрузите резюме в карточке выше. Навыки, темы и оценки появятся здесь.
             </CardDescription>
           </CardHeader>
-          <CardContent>
-            <Link to="/vacancies/new" className={buttonVariants()}>
-              Загрузить вакансию и резюме
-            </Link>
-          </CardContent>
         </Card>
       ) : (
         <>

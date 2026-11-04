@@ -34,7 +34,7 @@ backend/
 │   ├── models/                 User, AgentAction, Topic, Vacancy, Resume, ...
 │   ├── ontology/               topics.py, seed.py, graph.py, review.py
 │   ├── schemas/                Pydantic-схемы API
-│   └── services/               analysis, normalization, profile, topics,
+│   └── services/               analysis, documents, normalization, profile, topics,
 │                               ontology_review, ontology_auto_review
 ├── alembic/versions/           миграции
 ├── docker/entrypoint.sh        миграции + uvicorn
@@ -48,6 +48,7 @@ backend/
 | Задача | Файлы |
 |---|---|
 | Извлечение вакансии/резюме | `app/services/analysis.py` |
+| Текст из PDF/DOCX | `app/services/documents.py` |
 | Нормализация навыков | `app/services/normalization.py` |
 | Онтология и сид | `app/ontology/topics.py`, `seed.py` |
 | Provisional-темы / resolver | `app/services/topics.py` |
@@ -68,6 +69,7 @@ frontend/src/
 ├── api/
 │   ├── client.ts               типизированный API-клиент
 │   └── schema.d.ts             генерация из OpenAPI (не редактировать)
+├── components/                 ResumeUploadCard, VacancyAssessment
 ├── components/ui/              shadcn/ui
 ├── lib/                        токены, auth-hook, ошибки, labels
 └── pages/                      Dashboard, Login, VacancyUpload, Profile, 404

@@ -45,6 +45,8 @@ docker compose up -d --build    # agenthr-api на http://127.0.0.1:8000
   документ, 502 — LLM недоступна);
 - `GET /vacancies`, `GET /vacancies/{id}` — список и карточка вакансии с навыками;
 - `POST /resumes` — загрузка текста резюме: извлечение навыков, запись и пересборка профиля;
+- `POST /resumes/upload` — загрузка файла PDF/DOCX (`multipart/form-data`, поле `file`,
+  опционально `title`): извлечение текста, навыков и пересборка профиля; файл не сохраняется;
 - `GET /resumes`, `GET /resumes/{id}` — список и карточка резюме;
 - `GET /profile` — профиль знаний: уровень по темам онтологии + навыки вне онтологии;
 - `GET /profile/gaps?vacancy_id=...` — разрывы между вакансией и профилем;
@@ -125,6 +127,8 @@ canonical-темой «Прочее (авто-ревью)». Provisional-ста�
 
 ## Анализ и нормализация
 
+- `app/services/documents.py` — извлечение текста из PDF/DOCX для `POST /resumes/upload`:
+  лимит 5 МБ, защита от zip-бомб, отказ для сканов без текстового слоя.
 - `app/services/analysis.py` — извлечение требований вакансии и навыков резюме
   (`extract_vacancy_requirements`, `extract_resume_skills`) через структурированный вывод LLM:
   JSON Schema, значения вне 0..100 обрезаются, пустые навыки отбрасываются.

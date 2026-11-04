@@ -2,7 +2,7 @@ import { useQuery } from '@tanstack/react-query'
 import { useEffect, useState, type ReactNode } from 'react'
 import { Link, useNavigate } from 'react-router'
 
-import { ApiError, fetchMe, listVacancies } from '@/api/client'
+import { ApiError, fetchMe, fetchProfile, listVacancies } from '@/api/client'
 import { Button, buttonVariants } from '@/components/ui/button'
 import {
   Card,
@@ -32,12 +32,26 @@ export default function DashboardPage() {
     retry: false,
   })
 
+  const profileQuery = useQuery({
+    queryKey: ['profile', token],
+    queryFn: () => fetchProfile(token as string),
+    enabled: token !== null,
+    retry: false,
+  })
+
   useEffect(() => {
     if (error instanceof ApiError && error.status === 401) {
       clearTokens()
       setToken(null)
     }
   }, [error])
+
+  useEffect(() => {
+    if (profileQuery.error instanceof ApiError && profileQuery.error.status === 401) {
+      clearTokens()
+      setToken(null)
+    }
+  }, [profileQuery.error])
 
   function handleLogout() {
     clearTokens()
@@ -61,12 +75,24 @@ export default function DashboardPage() {
   } else if (data) {
     description = `Вы вошли как ${data.email}.`
     const vacancies = vacanciesQuery.data ?? []
+    const hasProfile = (profileQuery.data?.topics.length ?? 0) > 0
     content = (
       <div className="flex flex-col gap-6">
+        <p className="text-sm text-muted-foreground">
+          {hasProfile
+            ? 'Профиль готов. Загрузите вакансию — покажем, каких уровней не хватает.'
+            : 'Шаг 1 — загрузите резюме. Шаг 2 — проверьте вакансию по профилю.'}
+        </p>
         <div className="flex flex-wrap gap-2">
-          <Link to="/vacancies/new" className={buttonVariants()}>
-            Новая подготовка
-          </Link>
+          {hasProfile ? (
+            <Link to="/vacancies/new" className={buttonVariants()}>
+              Проверить вакансию
+            </Link>
+          ) : (
+            <Link to="/profile" className={buttonVariants()}>
+              Загрузить резюме
+            </Link>
+          )}
           <Link to="/profile" className={buttonVariants({ variant: 'outline' })}>
             Профиль знаний
           </Link>
@@ -82,7 +108,7 @@ export default function DashboardPage() {
             <p className="text-sm text-muted-foreground">Не удалось загрузить вакансии.</p>
           ) : vacancies.length === 0 ? (
             <p className="text-sm text-muted-foreground">
-              Вакансий пока нет — начните с новой подготовки.
+              Вакансий пока нет — проверьте первую после загрузки резюме.
             </p>
           ) : (
             <div className="flex flex-col gap-1">

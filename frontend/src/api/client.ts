@@ -34,10 +34,11 @@ interface ApiFetchOptions extends RequestInit {
 
 async function apiFetch<T>(path: string, options: ApiFetchOptions = {}): Promise<T> {
   const { token, headers, ...rest } = options
+  const isFormData = rest.body instanceof FormData
   const response = await fetch(`${API_BASE_URL}${path}`, {
     ...rest,
     headers: {
-      'Content-Type': 'application/json',
+      ...(isFormData ? {} : { 'Content-Type': 'application/json' }),
       ...(token ? { Authorization: `Bearer ${token}` } : {}),
       ...headers,
     },
@@ -89,6 +90,16 @@ export function listVacancies(token: string): Promise<VacancySummary[]> {
 
 export function createResume(payload: ResumeCreate, token: string): Promise<ResumeRead> {
   return apiFetch('/resumes', { method: 'POST', token, body: JSON.stringify(payload) })
+}
+
+export function uploadResume(file: File, token: string, title?: string): Promise<ResumeRead> {
+  const form = new FormData()
+  form.append('file', file)
+  const trimmed = title?.trim()
+  if (trimmed) {
+    form.append('title', trimmed)
+  }
+  return apiFetch('/resumes/upload', { method: 'POST', token, body: form })
 }
 
 export function listResumes(token: string): Promise<ResumeSummary[]> {

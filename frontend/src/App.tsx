@@ -15,16 +15,16 @@ function App() {
             AgentHR
           </Link>
           <Link
-            to="/vacancies/new"
-            className="text-muted-foreground transition-colors hover:text-foreground"
-          >
-            Новая подготовка
-          </Link>
-          <Link
             to="/profile"
             className="text-muted-foreground transition-colors hover:text-foreground"
           >
             Профиль знаний
+          </Link>
+          <Link
+            to="/vacancies/new"
+            className="text-muted-foreground transition-colors hover:text-foreground"
+          >
+            Проверить вакансию
           </Link>
           <Link
             to="/login"
