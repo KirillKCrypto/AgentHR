@@ -23,19 +23,21 @@ from datetime import UTC, datetime
 from difflib import SequenceMatcher
 from typing import Any, Literal
 
-from sqlalchemy import select, update
+from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import Settings, get_settings
 from app.embeddings.base import EmbeddingProvider, cosine_similarity
 from app.llm.base import ChatMessage, LLMError, LLMProvider
 from app.models import ResumeSkill, Topic, TopicAlias, TopicCandidate, VacancySkill
+from app.ontology.topics import ONTOLOGY_VERSION
 from app.services.normalization import TopicIndex, TopicRecord, normalize_name
 from app.services.ontology_review import (
     ReviewError,
     approve_topic,
     merge_topics,
     record_review_action,
+    reject_topic,
 )
 from app.services.topics import detach_candidate_topic, load_topic_index
 
@@ -43,6 +45,10 @@ logger = logging.getLogger(__name__)
 
 AUTO_ACTOR = "auto"
 REVIEW_SCHEMA_NAME = "ontology_review"
+# Общая canonical-тема для навыков, которые LLM не признала самостоятельными:
+# пользователь не должен разбирать их вручную.
+OTHER_TOPIC_KEY = "other-auto-review"
+OTHER_TOPIC_NAME = "Прочее (авто-ревью)"
 # Сколько ближайших canonical-тем показывать LLM и разрешать как цель merge.
 TOP_CANDIDATES = 5
 # Запас между «похоже на существующую тему» и «это новая тема»: если лучшая
@@ -223,6 +229,8 @@ async def auto_review_topics(
     facts_list.sort(key=lambda item: item.occurrences, reverse=True)
     facts_list = facts_list[: max(0, current.ontology_auto_review_max_topics)]
     if not facts_list:
+        await _finalize_overflow_topics(session, topics)
+        await session.commit()
         return []
 
     # Закрываем читающую транзакцию: LLM-вызовы не должны держать соединение
@@ -258,7 +266,62 @@ async def auto_review_topics(
             await session.rollback()
             logger.exception("Авто-ревью темы %s завершилось ошибкой", facts.topic.key)
 
+    await _finalize_overflow_topics(session, topics)
+    await session.commit()
     return decisions
+
+
+async def _finalize_overflow_topics(
+    session: AsyncSession,
+    topics: Sequence[Topic],
+) -> None:
+    """Убирает из очереди разобранные темы переполнения.
+
+    Если у темы не осталось кандидатов, её навыки без пары (устаревшие строки)
+    переносятся в «Прочее», а сама тема отклоняется. Иначе «Новые навыки
+    (на ревью)» навсегда оставались бы в статусе «на проверке».
+    """
+    for topic in topics:
+        if topic.category != "auto_review" or topic.status != "provisional":
+            continue
+        pending = (
+            await session.scalar(
+                select(func.count())
+                .select_from(TopicCandidate)
+                .where(
+                    TopicCandidate.topic_id == topic.id,
+                    TopicCandidate.status.in_(("new", "auto_created")),
+                )
+            )
+        ) or 0
+        if pending:
+            continue
+
+        leftover = 0
+        for model in (ResumeSkill, VacancySkill):
+            leftover += (
+                await session.scalar(
+                    select(func.count()).select_from(model).where(model.topic_id == topic.id)
+                )
+            ) or 0
+        if leftover:
+            other = await _other_topic(session)
+            for model in (ResumeSkill, VacancySkill):
+                await session.execute(
+                    update(model)
+                    .where(model.topic_id == topic.id)
+                    .values(topic_id=other.id, match_method="auto_other")
+                )
+
+        try:
+            await reject_topic(
+                session,
+                topic.key,
+                actor=AUTO_ACTOR,
+                details={"reason": "Тема переполнения разобрана: кандидатов не осталось"},
+            )
+        except ReviewError as exc:
+            logger.warning("Тема переполнения %s не закрыта: %s", topic.key, exc)
 
 
 async def run_auto_review(
@@ -519,6 +582,15 @@ async def _apply(
     if extra_details:
         details.update(extra_details)
 
+    # Решение «не навык» не оставляем пользователю: переносим в общую тему.
+    # Так ни один навык не остаётся в статусе «на проверке».
+    result = decision
+    if decision.action == "keep" and decision.source != "fallback":
+        other = await _other_topic(session)
+        details["target_key"] = other.key
+        details["routed_to"] = "other"
+        decision = replace(decision, action="merge", target_key=other.key)
+
     if decision.action == "merge":
         if not decision.target_key:
             raise ReviewError("Для merge не указана целевая тема")
@@ -537,11 +609,8 @@ async def _apply(
         await approve_topic(session, topic.key, actor=AUTO_ACTOR, details=details)
         await _set_match_method(session, topic.id, "auto_approve")
     else:
+        # LLM недоступна: оставляем тему в очереди до следующего прогона.
         record_review_action(session, "keep", topic, actor=AUTO_ACTOR, details=details)
-
-    # LLM была недоступна: не считаем тему проверенной, иначе она выпадет из
-    # очереди до появления новых упоминаний и вообще не получит ревью.
-    if decision.source == "fallback":
         await session.flush()
         return decision
 
@@ -550,7 +619,7 @@ async def _apply(
     topic.auto_review_confidence = decision.confidence
     topic.auto_reviewed_occurrences = facts.occurrences
     await session.flush()
-    return decision
+    return result
 
 
 async def _apply_candidate(
@@ -560,10 +629,10 @@ async def _apply_candidate(
 ) -> AutoReviewDecision:
     """Применяет решение к отдельному навыку из темы переполнения.
 
-    `keep` только помечает кандидата, поэтому тема переполнения не считается
-    проверенной и остальные кандидаты получают шанс на следующем прогоне.
-    Для `approve` и `merge` кандидат сначала выносится в отдельную
-    provisional-тему и дальше идёт общим путём.
+    Кандидат выносится в отдельную provisional-тему и дальше идёт общим путём:
+    `approve` подтверждает её, `merge` сливает с найденной темой, `keep`
+    переносит навык в общую тему «Прочее». В теме переполнения кандидат
+    остаётся только при недоступной LLM.
     """
     topic = facts.topic
     candidate = facts.candidate
@@ -583,11 +652,8 @@ async def _apply_candidate(
     if decision.target_key:
         details["target_key"] = decision.target_key
 
-    if decision.action == "keep":
-        # При недоступной LLM кандидата не помечаем: следующий прогон должен
-        # попробовать снова, иначе навык навсегда останется без ревью.
-        if decision.source != "fallback":
-            candidate.status = "auto_kept"
+    if decision.action == "keep" and decision.source == "fallback":
+        # LLM недоступна: кандидат ждёт следующего прогона в теме переполнения.
         record_review_action(session, "keep", topic, actor=AUTO_ACTOR, details=details)
         await session.flush()
         return decision
@@ -599,6 +665,33 @@ async def _apply_candidate(
         replace(decision, topic_key=promoted.key),
         extra_details=details,
     )
+
+
+async def _other_topic(session: AsyncSession) -> Topic:
+    """Возвращает общую canonical-тему для навыков, не ставших отдельными темами."""
+    await session.execute(select(func.pg_advisory_xact_lock(func.hashtext(OTHER_TOPIC_KEY))))
+    topic = await session.scalar(select(Topic).where(Topic.key == OTHER_TOPIC_KEY))
+    if topic is None:
+        topic = Topic(
+            key=OTHER_TOPIC_KEY,
+            name=OTHER_TOPIC_NAME,
+            description=(
+                "Навыки, которые авто-ревью не признало самостоятельными: общие "
+                "требования, условия работы и шум извлечения. Разбирать вручную не нужно."
+            ),
+            category="other",
+            aliases=[],
+            ontology_version=ONTOLOGY_VERSION,
+            is_auto_generated=True,
+            status="canonical",
+            origin="auto",
+        )
+        session.add(topic)
+        await session.flush()
+    elif topic.status != "canonical":
+        topic.status = "canonical"
+        await session.flush()
+    return topic
 
 
 async def _set_match_method(

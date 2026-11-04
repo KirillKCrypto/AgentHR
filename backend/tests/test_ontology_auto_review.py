@@ -44,7 +44,7 @@ def _settings(**overrides: Any) -> Settings:
     """Настройки авто-ревью с предсказуемыми порогами."""
     values: dict[str, Any] = {
         "ontology_auto_review_enabled": True,
-        "ontology_auto_review_min_confidence": 0.75,
+        "ontology_auto_review_min_confidence": 0.5,
         "ontology_auto_merge_similarity": 0.9,
         "ontology_auto_approve_min_documents": 2,
         "ontology_auto_review_max_topics": 20,
@@ -597,8 +597,8 @@ async def test_llm_approve_updates_topic_candidate_and_skill(seeded_db: None) ->
         await _cleanup([topic_key], email)
 
 
-async def test_low_confidence_keeps_topic_provisional(seeded_db: None) -> None:
-    """Неуверенное решение LLM оставляет тему на ручную проверку."""
+async def test_low_confidence_keep_routes_topic_to_other(seeded_db: None) -> None:
+    """Решение «не навык» уходит в общую тему, а не в ручную проверку."""
     name = f"Uncertain Skill {uuid4().hex[:8]}"
     topic_key = _key("keep")
     provider = ReviewStub(
@@ -620,34 +620,88 @@ async def test_low_confidence_keeps_topic_provisional(seeded_db: None) -> None:
             )
             await session.commit()
 
-            decisions = await run_auto_review(session, [topic.id], provider=provider)
+            decisions = await run_auto_review(
+                session, [topic.id], provider=provider, settings=_settings()
+            )
 
         assert decisions[0].action == "keep"
 
         async with async_session_factory() as session:
             topic = await session.scalar(select(Topic).where(Topic.key == topic_key))
+            other = await session.get(Topic, topic.canonical_topic_id)
             candidate = await session.scalar(
-                select(TopicCandidate).where(TopicCandidate.topic_id == topic.id)
+                select(TopicCandidate).where(
+                    TopicCandidate.normalized_name == normalize_name(name)
+                )
             )
             action = await session.scalar(
                 select(OntologyReviewAction).where(
                     OntologyReviewAction.source_topic_id == topic.id,
-                    OntologyReviewAction.action == "keep",
+                    OntologyReviewAction.action == "merge",
                 )
             )
 
-        assert topic.status == "provisional"
-        assert topic.auto_review_decision == "keep"
-        assert topic.auto_review_confidence == 0.4
-        assert candidate.status == "auto_created"
+        assert topic.status == "merged"
+        assert other is not None
+        assert other.key == "other-auto-review"
+        assert other.status == "canonical"
+        assert candidate.topic_id == other.id
+        assert candidate.status == "merged"
         assert action is not None
         assert action.actor == "auto"
+        assert action.details["routed_to"] == "other"
+    finally:
+        await _cleanup([topic_key])
+        async with async_session_factory() as session:
+            candidate = await session.scalar(
+                select(TopicCandidate).where(
+                    TopicCandidate.normalized_name == normalize_name(name)
+                )
+            )
+            if candidate is not None:
+                await session.delete(candidate)
+                await session.commit()
+
+
+async def test_llm_approve_at_low_confidence_is_applied(seeded_db: None) -> None:
+    """Уверенный ответ 0.62 применяется: тема не остаётся на проверке."""
+    name = f"Low Confidence Skill {uuid4().hex[:8]}"
+    topic_key = _key("low-conf")
+    provider = ReviewStub(
+        {"decision": "approve", "confidence": 0.62, "reason": "самостоятельный навык"}
+    )
+    try:
+        async with async_session_factory() as session:
+            topic = await _make_topic(session, name=name, key_prefix="low-conf")
+            topic_key = topic.key
+            session.add(
+                TopicCandidate(
+                    name=name,
+                    normalized_name=normalize_name(name),
+                    topic_id=topic.id,
+                    status="auto_created",
+                    occurrences=1,
+                    sources=[],
+                )
+            )
+            await session.commit()
+
+            decisions = await run_auto_review(
+                session, [topic.id], provider=provider, settings=_settings()
+            )
+
+        assert decisions[0].action == "approve"
+
+        async with async_session_factory() as session:
+            topic = await session.scalar(select(Topic).where(Topic.key == topic_key))
+
+        assert topic.status == "canonical"
     finally:
         await _cleanup([topic_key])
 
 
-async def test_kept_topic_is_not_rechecked_without_new_occurrences(seeded_db: None) -> None:
-    """Повторный прогон без новых упоминаний не вызывает LLM и не пишет аудит."""
+async def test_routed_topic_is_not_rechecked_without_new_occurrences(seeded_db: None) -> None:
+    """Повторный прогон не трогает тему, уже ушедшую в «Прочее»."""
     name = f"Stable Uncertain Skill {uuid4().hex[:8]}"
     topic_key = _key("stable")
     provider = ReviewStub(
@@ -669,15 +723,28 @@ async def test_kept_topic_is_not_rechecked_without_new_occurrences(seeded_db: No
             )
             await session.commit()
 
-            first = await run_auto_review(session, [topic.id], provider=provider)
+            first = await run_auto_review(
+                session, [topic.id], provider=provider, settings=_settings()
+            )
             calls_after_first = len(provider.calls)
-            second = await run_auto_review(session, [topic.id], provider=provider)
+            second = await run_auto_review(
+                session, [topic.id], provider=provider, settings=_settings()
+            )
 
         assert len(first) == 1
         assert second == []
         assert len(provider.calls) == calls_after_first
     finally:
         await _cleanup([topic_key])
+        async with async_session_factory() as session:
+            candidate = await session.scalar(
+                select(TopicCandidate).where(
+                    TopicCandidate.normalized_name == normalize_name(name)
+                )
+            )
+            if candidate is not None:
+                await session.delete(candidate)
+                await session.commit()
 
 
 async def test_failed_llm_does_not_break_document_upload(api_user: ApiUser) -> None:
@@ -863,6 +930,11 @@ async def test_topic_with_own_alias_is_not_merged_into_itself(seeded_db: None) -
         assert decisions[0].source == "llm"
     finally:
         await _cleanup([topic_key])
+        async with async_session_factory() as session:
+            await session.execute(
+                delete(TopicAlias).where(TopicAlias.normalized_alias == normalize_name(name))
+            )
+            await session.commit()
 
 
 async def test_repeated_mentions_accumulate_and_trigger_approve(seeded_db: None) -> None:
@@ -1000,7 +1072,7 @@ async def test_overflow_candidate_is_promoted_individually(seeded_db: None) -> N
                 )
             )
 
-        assert overflow.status == "provisional"
+        assert overflow.status == "rejected"
         assert promoted.status == "canonical"
         assert candidate.status == "approved"
         assert candidate.topic_id == promoted.id
@@ -1014,8 +1086,8 @@ async def test_overflow_candidate_is_promoted_individually(seeded_db: None) -> N
         await _cleanup_topic_by_name(name)
 
 
-async def test_kept_overflow_candidate_is_not_rechecked(seeded_db: None) -> None:
-    """Кандидат, оставленный в теме переполнения, не тратит LLM повторно."""
+async def test_keep_overflow_candidate_moves_to_other(seeded_db: None) -> None:
+    """Навык, который LLM не признала самостоятельным, уходит в «Прочее»."""
     name = f"Overflow Keep Skill {uuid4().hex[:8]}"
     overflow_key = _key("overflow-keep")
     provider = ReviewStub(
@@ -1040,9 +1112,13 @@ async def test_kept_overflow_candidate_is_not_rechecked(seeded_db: None) -> None
             )
             await session.commit()
 
-            first = await run_auto_review(session, [overflow.id], provider=provider)
+            first = await run_auto_review(
+                session, [overflow.id], provider=provider, settings=_settings()
+            )
             calls_after_first = len(provider.calls)
-            second = await run_auto_review(session, [overflow.id], provider=provider)
+            second = await run_auto_review(
+                session, [overflow.id], provider=provider, settings=_settings()
+            )
 
         assert len(first) == 1
         assert first[0].action == "keep"
@@ -1053,10 +1129,70 @@ async def test_kept_overflow_candidate_is_not_rechecked(seeded_db: None) -> None
             candidate = await session.scalar(
                 select(TopicCandidate).where(TopicCandidate.normalized_name == normalize_name(name))
             )
+            overflow = await session.scalar(select(Topic).where(Topic.key == overflow_key))
+            other = await session.get(Topic, candidate.topic_id)
 
-        assert candidate.status == "auto_kept"
+        assert candidate.status == "merged"
+        assert candidate.topic_id != overflow.id
+        assert other is not None
+        assert other.key == "other-auto-review"
     finally:
         await _cleanup([overflow_key])
+        async with async_session_factory() as session:
+            candidate = await session.scalar(
+                select(TopicCandidate).where(TopicCandidate.normalized_name == normalize_name(name))
+            )
+            if candidate is not None:
+                await session.delete(candidate)
+                await session.commit()
+
+
+async def test_overflow_without_candidates_is_closed(seeded_db: None) -> None:
+    """Разобранная тема переполнения закрывается, а осиротевший навык уходит в «Прочее»."""
+    name = f"Legacy Skill {uuid4().hex[:8]}"
+    email = f"auto-legacy-{uuid4().hex}@example.com"
+    overflow_key = _key("overflow-legacy")
+    try:
+        async with async_session_factory() as session:
+            overflow = await _make_topic(
+                session, name="Новые навыки (на ревью)", key_prefix="overflow-legacy"
+            )
+            overflow_key = overflow.key
+            overflow.category = "auto_review"
+
+            user = User(email=email, password_hash="test")
+            session.add(user)
+            await session.flush()
+            resume = Resume(user_id=user.id, title=None, raw_text="test")
+            session.add(resume)
+            await session.flush()
+            session.add(
+                ResumeSkill(
+                    resume_id=resume.id,
+                    topic_id=overflow.id,
+                    raw_name=name,
+                    proficiency=40,
+                    confidence=0.5,
+                    match_method="provisional",
+                )
+            )
+            await session.commit()
+
+            decisions = await run_auto_review(session, [overflow.id], provider=None)
+
+        assert decisions == []
+
+        async with async_session_factory() as session:
+            overflow = await session.scalar(select(Topic).where(Topic.key == overflow_key))
+            skill = await session.scalar(select(ResumeSkill).where(ResumeSkill.raw_name == name))
+            other = await session.get(Topic, skill.topic_id)
+
+        assert overflow.status == "rejected"
+        assert other is not None
+        assert other.key == "other-auto-review"
+        assert skill.match_method == "auto_other"
+    finally:
+        await _cleanup([overflow_key], email)
 
 
 async def test_approve_updates_fuzzy_matched_skill_method(seeded_db: None) -> None:

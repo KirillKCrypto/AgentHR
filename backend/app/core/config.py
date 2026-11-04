@@ -67,10 +67,10 @@ class Settings(BaseSettings):
     # не должна ломать загрузку документа, поэтому вызов выполняется best-effort.
     ontology_auto_review_enabled: bool = True
     # Минимальная уверенность LLM-решения, при которой оно применяется.
-    # Ниже порога тема остаётся provisional и ждёт ручной проверки.
-    # 0.70: модель уверенно распознаёт реальные навыки (CNN, MLOps, кластеризация),
-    # но не пропускает общие требования и мусор.
-    ontology_auto_review_min_confidence: float = 0.7
+    # Ниже порога тема не остаётся на ручную проверку: решение «не навык»
+    # уходит в общую тему «Прочее», неуверенные approve/merge — туда же.
+    # Ручной разбор остаётся только на случай недоступной LLM.
+    ontology_auto_review_min_confidence: float = 0.5
     # Косинусная близость, при которой тема автоматически сливается с canonical.
     # Значение намеренно высокое: merge необратимо меняет связи.
     ontology_auto_merge_similarity: float = 0.9
@@ -78,7 +78,7 @@ class Settings(BaseSettings):
     # темы без LLM. 1 — подтверждать уже после первого документа.
     ontology_auto_approve_min_documents: int = 2
     # Предохранитель против всплеска LLM-вызовов: сколько тем проверять за прогон.
-    ontology_auto_review_max_topics: int = 20
+    ontology_auto_review_max_topics: int = 100
 
 
 @lru_cache

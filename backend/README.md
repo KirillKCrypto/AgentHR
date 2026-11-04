@@ -105,8 +105,8 @@ provisional-тема, запись в `topic_aliases` и кандидат в `to
 Новые названия не остаются с `topic_id = NULL`; миграция `c9a1d2e3f4b5` заполняет
 исторические NULL и делает `topic_id` обязательным. Лимит `AUTO_TOPIC_LIMIT`
 (по умолчанию 10) отправляет overflow в одну review-тему, а авто-ревью разбирает
-её кандидатов по одному: подтверждённые получают собственную тему, остальные
-остаются в очереди. Повторное упоминание навыка увеличивает `occurrences` и
+её кандидатов по одному: каждый получает собственную тему, отказ уходит в
+«Прочее». Повторное упоминание навыка увеличивает `occurrences` и
 число источников даже у существующей provisional-темы — по этим данным работает
 правило approve.
 
@@ -116,9 +116,10 @@ provisional-тема, запись в `topic_aliases` и кандидат в `to
 существующие в БД темы и сливается с ними вместо создания дубликата. Точный
 alias и высокая семантическая близость дают merge, повторяющиеся упоминания в
 двух и более документах — approve, спорные темы уходят в DeepSeek с порогом
-уверенности. Остальное остаётся provisional с `auto_review_decision = keep`.
-Автопроверка best-effort и не ломает загрузку документа. Настройки:
-`ONTOLOGY_AUTO_REVIEW_ENABLED`, `ONTOLOGY_AUTO_REVIEW_MIN_CONFIDENCE`,
+уверенности. Решение `keep` не остаётся пользователю: тема сливается с общей
+canonical-темой «Прочее (авто-ревью)». Provisional-статус остаётся только при
+недоступной LLM. Автопроверка best-effort и не ломает загрузку документа.
+Настройки: `ONTOLOGY_AUTO_REVIEW_ENABLED`, `ONTOLOGY_AUTO_REVIEW_MIN_CONFIDENCE`,
 `ONTOLOGY_AUTO_MERGE_SIMILARITY`, `ONTOLOGY_AUTO_APPROVE_MIN_DOCUMENTS`,
 `ONTOLOGY_AUTO_REVIEW_MAX_TOPICS`.
 
