@@ -20,6 +20,7 @@ import {
   CardTitle,
 } from '@/components/ui/card'
 import { Progress } from '@/components/ui/progress'
+import { CreatePlanButton } from '@/components/CreatePlanButton'
 import { ResumeUploadCard } from '@/components/ResumeUploadCard'
 import {
   Table,
@@ -159,6 +160,7 @@ export default function ProfilePage() {
           <Link to="/vacancies/new" className={buttonVariants()}>
             Проверить вакансию
           </Link>
+          {isEmpty ? null : <CreatePlanButton label="Построить план по профилю" />}
           <Button
             variant="outline"
             onClick={() => {
@@ -366,6 +368,15 @@ function GapsSection({
                 </Button>
               ))}
             </div>
+
+            {selectedVacancyId ? (
+              <Link
+                to={`/vacancies/${selectedVacancyId}`}
+                className="text-sm underline underline-offset-4"
+              >
+                Открыть текст вакансии
+              </Link>
+            ) : null}
 
             {isPending ? (
               <p className="text-sm text-muted-foreground">Считаем разрывы…</p>

@@ -6,7 +6,9 @@ import { ApiError, fetchMe } from '@/api/client'
 import DashboardPage from '@/pages/DashboardPage'
 import LoginPage from '@/pages/LoginPage'
 import NotFoundPage from '@/pages/NotFoundPage'
+import PlanPage from '@/pages/PlanPage'
 import ProfilePage from '@/pages/ProfilePage'
+import VacancyPage from '@/pages/VacancyPage'
 import VacancyUploadPage from '@/pages/VacancyUploadPage'
 import { clearTokens, getAccessToken, subscribeAuth } from '@/lib/tokens'
 
@@ -40,6 +42,8 @@ function App() {
           <Route path="/" element={<DashboardPage />} />
           <Route path="/login" element={<LoginPage />} />
           <Route path="/vacancies/new" element={<VacancyUploadPage />} />
+          <Route path="/vacancies/:vacancyId" element={<VacancyPage />} />
+          <Route path="/plans/:planId" element={<PlanPage />} />
           <Route path="/profile" element={<ProfilePage />} />
           <Route path="*" element={<NotFoundPage />} />
         </Routes>

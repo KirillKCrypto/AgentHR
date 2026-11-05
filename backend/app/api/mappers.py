@@ -4,6 +4,7 @@ from app.models import Resume, Vacancy
 from app.schemas.analysis import (
     GapAnalysisRead,
     GapItemRead,
+    GapRecommendationRead,
     ProfileRead,
     ProfileTopicRead,
     ResumeRead,
@@ -12,6 +13,8 @@ from app.schemas.analysis import (
     UnmatchedSkillRead,
     VacancyRead,
 )
+from app.schemas.plan import PlanItemRead, PlanRead, PlanSummaryRead
+from app.services.plans import PlanSnapshot, PlanSummary
 from app.services.profile import (
     GapReport,
     ProfileSnapshot,
@@ -111,6 +114,44 @@ def profile_read(snapshot: ProfileSnapshot) -> ProfileRead:
     )
 
 
+def plan_read(plan: PlanSnapshot) -> PlanRead:
+    """План подготовки для ответа API."""
+    return PlanRead(
+        id=plan.id,
+        user_id=plan.user_id,
+        vacancy_id=plan.vacancy_id,
+        vacancy_title=plan.vacancy_title,
+        title=plan.title,
+        status=plan.status,
+        created_at=None,
+        items=[
+            PlanItemRead(
+                topic_id=item.topic_id,
+                topic_key=item.topic_key,
+                topic_name=item.topic_name,
+                category=item.category,
+                current_level=item.current_level,
+                target_level=item.target_level,
+                confidence=item.confidence,
+                priority=item.priority,
+                reason=item.reason,
+            )
+            for item in plan.items
+        ],
+    )
+
+
+def plan_summary_read(plan: PlanSummary) -> PlanSummaryRead:
+    """Краткая карточка плана."""
+    return PlanSummaryRead(
+        id=plan.id,
+        title=plan.title,
+        status=plan.status,
+        vacancy_id=plan.vacancy_id,
+        topic_count=plan.topic_count,
+    )
+
+
 def gap_analysis_read(report: GapReport) -> GapAnalysisRead:
     """Gap-анализ для ответа API."""
     return GapAnalysisRead(
@@ -133,9 +174,27 @@ def gap_analysis_read(report: GapReport) -> GapAnalysisRead:
             )
             for item in report.items
         ],
+        recommendations=[
+            GapRecommendationRead(
+                topic_key=item.topic_key,
+                topic_name=item.topic_name,
+                skill_name=item.skill_name,
+                required_level=item.required_level,
+                user_level=item.user_level,
+                gap=item.gap,
+                priority=item.priority,
+                criticality=item.criticality,
+                reason=item.reason,
+            )
+            for item in report.recommendations
+        ],
         overall_readiness=report.overall_readiness,
         coverage_all=report.coverage_all,
         confirmed_readiness=report.confirmed_readiness,
+        critical_readiness=report.critical_readiness,
+        satisfied_count=report.satisfied_count,
+        requirements_count=report.requirements_count,
+        average_gap=report.average_gap,
         provisional_count=report.provisional_count,
         provisional_weight=report.provisional_weight,
         confirmed_weight=report.confirmed_weight,

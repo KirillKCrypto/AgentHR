@@ -92,6 +92,14 @@ async def test_analysis_returns_gaps_and_readiness(api_user: ApiUser) -> None:
     assert body["gaps"]["overall_readiness"] == pytest.approx(0.476, abs=0.001)
     assert body["gaps"]["coverage_all"] == pytest.approx(0.476, abs=0.001)
     assert body["gaps"]["confirmed_readiness"] == pytest.approx(0.476, abs=0.001)
+    assert body["gaps"]["critical_readiness"] == pytest.approx(0.476, abs=0.001)
+    assert body["gaps"]["satisfied_count"] == 1
+    assert body["gaps"]["requirements_count"] == 3
+    assert body["gaps"]["average_gap"] == pytest.approx(28.6, abs=0.1)
+    recommendations = body["gaps"]["recommendations"]
+    assert [item["skill_name"] for item in recommendations] == ["PostgreSQL", "Kafka"]
+    assert recommendations[0]["priority"] == pytest.approx(0.8, abs=0.001)
+    assert recommendations[0]["criticality"] == "must_have"
     assert body["gaps"]["provisional_count"] == 0
     assert body["gaps"]["provisional_weight"] == 0
     assert body["gaps"]["confirmed_weight"] == pytest.approx(2.1, abs=0.001)

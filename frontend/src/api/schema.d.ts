@@ -235,6 +235,50 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/plans": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Read Plans
+         * @description Список планов пользователя.
+         */
+        get: operations["read_plans_plans_get"];
+        put?: never;
+        /**
+         * Create Learning Plan
+         * @description Строит план из самых сильных тем резюме.
+         */
+        post: operations["create_learning_plan_plans_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/plans/{plan_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Read Plan
+         * @description План подготовки с темами.
+         */
+        get: operations["read_plan_plans__plan_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/analysis": {
         parameters: {
             query?: never;
@@ -369,6 +413,35 @@ export interface components {
              */
             confirmed_readiness?: number | null;
             /**
+             * Critical Readiness
+             * @description Покрытие только must_have-требований; null, если их нет
+             */
+            critical_readiness?: number | null;
+            /**
+             * Satisfied Count
+             * @description Сколько требований закрыто
+             * @default 0
+             */
+            satisfied_count: number;
+            /**
+             * Requirements Count
+             * @description Сколько требований всего
+             * @default 0
+             */
+            requirements_count: number;
+            /**
+             * Average Gap
+             * @description Средневзвешенный разрыв в пунктах, 0..100
+             * @default 0
+             */
+            average_gap: number;
+            /**
+             * Recommendations
+             * @description Что подтянуть в первую очередь
+             * @default []
+             */
+            recommendations: components["schemas"]["GapRecommendationRead"][];
+            /**
              * Provisional Count
              * @description Сколько требований опираются на provisional-темы
              */
@@ -440,6 +513,30 @@ export interface components {
              */
             criticality: string;
         };
+        /**
+         * GapRecommendationRead
+         * @description Навык, который нужно подтянуть в первую очередь.
+         */
+        GapRecommendationRead: {
+            /** Topic Key */
+            topic_key?: string | null;
+            /** Topic Name */
+            topic_name?: string | null;
+            /** Skill Name */
+            skill_name: string;
+            /** Required Level */
+            required_level: number;
+            /** User Level */
+            user_level: number;
+            /** Gap */
+            gap: number;
+            /** Priority */
+            priority: number;
+            /** Criticality */
+            criticality: string;
+            /** Reason */
+            reason: string;
+        };
         /** HTTPValidationError */
         HTTPValidationError: {
             /** Detail */
@@ -457,6 +554,91 @@ export interface components {
             email: string;
             /** Password */
             password: string;
+        };
+        /**
+         * PlanCreate
+         * @description Запрос на построение плана.
+         */
+        PlanCreate: {
+            /** Vacancy Id */
+            vacancy_id?: string | null;
+        };
+        /**
+         * PlanItemRead
+         * @description Тема плана.
+         */
+        PlanItemRead: {
+            /**
+             * Topic Id
+             * Format: uuid
+             */
+            topic_id: string;
+            /** Topic Key */
+            topic_key: string;
+            /** Topic Name */
+            topic_name: string;
+            /** Category */
+            category?: string | null;
+            /** Current Level */
+            current_level: number;
+            /** Target Level */
+            target_level: number;
+            /** Confidence */
+            confidence: number;
+            /** Priority */
+            priority: number;
+            /** Reason */
+            reason: string;
+        };
+        /**
+         * PlanRead
+         * @description План подготовки с темами.
+         */
+        PlanRead: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * User Id
+             * Format: uuid
+             */
+            user_id: string;
+            /** Vacancy Id */
+            vacancy_id?: string | null;
+            /** Vacancy Title */
+            vacancy_title?: string | null;
+            /** Title */
+            title: string;
+            /** Status */
+            status: string;
+            /** Created At */
+            created_at?: string | null;
+            /**
+             * Items
+             * @default []
+             */
+            items: components["schemas"]["PlanItemRead"][];
+        };
+        /**
+         * PlanSummaryRead
+         * @description Краткая карточка плана.
+         */
+        PlanSummaryRead: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Title */
+            title: string;
+            /** Status */
+            status: string;
+            /** Vacancy Id */
+            vacancy_id?: string | null;
+            /** Topic Count */
+            topic_count: number;
         };
         /**
          * ProfileRead
@@ -1151,6 +1333,90 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["GapAnalysisRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    read_plans_plans_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PlanSummaryRead"][];
+                };
+            };
+        };
+    };
+    create_learning_plan_plans_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PlanCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PlanRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    read_plan_plans__plan_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                plan_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PlanRead"];
                 };
             };
             /** @description Validation Error */

@@ -17,6 +17,9 @@ export type ProfileRead = components['schemas']['ProfileRead']
 export type GapAnalysisRead = components['schemas']['GapAnalysisRead']
 export type AnalysisRequest = components['schemas']['AnalysisRequest']
 export type AnalysisResponse = components['schemas']['AnalysisResponse']
+export type PlanCreate = components['schemas']['PlanCreate']
+export type PlanRead = components['schemas']['PlanRead']
+export type PlanSummary = components['schemas']['PlanSummaryRead']
 
 export class ApiError extends Error {
   readonly status: number
@@ -84,6 +87,10 @@ export function createVacancy(payload: VacancyCreate, token: string): Promise<Va
   return apiFetch('/vacancies', { method: 'POST', token, body: JSON.stringify(payload) })
 }
 
+export function fetchVacancy(vacancyId: string, token: string): Promise<VacancyRead> {
+  return apiFetch(`/vacancies/${encodeURIComponent(vacancyId)}`, { token })
+}
+
 export function listVacancies(token: string): Promise<VacancySummary[]> {
   return apiFetch('/vacancies', { token })
 }
@@ -112,6 +119,18 @@ export function fetchProfile(token: string): Promise<ProfileRead> {
 
 export function fetchGaps(vacancyId: string, token: string): Promise<GapAnalysisRead> {
   return apiFetch(`/profile/gaps?vacancy_id=${encodeURIComponent(vacancyId)}`, { token })
+}
+
+export function createPlan(payload: PlanCreate, token: string): Promise<PlanRead> {
+  return apiFetch('/plans', { method: 'POST', token, body: JSON.stringify(payload) })
+}
+
+export function fetchPlan(planId: string, token: string): Promise<PlanRead> {
+  return apiFetch(`/plans/${encodeURIComponent(planId)}`, { token })
+}
+
+export function listPlans(token: string): Promise<PlanSummary[]> {
+  return apiFetch('/plans', { token })
 }
 
 export function runAnalysis(payload: AnalysisRequest, token: string): Promise<AnalysisResponse> {

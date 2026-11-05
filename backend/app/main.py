@@ -14,6 +14,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.routes.analysis import router as analysis_router
 from app.api.routes.auth import router as auth_router
+from app.api.routes.plans import router as plans_router
 from app.api.routes.profile import router as profile_router
 from app.api.routes.resumes import router as resumes_router
 from app.api.routes.users import router as users_router
@@ -38,17 +39,20 @@ app = FastAPI(title=settings.app_name, lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=settings.cors_origins,
+    allow_origins=[
+        "http://localhost:5173",
+        "http://127.0.0.1:5173",
+    ],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
-
 app.include_router(auth_router)
 app.include_router(users_router)
 app.include_router(vacancies_router)
 app.include_router(resumes_router)
 app.include_router(profile_router)
+app.include_router(plans_router)
 app.include_router(analysis_router)
 
 

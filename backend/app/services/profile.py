@@ -7,8 +7,9 @@
 запись в очереди ревью. Поэтому новые навыки не остаются с `topic_id = NULL`.
 """
 
+import re
 import uuid
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import UTC, datetime
 from typing import Any
 
@@ -32,7 +33,12 @@ from app.services.analysis import (
     extract_resume_skills,
     extract_vacancy_requirements,
 )
-from app.services.normalization import TopicMatch, normalize_name
+from app.services.normalization import (
+    DEFAULT_FUZZY_THRESHOLD,
+    TopicIndex,
+    TopicMatch,
+    normalize_name,
+)
 from app.services.ontology_auto_review import run_auto_review
 from app.services.topics import (
     create_skill_matcher,
@@ -53,6 +59,9 @@ SOURCE_WEIGHTS: dict[str, float] = {
 MAX_CONFIDENCE = 0.95
 # Сколько последних свидетельств хранить в профиле
 MAX_EVIDENCE = 10
+
+# Составные названия: «LightGBM/XGBoost», «Python, SQL», «Docker и Kubernetes».
+_COMPOSITE_SPLIT_RE = re.compile(r"\s*(?:/|;|\||,|&|\s+и\s+)\s*", re.IGNORECASE)
 
 
 class NotFoundError(Exception):
@@ -141,6 +150,21 @@ class GapItem:
 
 
 @dataclass(frozen=True)
+class GapRecommendation:
+    """Что подтянуть в первую очередь по итогам вакансии."""
+
+    topic_key: str | None
+    topic_name: str | None
+    skill_name: str
+    required_level: int
+    user_level: int
+    gap: int
+    priority: float
+    criticality: str
+    reason: str
+
+
+@dataclass(frozen=True)
 class GapReport:
     """Gap-анализ вакансии относительно профиля пользователя."""
 
@@ -150,6 +174,11 @@ class GapReport:
     overall_readiness: float = 0.0
     coverage_all: float = 0.0
     confirmed_readiness: float | None = None
+    critical_readiness: float | None = None
+    satisfied_count: int = 0
+    requirements_count: int = 0
+    average_gap: float = 0.0
+    recommendations: tuple[GapRecommendation, ...] = ()
     provisional_count: int = 0
     provisional_weight: float = 0.0
     confirmed_weight: float = 0.0
@@ -224,8 +253,9 @@ async def save_vacancy_analysis(
     session.add(vacancy)
     await session.flush()
 
-    skills = _unique_skills(requirements.skills)
-    matches = await _match_skills(session, skills, embedder)
+    skills, matches = await _prepare_skills(
+        session, _unique_skills(requirements.skills), embedder
+    )
     matches = await resolve_or_create_topics(
         session,
         [(skill.name, skill.evidence) for skill in skills],
@@ -302,8 +332,7 @@ async def save_resume_analysis(
     session.add(resume)
     await session.flush()
 
-    skills = _unique_skills(profile.skills)
-    matches = await _match_skills(session, skills, embedder)
+    skills, matches = await _prepare_skills(session, _unique_skills(profile.skills), embedder)
     matches = await resolve_or_create_topics(
         session,
         [(skill.name, skill.evidence) for skill in skills],
@@ -486,6 +515,8 @@ async def compute_gaps(
     critical_weight = 0.0
     critical_gap_count = 0
     unmatched_count = 0
+    weighted_gap_total = 0.0
+    weighted_gap_weight = 0.0
 
     for skill in skills:
         topic = topics.get(skill.topic_id) if skill.topic_id is not None else None
@@ -516,6 +547,8 @@ async def compute_gaps(
             criticality=criticality,
         )
         items.append(item)
+        weighted_gap_total += skill.weight * gap
+        weighted_gap_weight += skill.weight
 
         if topic is None or topic_status not in ("canonical", "provisional"):
             unmatched_count += 1
@@ -542,6 +575,8 @@ async def compute_gaps(
     weighted_all_total = 0.0
     weighted_confirmed_done = 0.0
     confirmed_weight = 0.0
+    weighted_critical_done = 0.0
+    critical_metric_weight = 0.0
 
     for group in grouped.values():
         logic = group[0][0].requirement_logic or "SINGLE"
@@ -564,6 +599,10 @@ async def compute_gaps(
             weighted_confirmed_done += group_weight * group_ratio
             confirmed_weight += group_weight
 
+        if any(item.criticality == "must_have" for _, item, _, _ in group):
+            weighted_critical_done += group_weight * group_ratio
+            critical_metric_weight += group_weight
+
     if weighted_all_total > 0:
         coverage_all = weighted_all_done / weighted_all_total
     else:
@@ -573,6 +612,14 @@ async def compute_gaps(
     confirmed_readiness = (
         round(weighted_confirmed_done / confirmed_weight, 3) if confirmed_weight > 0 else None
     )
+    critical_readiness = (
+        round(weighted_critical_done / critical_metric_weight, 3)
+        if critical_metric_weight > 0
+        else None
+    )
+    average_gap = (
+        round(weighted_gap_total / weighted_gap_weight, 1) if weighted_gap_weight > 0 else 0.0
+    )
 
     return GapReport(
         vacancy_id=vacancy.id,
@@ -581,6 +628,11 @@ async def compute_gaps(
         overall_readiness=round(coverage_all, 3),
         coverage_all=round(coverage_all, 3),
         confirmed_readiness=confirmed_readiness,
+        critical_readiness=critical_readiness,
+        satisfied_count=sum(1 for item in items if item.satisfied),
+        requirements_count=len(items),
+        average_gap=average_gap,
+        recommendations=_recommendations(items),
         provisional_count=provisional_count,
         provisional_weight=round(provisional_weight, 3),
         confirmed_weight=round(confirmed_weight, 3),
@@ -589,6 +641,49 @@ async def compute_gaps(
         critical_gap_count=critical_gap_count,
         unmatched_count=unmatched_count,
     )
+
+
+def _recommendations(items: list[GapItem], limit: int = 5) -> tuple[GapRecommendation, ...]:
+    """Возвращает до `limit` тем, которые нужно подтянуть в первую очередь."""
+    ranked: list[tuple[float, GapItem]] = []
+    for item in items:
+        if item.satisfied or item.required_level <= 0:
+            continue
+        factor = 1.0 if item.criticality == "must_have" else 0.5
+        priority = factor * item.weight * (item.gap / item.required_level)
+        if priority <= 0:
+            continue
+        ranked.append((round(priority, 3), item))
+
+    ranked.sort(key=lambda pair: (pair[0], pair[1].gap), reverse=True)
+
+    result: list[GapRecommendation] = []
+    seen: set[str] = set()
+    for priority, item in ranked:
+        key = item.topic_key or item.skill_name
+        if key in seen:
+            continue
+        seen.add(key)
+        criticality = "обязательное" if item.criticality == "must_have" else "желательное"
+        result.append(
+            GapRecommendation(
+                topic_key=item.topic_key,
+                topic_name=item.topic_name,
+                skill_name=item.skill_name,
+                required_level=item.required_level,
+                user_level=item.user_level,
+                gap=item.gap,
+                priority=priority,
+                criticality=item.criticality,
+                reason=(
+                    f"{criticality.capitalize()} требование, вес {item.weight:.2f}: "
+                    f"не хватает {item.gap} из {item.required_level}"
+                ),
+            )
+        )
+        if len(result) >= limit:
+            break
+    return tuple(result)
 
 
 async def get_vacancy(session: AsyncSession, user_id: uuid.UUID, vacancy_id: uuid.UUID) -> Vacancy:
@@ -729,17 +824,19 @@ async def update_skill_proficiency(
     )
 
 
-async def _match_skills(
+async def _prepare_skills(
     session: AsyncSession,
     skills: list[ExtractedSkill],
     embedder: EmbeddingProvider | None,
-) -> list[TopicMatch]:
-    """Сопоставляет навыки с темами онтологии из БД."""
+) -> tuple[list[ExtractedSkill], list[TopicMatch]]:
+    """Расширяет составные названия и сопоставляет навыки с темами."""
     if not skills:
-        return []
+        return [], []
     index = await load_topic_index(session)
+    expanded = _expand_composite_skills(skills, index)
     matcher = create_skill_matcher(index, embedder)
-    return await matcher.match_many([skill.name for skill in skills])
+    matches = await matcher.match_many([skill.name for skill in expanded])
+    return expanded, matches
 
 
 async def _unmatched_resume_skills(
@@ -783,6 +880,41 @@ def _topic_brief(topic: Topic | None) -> TopicBriefData | None:
         category=topic.category,
         status=topic.status,
     )
+
+
+def _expand_composite_skills(
+    skills: list[ExtractedSkill],
+    index: TopicIndex,
+) -> list[ExtractedSkill]:
+    """Разбивает составные названия, если части по отдельности есть в онтологии."""
+    expanded: list[ExtractedSkill] = []
+    for skill in skills:
+        # Точное название темы не трогаем, даже если внутри есть разделитель.
+        if index.find_exact(skill.name) is not None:
+            expanded.append(skill)
+            continue
+        parts = [
+            part.strip()
+            for part in _COMPOSITE_SPLIT_RE.split(skill.name)
+            if part.strip() and len(part.strip()) >= 2
+        ]
+        matched = [part for part in parts if _has_topic(index, part)]
+        # Составное название важнее случайного алиаса «lightgbm xgboost».
+        if len(matched) >= 2 and len(matched) == len(parts):
+            expanded.extend(replace(skill, name=part) for part in matched)
+        elif _has_topic(index, skill.name):
+            expanded.append(skill)
+        else:
+            expanded.append(skill)
+    return _unique_skills(tuple(expanded))
+
+
+def _has_topic(index: TopicIndex, name: str) -> bool:
+    """Есть ли у названия точное, алиасное или нечёткое совпадение с темой."""
+    if index.find_exact(name) is not None or index.find_alias(name) is not None:
+        return True
+    topic, _ = index.find_fuzzy(name, DEFAULT_FUZZY_THRESHOLD)
+    return topic is not None
 
 
 def _unique_skills(skills: tuple[ExtractedSkill, ...]) -> list[ExtractedSkill]:

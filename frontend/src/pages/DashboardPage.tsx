@@ -117,7 +117,7 @@ export default function DashboardPage() {
                   key={vacancy.id}
                   variant="ghost"
                   className="h-auto justify-between gap-3 py-2"
-                  onClick={() => navigate(`/profile?vacancy=${vacancy.id}`)}
+                  onClick={() => navigate(`/vacancies/${vacancy.id}`)}
                 >
                   <span className="font-medium">{vacancy.title ?? 'Без названия'}</span>
                   <span className="text-xs text-muted-foreground">

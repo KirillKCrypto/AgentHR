@@ -11,6 +11,7 @@ import {
   CardTitle,
 } from '@/components/ui/card'
 import { Progress } from '@/components/ui/progress'
+import { CreatePlanButton } from '@/components/CreatePlanButton'
 import {
   Table,
   TableBody,
@@ -30,11 +31,10 @@ export function VacancyAssessment({
   hasProfile: boolean
 }) {
   const coverage = Math.round(gaps.coverage_all * 100)
-  const confirmed =
-    gaps.confirmed_readiness === null || gaps.confirmed_readiness === undefined
+  const critical =
+    gaps.critical_readiness === null || gaps.critical_readiness === undefined
       ? null
-      : Math.round(gaps.confirmed_readiness * 100)
-  const satisfied = gaps.items.filter((item) => item.satisfied).length
+      : Math.round(gaps.critical_readiness * 100)
 
   return (
     <div className="flex flex-col gap-6">
@@ -49,7 +49,7 @@ export function VacancyAssessment({
         <CardContent className="flex flex-col gap-4">
           {hasProfile ? (
             <>
-              <div className="grid gap-4 sm:grid-cols-2">
+              <div className="grid gap-4 sm:grid-cols-3">
                 <div className="flex flex-col gap-1">
                   <span className="text-3xl font-medium">{coverage}%</span>
                   <span className="text-sm text-muted-foreground">готовность по вакансии</span>
@@ -57,23 +57,25 @@ export function VacancyAssessment({
                 </div>
                 <div className="flex flex-col gap-1">
                   <span className="text-3xl font-medium">
-                    {confirmed === null ? '—' : `${confirmed}%`}
+                    {critical === null ? '—' : `${critical}%`}
                   </span>
                   <span className="text-sm text-muted-foreground">
-                    подтверждённая готовность
+                    обязательные требования
                   </span>
-                  {confirmed === null ? (
-                    <span className="text-xs text-muted-foreground">
-                      нет подтверждённых требований
-                    </span>
+                  {critical === null ? (
+                    <span className="text-xs text-muted-foreground">нет must_have</span>
                   ) : (
-                    <Progress value={confirmed} />
+                    <Progress value={critical} />
                   )}
+                </div>
+                <div className="flex flex-col gap-1">
+                  <span className="text-3xl font-medium">{Math.round(gaps.average_gap)}</span>
+                  <span className="text-sm text-muted-foreground">средний разрыв, пункты</span>
                 </div>
               </div>
               <p className="text-sm text-muted-foreground">
-                {satisfied} из {gaps.items.length} требований закрыто. Коэффициент навыка —
-                отношение уровня в профиле к требуемому.
+                {gaps.satisfied_count} из {gaps.requirements_count} требований закрыто.
+                Коэффициент навыка — отношение уровня в профиле к требуемому.
               </p>
               {gaps.critical_gap_count > 0 ? (
                 <p className="text-sm text-destructive">
@@ -100,16 +102,53 @@ export function VacancyAssessment({
               </div>
             </div>
           )}
-          <div>
+          <div className="flex flex-wrap items-center gap-2">
             <Link
               to={`/profile?vacancy=${vacancy.id}`}
               className={buttonVariants({ variant: 'outline' })}
             >
               Открыть профиль знаний
             </Link>
+            <CreatePlanButton vacancyId={vacancy.id} />
           </div>
         </CardContent>
       </Card>
+
+      {hasProfile && gaps.recommendations.length > 0 ? (
+        <Card>
+          <CardHeader>
+            <CardTitle>Что подтянуть в первую очередь</CardTitle>
+            <CardDescription>
+              Отсортировано по критичности, весу требования и размеру разрыва.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="flex flex-col gap-4">
+            {gaps.recommendations.map((item) => (
+              <div
+                key={item.topic_key ?? item.skill_name}
+                className="flex flex-col gap-1 border-b pb-3 last:border-b-0 last:pb-0"
+              >
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <span className="font-medium">
+                    {item.topic_name ?? item.skill_name}
+                  </span>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <Badge variant={item.criticality === 'must_have' ? 'default' : 'outline'}>
+                      {item.criticality === 'must_have' ? 'обязательно' : 'желательно'}
+                    </Badge>
+                    <Badge variant="destructive">не хватает {item.gap}</Badge>
+                  </div>
+                </div>
+                <span className="text-sm text-muted-foreground">
+                  в профиле {item.user_level} из {item.required_level} · приоритет{' '}
+                  {Math.round(item.priority * 100)}%
+                </span>
+                <span className="text-xs text-muted-foreground">{item.reason}</span>
+              </div>
+            ))}
+          </CardContent>
+        </Card>
+      ) : null}
 
       <Card>
         <CardHeader>

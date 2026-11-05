@@ -27,6 +27,23 @@ DEFAULT_EMBEDDING_THRESHOLD = 0.35
 
 _NORMALIZE_RE = re.compile(r"[^\w\s]", re.UNICODE)
 _SPACES_RE = re.compile(r"\s+", re.UNICODE)
+# Версия в конце названия: «Python 3.11», «React 18», «C# 12».
+_VERSION_SUFFIX_RE = re.compile(r"\s+v?\d{1,2}(?:\.(?:\d{1,2}|x))*$", re.IGNORECASE)
+
+
+def strip_version_suffix(raw: str) -> str:
+    """Убирает версию в конце названия: «Python 3.11» → «Python»."""
+    text = unicodedata.normalize("NFKC", raw or "").strip()
+    return _VERSION_SUFFIX_RE.sub("", text)
+
+
+def _name_variants(raw_name: str) -> tuple[str, ...]:
+    """Варианты названия для сопоставления: исходный и без версии."""
+    stripped = strip_version_suffix(raw_name)
+    if stripped and stripped != raw_name:
+        return (raw_name, stripped)
+    return (raw_name,)
+
 
 # C++ и C# после удаления пунктуации превращаются в «c» и конфликтуют.
 # Сохраняем различие осмысленными токенами до общей нормализации.
@@ -213,17 +230,9 @@ class SkillMatcher:
         pending: list[int] = []
 
         for index, raw_name in enumerate(names):
-            exact = self._index.find_exact(raw_name)
-            if exact is not None:
-                matches[index] = TopicMatch(exact.id, "exact", 1.0, exact.key)
-                continue
-            alias = self._index.find_alias(raw_name)
-            if alias is not None:
-                matches[index] = TopicMatch(alias.id, "alias", 1.0, alias.key)
-                continue
-            fuzzy, score = self._index.find_fuzzy(raw_name, self._fuzzy_threshold)
-            if fuzzy is not None:
-                matches[index] = TopicMatch(fuzzy.id, "fuzzy", score, fuzzy.key)
+            found = self._match_lexical(raw_name)
+            if found is not None:
+                matches[index] = found
                 continue
             pending.append(index)
 
@@ -233,6 +242,20 @@ class SkillMatcher:
         return [
             match if match is not None else TopicMatch(None, "none", 0.0, None) for match in matches
         ]
+
+    def _match_lexical(self, raw_name: str) -> TopicMatch | None:
+        """Ищет тему по имени, алиасу, нечёткому совпадению и без версии."""
+        for candidate in _name_variants(raw_name):
+            exact = self._index.find_exact(candidate)
+            if exact is not None:
+                return TopicMatch(exact.id, "exact", 1.0, exact.key)
+            alias = self._index.find_alias(candidate)
+            if alias is not None:
+                return TopicMatch(alias.id, "alias", 1.0, alias.key)
+            fuzzy, score = self._index.find_fuzzy(candidate, self._fuzzy_threshold)
+            if fuzzy is not None:
+                return TopicMatch(fuzzy.id, "fuzzy", score, fuzzy.key)
+        return None
 
     async def _match_by_embedding(
         self,

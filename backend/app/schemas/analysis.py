@@ -147,6 +147,20 @@ class GapItemRead(BaseModel):
     criticality: str = "must_have"
 
 
+class GapRecommendationRead(BaseModel):
+    """Навык, который нужно подтянуть в первую очередь."""
+
+    topic_key: str | None = None
+    topic_name: str | None = None
+    skill_name: str
+    required_level: int
+    user_level: int
+    gap: int
+    priority: float
+    criticality: str
+    reason: str
+
+
 class GapAnalysisRead(BaseModel):
     """Gap-анализ вакансии относительно профиля."""
 
@@ -160,6 +174,16 @@ class GapAnalysisRead(BaseModel):
     confirmed_readiness: float | None = Field(
         default=None,
         description="Покрытие только canonical-требований; null, если их нет",
+    )
+    critical_readiness: float | None = Field(
+        default=None,
+        description="Покрытие только must_have-требований; null, если их нет",
+    )
+    satisfied_count: int = Field(default=0, description="Сколько требований закрыто")
+    requirements_count: int = Field(default=0, description="Сколько требований всего")
+    average_gap: float = Field(default=0.0, description="Средневзвешенный разрыв в пунктах, 0..100")
+    recommendations: list[GapRecommendationRead] = Field(
+        default=[], description="Что подтянуть в первую очередь"
     )
     provisional_count: int = Field(description="Сколько требований опираются на provisional-темы")
     provisional_weight: float = Field(description="Суммарный вес provisional-требований")

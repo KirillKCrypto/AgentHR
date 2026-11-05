@@ -175,7 +175,17 @@ export default function VacancyUploadPage() {
       </Card>
 
       {vacancy && gaps ? (
-        <VacancyAssessment vacancy={vacancy} gaps={gaps} hasProfile={hasProfile} />
+        <div className="flex flex-col gap-3">
+          <div>
+            <Link
+              to={`/vacancies/${vacancy.id}`}
+              className={buttonVariants({ variant: 'outline' })}
+            >
+              Открыть сохранённую вакансию
+            </Link>
+          </div>
+          <VacancyAssessment vacancy={vacancy} gaps={gaps} hasProfile={hasProfile} />
+        </div>
       ) : null}
     </div>
   )

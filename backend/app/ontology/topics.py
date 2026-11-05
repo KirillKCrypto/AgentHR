@@ -517,6 +517,17 @@ _TOPIC_SPECS: tuple[TopicSpec, ...] = (
         ("ml", "python"),
     ),
     (
+        "lightgbm",
+        "LightGBM",
+        "ml_library",
+        (
+            "LightGBM: градиентный бустинг над деревьями, категориальные признаки "
+            "и быстрое обучение на больших данных."
+        ),
+        ("light gbm", "лгбм"),
+        ("ml", "python"),
+    ),
+    (
         "catboost",
         "CatBoost",
         "ml_library",

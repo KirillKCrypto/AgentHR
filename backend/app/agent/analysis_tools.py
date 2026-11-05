@@ -184,6 +184,10 @@ def build_analysis_tools(
             "overall_readiness": report.overall_readiness,
             "coverage_all": report.coverage_all,
             "confirmed_readiness": report.confirmed_readiness,
+            "critical_readiness": report.critical_readiness,
+            "satisfied_count": report.satisfied_count,
+            "requirements_count": report.requirements_count,
+            "average_gap": report.average_gap,
             "provisional_count": report.provisional_count,
             "provisional_weight": report.provisional_weight,
             "confirmed_weight": report.confirmed_weight,
@@ -191,6 +195,20 @@ def build_analysis_tools(
             "critical_weight": report.critical_weight,
             "critical_gap_count": report.critical_gap_count,
             "unmatched_count": report.unmatched_count,
+            "recommendations": [
+                {
+                    "topic_key": item.topic_key,
+                    "topic_name": item.topic_name,
+                    "skill_name": item.skill_name,
+                    "required_level": item.required_level,
+                    "user_level": item.user_level,
+                    "gap": item.gap,
+                    "priority": item.priority,
+                    "criticality": item.criticality,
+                    "reason": item.reason,
+                }
+                for item in report.recommendations
+            ],
             "items": [
                 {
                     "skill_name": item.skill_name,
