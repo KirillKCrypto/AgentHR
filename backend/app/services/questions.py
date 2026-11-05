@@ -129,3 +129,42 @@ async def pick_questions(
         )
         for row in rows
     )
+
+
+async def pick_test_questions(
+    session: AsyncSession,
+    topic_id: uuid.UUID,
+    *,
+    count: int = 10,
+) -> tuple[QuestionItem, ...]:
+    """Собирает тест из вопросов разной сложности.
+
+    По умолчанию 10 вопросов: по два с каждой сложности 1–5. Если на какой-то
+    сложности вопросов не хватает, добирает остаток из любых сложностей.
+    """
+    count = max(1, count)
+    base, remainder = divmod(count, 5)
+    selected: list[QuestionItem] = []
+    for difficulty in range(1, 6):
+        wanted = base + (1 if difficulty <= remainder else 0)
+        if wanted <= 0:
+            continue
+        selected.extend(
+            await pick_questions(session, topic_id, difficulty=difficulty, limit=wanted)
+        )
+
+    if len(selected) < count:
+        exclude = {item.id for item in selected}
+        selected.extend(
+            await pick_questions(
+                session,
+                topic_id,
+                difficulty=None,
+                limit=count - len(selected),
+                exclude_ids=exclude,
+            )
+        )
+
+    selected.sort(key=lambda item: (item.difficulty, item.id))
+    return tuple(selected[:count])
+

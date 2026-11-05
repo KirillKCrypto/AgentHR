@@ -147,6 +147,15 @@ export function fetchQuestions(
   return apiFetch(`/questions?${params.toString()}`, { token })
 }
 
+export function fetchTestQuestions(
+  topicKey: string,
+  token: string,
+  count = 10,
+): Promise<QuestionRead[]> {
+  const params = new URLSearchParams({ topic_key: topicKey, count: String(count) })
+  return apiFetch(`/questions/test?${params.toString()}`, { token })
+}
+
 export function runAnalysis(payload: AnalysisRequest, token: string): Promise<AnalysisResponse> {
   return apiFetch('/analysis', { method: 'POST', token, body: JSON.stringify(payload) })
 }

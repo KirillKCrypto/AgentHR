@@ -6,9 +6,35 @@ from sqlalchemy import select
 from app.api.deps import CurrentUser, DbSession
 from app.models import Topic
 from app.schemas.plan import QuestionRead
-from app.services.questions import pick_questions
+from app.services.questions import pick_questions, pick_test_questions
 
 router = APIRouter(prefix="/questions", tags=["questions"])
+
+
+@router.get("/test")
+async def read_test(
+    db: DbSession,
+    current_user: CurrentUser,
+    topic_key: str = Query(min_length=1, max_length=64),
+    count: int = Query(default=10, ge=5, le=20),
+) -> list[QuestionRead]:
+    """Тест из вопросов разной сложности по теме."""
+    topic = await db.scalar(select(Topic).where(Topic.key == topic_key))
+    if topic is None or topic.status not in ("canonical", "provisional"):
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Тема не найдена")
+
+    questions = await pick_test_questions(db, topic.id, count=count)
+    return [
+        QuestionRead(
+            id=item.id,
+            topic_id=item.topic_id,
+            difficulty=item.difficulty,
+            text=item.text,
+            expected_points=list(item.expected_points),
+            source=item.source,
+        )
+        for item in questions
+    ]
 
 
 @router.get("")

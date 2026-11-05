@@ -5,7 +5,7 @@ import { Link, useParams } from 'react-router'
 import {
   ApiError,
   fetchPlan,
-  fetchQuestions,
+  fetchTestQuestions,
   type PlanRead,
   type QuestionRead,
 } from '@/api/client'
@@ -25,7 +25,6 @@ import { useAuthToken } from '@/lib/useAuthToken'
 export default function PlanPage() {
   const { planId } = useParams<{ planId: string }>()
   const { token, expire } = useAuthToken()
-  const [difficulty, setDifficulty] = useState(3)
 
   const planQuery = useQuery<PlanRead>({
     queryKey: ['plan', planId, token],
@@ -117,20 +116,6 @@ export default function PlanPage() {
           </CardDescription>
         </CardHeader>
         <CardContent className="flex flex-col gap-5">
-          <div className="flex flex-wrap items-center gap-2">
-            <span className="text-sm text-muted-foreground">Сложность вопросов:</span>
-            {[1, 2, 3, 4, 5].map((value) => (
-              <Button
-                key={value}
-                type="button"
-                size="sm"
-                variant={difficulty === value ? 'default' : 'outline'}
-                onClick={() => setDifficulty(value)}
-              >
-                {value}
-              </Button>
-            ))}
-          </div>
           {plan.items.length === 0 ? (
             <p className="text-sm text-muted-foreground">
               В плане нет тем — загрузите резюме и постройте план заново.
