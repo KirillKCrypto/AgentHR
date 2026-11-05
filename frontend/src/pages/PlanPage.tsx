@@ -145,11 +145,7 @@ export default function PlanPage() {
                   <span>·</span>
                   <span>{item.reason}</span>
                 </div>
-                <TopicQuestions
-                  topicKey={item.topic_key}
-                  token={token}
-                  difficulty={difficulty}
-                />
+                <TopicQuestions topicKey={item.topic_key} token={token} />
               </div>
             ))
           )}
@@ -159,19 +155,11 @@ export default function PlanPage() {
   )
 }
 
-function TopicQuestions({
-  topicKey,
-  token,
-  difficulty,
-}: {
-  topicKey: string
-  token: string
-  difficulty: number
-}) {
+function TopicQuestions({ topicKey, token }: { topicKey: string; token: string }) {
   const [open, setOpen] = useState(false)
   const questionsQuery = useQuery<QuestionRead[]>({
-    queryKey: ['questions', topicKey, difficulty, token],
-    queryFn: () => fetchQuestions(topicKey, token, { difficulty, limit: 5 }),
+    queryKey: ['questions', topicKey, token],
+    queryFn: () => fetchTestQuestions(topicKey, token, 10),
     enabled: open,
     retry: false,
   })
@@ -185,7 +173,7 @@ function TopicQuestions({
           variant={open ? 'outline' : 'secondary'}
           onClick={() => setOpen((value) => !value)}
         >
-          {open ? 'Скрыть вопросы' : 'Проверить знания'}
+          {open ? 'Скрыть тест' : 'Пройти тест (10 вопросов)'}
         </Button>
         {open ? (
           <Button
@@ -195,7 +183,7 @@ function TopicQuestions({
             onClick={() => void questionsQuery.refetch()}
             disabled={questionsQuery.isFetching}
           >
-            Другие вопросы
+            Другой набор
           </Button>
         ) : null}
       </div>
@@ -207,13 +195,16 @@ function TopicQuestions({
           <p className="text-sm text-destructive">{errorMessage(questionsQuery.error)}</p>
         ) : (questionsQuery.data ?? []).length === 0 ? (
           <p className="text-sm text-muted-foreground">
-            Для сложности {difficulty} вопросов пока нет — банк ещё наполняется.
+            Вопросов по теме пока нет — банк ещё наполняется.
           </p>
         ) : (
           <ol className="flex list-decimal flex-col gap-3 pl-5 text-sm">
             {(questionsQuery.data ?? []).map((question) => (
               <li key={question.id} className="flex flex-col gap-1">
-                <span>{question.text}</span>
+                <div className="flex flex-wrap items-start justify-between gap-2">
+                  <span>{question.text}</span>
+                  <Badge variant="outline">сложность {question.difficulty}/5</Badge>
+                </div>
                 {question.expected_points.length > 0 ? (
                   <details>
                     <summary className="cursor-pointer text-xs text-muted-foreground">

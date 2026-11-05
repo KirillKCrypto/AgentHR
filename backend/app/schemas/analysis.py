@@ -108,6 +108,9 @@ class ProfileTopicRead(BaseModel):
     proficiency: int
     confidence: float
     source: str
+    claimed_level: int | None = None
+    verified_level: int | None = None
+    evidence_strength: float = 0.4
     last_assessed: datetime | None = None
     status: str = "canonical"
 

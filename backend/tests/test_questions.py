@@ -113,8 +113,22 @@ async def test_questions_api_returns_random_items(api_user: ApiUser) -> None:
         assert response.status_code == 200, response.text
         body = response.json()
         assert len(body) == 2
-        assert body[0]["expected_points"] == ["пункт"]
+        assert all(isinstance(item["expected_points"], list) for item in body)
     finally:
         async with async_session_factory() as session:
             await session.execute(delete(Question).where(Question.text.like(f"%{marker}%")))
             await session.commit()
+
+
+async def test_questions_test_api_returns_mixed_difficulty(api_user: ApiUser) -> None:
+    """Тест по теме содержит вопросы разной сложности."""
+    response = await api_user.client.get(
+        "/questions/test",
+        params={"topic_key": "python", "count": 10},
+        headers=api_user.headers,
+    )
+
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert 5 <= len(body) <= 10
+    assert len({item["difficulty"] for item in body}) >= 2

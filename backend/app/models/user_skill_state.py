@@ -38,6 +38,18 @@ class UserSkillState(Base):
         CheckConstraint(
             "confidence >= 0 AND confidence <= 1", name="ck_user_skill_states_confidence"
         ),
+        CheckConstraint(
+            "claimed_level IS NULL OR (claimed_level >= 0 AND claimed_level <= 100)",
+            name="ck_user_skill_states_claimed_level",
+        ),
+        CheckConstraint(
+            "verified_level IS NULL OR (verified_level >= 0 AND verified_level <= 100)",
+            name="ck_user_skill_states_verified_level",
+        ),
+        CheckConstraint(
+            "evidence_strength >= 0 AND evidence_strength <= 1",
+            name="ck_user_skill_states_evidence_strength",
+        ),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(
@@ -52,8 +64,14 @@ class UserSkillState(Base):
     topic_id: Mapped[uuid.UUID] = mapped_column(
         Uuid, ForeignKey("topics.id", ondelete="CASCADE"), index=True
     )
-    # Оценка владения темой, 0..100
+    # Эффективная оценка владения темой, 0..100
     proficiency: Mapped[int] = mapped_column(Integer, default=0, server_default=text("0"))
+    # Заявленный уровень из резюме/самоотчёта
+    claimed_level: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # Уровень, подтверждённый тестом или интервью
+    verified_level: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # Сила свидетельств: 0..1
+    evidence_strength: Mapped[float] = mapped_column(Float, default=0.4, server_default=text("0.4"))
     # Уверенность оценки, 0..1
     confidence: Mapped[float] = mapped_column(Float, default=0.5, server_default=text("0.5"))
     # resume | interview | manual | assessment

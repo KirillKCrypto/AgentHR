@@ -24,12 +24,15 @@ LLM + Agent Harness + Tool Calling + Knowledge Graph + Persistent Memory + Adapt
 
 - **M0–M2 закрыты:** инфраструктура, auth, Deep Agents, извлечение навыков,
   нормализация, профиль знаний, gap-анализ.
-- **M3 в работе:** профиль-first, план подготовки из резюме, банк вопросов;
-  сессия интервью — следующий шаг.
+- **M3 в работе:** профиль-first, план подготовки из резюме, банк вопросов,
+  мини-тесты; сессия интервью — следующий шаг.
 - **Онтология:** этапы 1–4 закрыты — 90 canonical-тем, provisional-темы,
   backfill, CLI ревью, автоматическое ревью, `coverage_all` / `confirmed_readiness`,
   группы `AND/OR`, `criticality`.
-- **Следующий этап онтологии:** `evidence_type` / `verified_level`.
+- **Assessment MVP:** 160 вопросов по 8 темам, тест из 10 вопросов,
+  `claimed_level` / `verified_level`, один тест на тему.
+- **Следующий этап:** адаптивный выбор вопросов и открытые ответы;
+  онтология — `evidence_type` / `verified_level`.
 
 Подробный статус и план: [`docs/ONTOLOGY.md`](docs/ONTOLOGY.md),
 [`docs/ROADMAP.md`](docs/ROADMAP.md).
@@ -129,6 +132,7 @@ cd backend
 uv run python -m app.ontology.seed
 uv run python -m app.ontology.review list
 uv run python -m app.ontology.review auto
+uv run python -m app.assessment.seed
 ```
 
 Банк вопросов:
@@ -160,6 +164,7 @@ uv run python -m app.questions.seed --all
 | [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) | архитектура, компоненты, потоки данных, модель данных | перед изменением архитектуры |
 | [`docs/PROJECT_MAP.md`](docs/PROJECT_MAP.md) | карта модулей и файлов, миграции, точки входа | перед поиском кода |
 | [`docs/ONTOLOGY.md`](docs/ONTOLOGY.md) | онтология, provisional-темы, gap-анализ, план этапов | при работе с навыками и оценкой |
+| [`docs/ASSESSMENT.md`](docs/ASSESSMENT.md) | мини-тесты, банк вопросов, скоринг | при работе с проверкой навыков |
 | [`docs/ROADMAP.md`](docs/ROADMAP.md) | вехи, 8-недельный план, экраны, тестирование, риски | при планировании |
 | [`docs/DECISIONS.md`](docs/DECISIONS.md) | зафиксированные решения и компромиссы | перед спорным выбором |
 | [`docs/GLOSSARY.md`](docs/GLOSSARY.md) | термины проекта | при незнакомом термине |

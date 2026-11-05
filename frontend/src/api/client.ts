@@ -21,6 +21,10 @@ export type PlanCreate = components['schemas']['PlanCreate']
 export type PlanRead = components['schemas']['PlanRead']
 export type PlanSummary = components['schemas']['PlanSummaryRead']
 export type QuestionRead = components['schemas']['QuestionRead']
+export type AssessmentTopicRead = components['schemas']['AssessmentTopicRead']
+export type AssessmentStartRead = components['schemas']['AssessmentStartRead']
+export type AssessmentAnswerRead = components['schemas']['AssessmentAnswerRead']
+export type AssessmentFinishRead = components['schemas']['AssessmentFinishRead']
 
 export class ApiError extends Error {
   readonly status: number
@@ -158,4 +162,35 @@ export function fetchTestQuestions(
 
 export function runAnalysis(payload: AnalysisRequest, token: string): Promise<AnalysisResponse> {
   return apiFetch('/analysis', { method: 'POST', token, body: JSON.stringify(payload) })
+}
+
+export function fetchAssessmentTopics(token: string): Promise<AssessmentTopicRead[]> {
+  return apiFetch('/assessments/topics', { token })
+}
+
+export function startAssessment(topicKey: string, token: string): Promise<AssessmentStartRead> {
+  return apiFetch(`/assessments/${encodeURIComponent(topicKey)}/start`, {
+    method: 'POST',
+    token,
+  })
+}
+
+export function answerAssessment(
+  attemptId: string,
+  questionId: string,
+  answerKey: string,
+  token: string,
+): Promise<AssessmentAnswerRead> {
+  return apiFetch(`/assessments/${encodeURIComponent(attemptId)}/answers`, {
+    method: 'POST',
+    token,
+    body: JSON.stringify({ question_id: questionId, answer_key: answerKey }),
+  })
+}
+
+export function finishAssessment(attemptId: string, token: string): Promise<AssessmentFinishRead> {
+  return apiFetch(`/assessments/${encodeURIComponent(attemptId)}/finish`, {
+    method: 'POST',
+    token,
+  })
 }

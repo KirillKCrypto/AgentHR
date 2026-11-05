@@ -26,16 +26,17 @@ backend/
 │   ├── api/
 │   │   ├── deps.py             auth, LLM, embedder
 │   │   ├── mappers.py          доменные объекты → Pydantic
-│   │   └── routes/             auth, users, vacancies, resumes, profile, analysis
+│   │   └── routes/             auth, users, vacancies, resumes, profile, analysis, assessments
 │   ├── core/                   config, JWT/пароли
 │   ├── db/                     async engine, Base
 │   ├── embeddings/             none/local/mock эмбеддинги
 │   ├── llm/                    base, mock, openai (DeepSeek/OpenAI-совместимый), factory
-│   ├── models/                 User, AgentAction, Topic, Vacancy, Resume, ...
+│   ├── assessment/             вопросы и сид мини-тестов
+│   ├── models/                 User, AgentAction, Topic, Vacancy, Resume, Assessment...
 │   ├── ontology/               topics.py, seed.py, graph.py, review.py
 │   ├── schemas/                Pydantic-схемы API
 │   └── services/               analysis, documents, normalization, profile, topics,
-│                               ontology_review, ontology_auto_review
+│                               ontology_review, ontology_auto_review, assessment
 ├── alembic/versions/           миграции
 ├── docker/entrypoint.sh        миграции + uvicorn
 ├── Dockerfile
@@ -57,6 +58,7 @@ backend/
 | Профиль и gap-анализ | `app/services/profile.py`, `gaps.py` |
 | План подготовки | `app/services/plans.py`, `app/api/routes/plans.py` |
 | Банк вопросов | `app/services/questions.py`, `app/questions/` |
+| Мини-тесты навыков | `app/assessment/`, `app/services/assessment.py` |
 | REST API | `app/api/routes/` |
 | Agent Harness и tools | `app/agent/` |
 | ORM-модели | `app/models/` |
@@ -109,6 +111,8 @@ infra/
 10. `a4b5c6d7e8f9` — поля автоматического ревью тем
 11. `b6d7e8f9a0b1` — планы подготовки
 12. `c7e8f9a0b1c2` — банк вопросов
+13. `b5c6d7e8f9a0` — assessment: вопросы, попытки, ответы, claimed/verified
+14. `c6d7e8f9a0b1` — запрет повторного завершённого теста
 
 Новое состояние — только через новую миграцию.
 
@@ -123,6 +127,7 @@ infra/
 | Сид онтологии | `cd backend && uv run python -m app.ontology.seed` |
 | Ревью онтологии | `cd backend && uv run python -m app.ontology.review list` |
 | Авто-ревью | `cd backend && uv run python -m app.ontology.review auto` |
+| Сид тестов | `cd backend && uv run python -m app.assessment.seed` |
 | Тесты | `cd backend && uv run pytest -q` |
 | Frontend build | `cd frontend && npm.cmd run build` |
 

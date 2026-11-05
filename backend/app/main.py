@@ -13,6 +13,7 @@ from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.routes.analysis import router as analysis_router
+from app.api.routes.assessments import router as assessments_router
 from app.api.routes.auth import router as auth_router
 from app.api.routes.plans import router as plans_router
 from app.api.routes.profile import router as profile_router
@@ -56,6 +57,7 @@ app.include_router(profile_router)
 app.include_router(plans_router)
 app.include_router(questions_router)
 app.include_router(analysis_router)
+app.include_router(assessments_router)
 
 
 @app.exception_handler(LLMError)
