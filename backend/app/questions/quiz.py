@@ -1,8 +1,10 @@
 """Ленивая генерация вариантов ответа для вопросов банка."""
 
 import logging
+import random
 from typing import Any
 
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.llm.base import ChatMessage, LLMError, LLMProvider
@@ -51,6 +53,7 @@ SYSTEM_PROMPT = (
     "- Варианты на русском, без «все вышеперечисленное» и «ни один».\n"
     "- Неправильные варианты должны быть похожи по стилю, но ошибочны по сути.\n"
     "- correct_index — индекс правильного варианта от 0 до 3.\n"
+    "- Ставь правильный ответ на разные позиции, не всегда первым.\n"
     "- explanation — 1–2 предложения, почему правильный ответ верен.\n"
     "- Верни ровно по одному элементу на каждый вопрос, number совпадает с номером."
 )
@@ -116,8 +119,44 @@ async def ensure_quiz_options(
             raise QuizError("LLM вернула некорректные варианты ответа")
         if not 0 <= correct < OPTIONS_PER_QUESTION or len(set(options)) != OPTIONS_PER_QUESTION:
             raise QuizError("LLM вернула некорректный правильный ответ")
+        options, correct = shuffle_options(options, correct)
         question.options = options
         question.correct_option = correct
         question.explanation = str(item.get("explanation") or "").strip()[:1000] or None
 
     await session.flush()
+
+
+def shuffle_options(
+    options: list[str],
+    correct: int,
+    *,
+    rng: random.Random | None = None,
+) -> tuple[list[str], int]:
+    """Перемешивает варианты и возвращает новый индекс правильного.
+
+    LLM часто ставит правильный ответ первым, поэтому позицию нельзя оставлять
+    на усмотрение модели.
+    """
+    correct_text = options[correct]
+    shuffled = list(options)
+    (rng or random.SystemRandom()).shuffle(shuffled)
+    return shuffled, shuffled.index(correct_text)
+
+
+async def shuffle_existing_options(session: AsyncSession) -> int:
+    """Перемешивает уже сохранённые варианты, если они были сгенерированы раньше."""
+    questions = (
+        await session.scalars(
+            select(Question).where(Question.correct_option.is_not(None))
+        )
+    ).all()
+    rng = random.SystemRandom()
+    for question in questions:
+        options = [str(option) for option in question.options or []]
+        correct = question.correct_option
+        if len(options) != OPTIONS_PER_QUESTION or correct is None:
+            continue
+        question.options, question.correct_option = shuffle_options(options, correct, rng=rng)
+    await session.flush()
+    return len(questions)

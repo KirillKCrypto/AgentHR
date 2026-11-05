@@ -7,6 +7,7 @@ from sqlalchemy import delete, select, update
 from app.db.session import async_session_factory
 from app.models import Question, Topic
 from app.questions.generator import generate_questions
+from app.questions.quiz import shuffle_options
 from app.services.questions import add_questions, pick_questions
 from tests.conftest import ApiUser, SchemaStubProvider
 
@@ -16,6 +17,19 @@ async def _topic(session, key: str = "python") -> Topic:
     topic = await session.scalar(select(Topic).where(Topic.key == key))
     assert topic is not None
     return topic
+
+
+def test_shuffle_options_keeps_correct_answer() -> None:
+    """Перемешивание не теряет правильный ответ и меняет позицию."""
+    options = ["Правильный", "Неверный 1", "Неверный 2", "Неверный 3"]
+    positions = set()
+    for _ in range(50):
+        shuffled, correct = shuffle_options(options, 0)
+        assert shuffled[correct] == "Правильный"
+        assert sorted(shuffled) == sorted(options)
+        positions.add(correct)
+
+    assert len(positions) > 1
 
 
 async def test_add_questions_is_idempotent(seeded_db: None) -> None:
