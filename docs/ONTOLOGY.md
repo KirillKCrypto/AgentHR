@@ -284,8 +284,8 @@ Gap-анализ отдаёт `critical_count`, `critical_weight`, `critical_gap
 Резюме — самоотчёт. В TTL все 1635 свидетельств помечены `unverified`, и это
 правильная модель. Для объективности нужно разделять:
 
-- `claimed_level` — что заявил кандидат;
-- `verified_level` — что подтверждено интервью/оценкой;
+- `proficiency` — текущая оценка уровня из резюме или интервью;
+- `verified_level` — подтверждение уровнем интервью (следующий этап);
 - `evidence_type` — работа, проект, образование, самоотчёт;
 - `years`, `recency`, `depth`;
 - `confidence` — уверенность извлечения, а не уверенность в навыке.
@@ -311,7 +311,7 @@ Gap-анализ отдаёт `critical_count`, `critical_weight`, `critical_gap
 Целевая формула:
 
 ```
-effective_level = shrink(claimed_level, evidence_strength)
+effective_level = proficiency
 coverage = min(1, effective_level / required_level)
 group_score = OR ? max(items) : AND ? min(items) : coverage
 readiness = Σ(weight × group_score) / Σ(weight)
@@ -341,7 +341,7 @@ readiness = critical_gate × readiness
 | 2.4 | `coverage_all` / `confirmed_readiness`, отдельный блок provisional в UI | сделано |
 | 3 | `requirement_group` + `logic` в `vacancy_skills`, групповая оценка | сделано |
 | 4 | `criticality`, `required_level` по рубрике в извлечении вакансии | сделано |
-| 5.1 | Assessment MVP: 8 тем × 20 вопросов, тест из 10, `claimed_level` / `verified_level` | сделано |
+| 5.1 | Тесты по темам плана: банк 1350, 10 вопросов, варианты, оценка | сделано |
 | 5.2 | `evidence_type` / расширение verified evidence | следующее |
 | 6 | Групповая и гейтовая формула readiness + диапазон | следующее |
 | 7 | UI: отдельно «покрытие», «критические пробелы», диапазон | после M3 |

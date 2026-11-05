@@ -52,7 +52,6 @@ from app.services.topics import (
 SOURCE_WEIGHTS: dict[str, float] = {
     "manual": 1.0,
     "interview": 0.9,
-    "assessment": 0.8,
     "resume": 0.6,
 }
 
@@ -102,9 +101,6 @@ class ProfileTopic:
     topic_name: str
     category: str | None
     proficiency: int
-    claimed_level: int | None = None
-    verified_level: int | None = None
-    evidence_strength: float = 0.4
     confidence: float = 0.5
     source: str = "resume"
     last_assessed: datetime | None = None
@@ -322,7 +318,7 @@ async def rebuild_profile(
 ) -> ProfileSnapshot:
     """Пересчитывает профиль знаний по всем резюме пользователя.
 
-    Более сильные источники (`interview`, `manual`, `assessment`) не
+    Более сильные источники (`interview`, `manual`) не
     перезаписываются: пересчёт по резюме не должен снижать оценку, полученную
     на собеседовании. Свидетельства из резюме объединяются взвешенно.
     """
@@ -351,10 +347,6 @@ async def rebuild_profile(
     for topic_id, entries in grouped.items():
         state = states.get(topic_id)
         if state is not None and state.source != "resume":
-            if state.source == "assessment":
-                state.claimed_level, _ = weighted_estimate(
-                    [(skill.proficiency, skill.confidence) for skill, _ in entries]
-                )
             continue
 
         level, confidence = weighted_estimate(
@@ -375,8 +367,6 @@ async def rebuild_profile(
             session.add(state)
 
         state.proficiency = level
-        state.claimed_level = level
-        state.evidence_strength = 0.4
         state.confidence = confidence
         state.source = "resume"
         state.evidence = evidence
@@ -413,9 +403,6 @@ async def get_profile(session: AsyncSession, user_id: uuid.UUID) -> ProfileSnaps
             topic_name=topic.name,
             category=topic.category,
             proficiency=state.proficiency,
-            claimed_level=state.claimed_level,
-            verified_level=state.verified_level,
-            evidence_strength=state.evidence_strength,
             confidence=state.confidence,
             source=state.source,
             last_assessed=state.last_assessed,
@@ -548,11 +535,6 @@ async def update_skill_proficiency(
         )
 
     state.source = source
-    state.evidence_strength = SOURCE_WEIGHTS.get(source, 0.5)
-    if source == "manual":
-        state.claimed_level = level
-    elif source == "interview":
-        state.verified_level = level
     state.last_assessed = datetime.now(UTC)
     state.evidence = [
         *(state.evidence or []),
@@ -568,9 +550,6 @@ async def update_skill_proficiency(
         topic_name=topic.name,
         category=topic.category,
         proficiency=state.proficiency,
-        claimed_level=state.claimed_level,
-        verified_level=state.verified_level,
-        evidence_strength=state.evidence_strength,
         confidence=state.confidence,
         source=state.source,
         last_assessed=state.last_assessed,

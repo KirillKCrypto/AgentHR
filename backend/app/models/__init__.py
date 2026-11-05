@@ -6,7 +6,6 @@
 
 from app.db.base import Base
 from app.models.agent_action import AgentAction
-from app.models.assessment import AssessmentAnswer, AssessmentAttempt, AssessmentQuestion
 from app.models.ontology_review import OntologyReviewAction
 from app.models.plan import LearningPlan, PlanItem
 from app.models.question import Question
@@ -18,9 +17,6 @@ from app.models.vacancy import Vacancy, VacancySkill
 
 __all__ = [
     "AgentAction",
-    "AssessmentAnswer",
-    "AssessmentAttempt",
-    "AssessmentQuestion",
     "Base",
     "LearningPlan",
     "OntologyReviewAction",

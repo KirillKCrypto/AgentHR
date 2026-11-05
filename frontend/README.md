@@ -31,7 +31,7 @@ npm run generate:api # обновить src/api/schema.d.ts из OpenAPI (нуж
   `Gaps`, `PlanSkillTestsCard` + `TopicTest` (тест из 10 вопросов с вариантами ответа,
   метрикой и разбором), `ui/`
 - `src/api/` — `client.ts` (auth, вакансии, резюме, профиль, разрывы, планы, вопросы,
-  assessments, `/analysis`, `ApiError`), `schema.d.ts` (типы из OpenAPI, генерируется)
+  `/analysis`, `ApiError`), `schema.d.ts` (типы из OpenAPI, генерируется)
 - `src/lib/` — `tokens.ts` (токены в localStorage), `useAuthToken.ts` (токен + сброс сессии
   при 401), `errors.ts` (понятные сообщения), `labels.ts` (источники, методы, даты),
   `utils.ts` (`cn`)
@@ -57,8 +57,6 @@ npm run generate:api # обновить src/api/schema.d.ts из OpenAPI (нуж
   показываются после проверки.
 - Профиль и сохранённые вакансии: `/profile` → `GET /profile` + `GET /vacancies`; для
   выбранной вакансии — `GET /profile/gaps`; параметр `?vacancy=<id>` предвыбирает вакансию.
-- Проверка навыков: `/profile` → `GET /assessments/topics` → `POST /assessments/{topic}/start`
-  → ответы → `POST /assessments/{attempt}/finish`; обновляет `verified_level` в профиле.
 - Явные состояния loading / error / empty / ready на всех доменных экранах.
 
 ## Соглашения

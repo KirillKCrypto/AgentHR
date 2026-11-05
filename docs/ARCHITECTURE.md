@@ -16,10 +16,10 @@ backend (FastAPI, JWT, слой LLM, Deep Agents, tools, аудит, мигра�
 frontend (SPA со входом/регистрацией, загрузка резюме файлом или текстом, профиль
 знаний и проверка вакансии с gap-анализом).
 Онтология: provisional-темы, backfill, CLI-ревью, две метрики покрытия, группы
-`AND/OR`, criticality и автоматическое ревью тем. Добавлены мини-тесты навыков:
-8 тем × 5 вопросов, `claimed_level` / `verified_level`. Основной LLM — DeepSeek
-(`deepseek-flash`, режим `json_object`). Следующий этап — расширение банка и
-адаптивные тесты, затем M3 (план подготовки и сессия интервью).
+`AND/OR`, criticality и автоматическое ревью тем. Добавлены планы подготовки и
+банк вопросов: тесты по темам плана, 10 вопросов с вариантами ответа и разбором.
+Основной LLM — DeepSeek (`deepseek-flash`, режим `json_object`). Следующий этап —
+адаптивные тесты, затем M3 (сессия интервью).
 
 Целевая архитектура — агентская система (не чат-бот): `LLM + Agent Harness + Tool Calling +
 граф знаний + персистентная память + адаптивное обучение`.
@@ -203,7 +203,7 @@ Tools — типизированные функции, единственный 
 нечёткому совпадению, если пакет не установлен.
 
 Профиль знаний материализуется в `user_skill_states`: оценки объединяются взвешенно по
-источнику (`manual` > `interview` > `assessment` > `resume`), уверенность считается по
+источнику (`manual` > `interview` > `resume`), уверенность считается по
 независимым свидетельствам и ограничена `0.95`. Gap-анализ (`compute_gaps`) считает разрывы
 «требуется − есть» с учётом групп `AND`/`OR` и критичности `must_have`;
 `coverage_all` включает provisional-темы, `confirmed_readiness` — только canonical.
@@ -262,8 +262,6 @@ JWT-токенов в SPA; дашборд → `GET /me` с access-токеном
 - `POST /questions/quiz` — тест из 10 вопросов с вариантами ответа;
 - `POST /questions/quiz/grade` — проверка ответов и разбор;
 - `POST /analysis` — документы, профиль и разрывы одним ответом; LLM не вызывается.
-- `GET /assessments/topics`, `POST /assessments/{topic}/start`,
-  `POST /assessments/{id}/answers`, `POST /assessments/{id}/finish` — мини-тесты и `verified_level`.
 
 Доменные эндпоинты защищены `get_current_user` и изолированы по владельцу: обращение к чужому
 документу возвращает 404. `LLMError` обрабатывается глобально — 502 с понятным текстом,
@@ -364,13 +362,9 @@ JWT-токенов в SPA; дашборд → `GET /me` с access-токеном
 - Миграция `c7e8f9a0b1c2` — банк вопросов:
   - `questions` — тема, сложность 1–5, текст, эталонные пункты JSONB, fingerprint;
   - уникальный fingerprint и индекс `(topic_id, difficulty)`.
-- Миграция `b5c6d7e8f9a0` — мини-тесты навыков:
-  - `assessment_questions`, `assessment_attempts`, `assessment_answers`;
-  - `user_skill_states.claimed_level`, `verified_level`, `evidence_strength`;
-  - скоринг детерминированный, банк вопросов — `app/assessment/`.
-- Миграция `c6d7e8f9a0b1` — один завершённый тест на тему:
-  - partial unique index `(user_id, topic_id) WHERE status='completed'`;
-  - повторный старт завершённого теста возвращает 409.
+- Миграции `b5c6d7e8f9a0` / `c6d7e8f9a0b1` — assessment-подсистема, удалена миграцией
+  `e8f9a0b1c2d3`; таблицы `assessment_*` и поля `claimed_level` / `verified_level` /
+  `evidence_strength` больше не используются.
 - Подключение: `DATABASE_URL` из `backend/.env` (локальный дефолт в `app/core/config.py`);
   движок и сессии — `backend/app/db/session.py` (asyncpg, `pool_pre_ping`).
 - Миграции: Alembic (async-шаблон), URL берётся в `alembic/env.py` из настроек;

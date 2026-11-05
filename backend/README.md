@@ -54,13 +54,9 @@ docker compose up -d --build    # agenthr-api на http://127.0.0.1:8000
 - `GET /plans`, `GET /plans/{id}` — список и карточка плана;
 - `GET /questions?topic_key=...&difficulty=...&limit=...` — случайные вопросы банка;
 - `POST /questions/quiz` — тест из 10 вопросов с вариантами ответа;
-- `POST /questions/quiz/grade` — проверка ответов, метрика и разбор.
+- `POST /questions/quiz/grade` — проверка ответов, метрика и разбор;
 - `POST /analysis` — совместный анализ загруженных документов `{vacancy_id, resume_id}`:
-  документы, профиль и разрывы одним ответом (без вызовов LLM — только чтение и расчёт);
-- `GET /assessments/topics` — темы с доступными мини-тестами;
-- `POST /assessments/{topic_key}/start` — старт или продолжение попытки;
-- `POST /assessments/{attempt_id}/answers` — ответ на вопрос;
-- `POST /assessments/{attempt_id}/finish` — результат, разбор и обновление `verified_level`.
+  документы, профиль и разрывы одним ответом (без вызовов LLM — только чтение и расчёт).
 
 Доменные эндпоинты требуют access-токен и изолированы по владельцу: чужой документ
 возвращает 404, а не 403 — существование чужих записей не раскрывается.
@@ -153,9 +149,7 @@ canonical-темой «Прочее (авто-ревью)». Provisional-ста�
 - `app/services/questions.py` — банк вопросов: дедуп по fingerprint, случайная выборка.
 - `app/services/documents.py` — извлечение текста из PDF/DOCX для `POST /resumes/upload`:
   лимит 5 МБ, защита от zip-бомб, отказ для сканов без текстового слоя.
-- `app/services/assessment.py` — мини-тесты: старт, ответы, детерминированный
-  скоринг, `verified_level`; банк — 20 вопросов на тему (`questions.py` +
-  `questions_extra.py`), тест — 10 вопросов (по 2 на сложность), один раз на тему.
+- `app/questions/quiz.py` — варианты ответа и пояснения для тестов, ленивая генерация и кэш.
 - `app/services/analysis.py` — извлечение требований вакансии и навыков резюме
   (`extract_vacancy_requirements`, `extract_resume_skills`) через структурированный вывод LLM:
   JSON Schema, значения вне 0..100 обрезаются, пустые навыки отбрасываются.
@@ -181,15 +175,14 @@ canonical-темой «Прочее (авто-ревью)». Provisional-ста�
 ### Профиль знаний и gap-анализ
 
 - Оценка уровня по теме объединяется взвешенно по источнику: `manual 1.0`, `interview 0.9`,
-  `assessment 0.8`, `resume 0.6`. Уверенность растёт по формуле независимых свидетельств
+  `resume 0.6`. Уверенность растёт по формуле независимых свидетельств
   `1 − Π(1 − c_i)` и ограничена `0.95`.
-- Пересборка профиля по резюме не занижает более сильные источники (`interview`, `manual`,
-  `assessment`): резюме обновляет только срез, построенный по резюме.
+- Пересборка профиля по резюме не занижает более сильные источники (`interview`, `manual`):
+  резюме обновляет только срез, построенный по резюме.
 - `coverage_all` — взвешенное покрытие всех требований, включая provisional;
   `confirmed_readiness` — только canonical-требования (`null`, если их нет).
   Дополнительно отдаются `provisional_count`, `provisional_weight`, `confirmed_weight`.
-- `claimed_level` — уровень из резюме, `verified_level` — из мини-теста;
-  `proficiency` — эффективный уровень для readiness.
+- `proficiency` — эффективный уровень для readiness; уверенность и источник хранятся рядом.
 - Группы требований: `OR` засчитывается по лучшему варианту, `AND` — по минимуму;
   `requirement_group` / `requirement_logic` сохраняются в `vacancy_skills`.
 - `criticality` (`must_have` / `nice_to_have`) сохраняется в `vacancy_skills`;

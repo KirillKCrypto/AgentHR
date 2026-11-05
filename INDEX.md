@@ -9,10 +9,9 @@
 2. [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) — как устроена система.
 3. [`docs/PROJECT_MAP.md`](docs/PROJECT_MAP.md) — где находится код.
 4. [`docs/ONTOLOGY.md`](docs/ONTOLOGY.md) — онтология и оценка навыков.
-5. [`docs/ASSESSMENT.md`](docs/ASSESSMENT.md) — мини-тесты и verified level.
-6. [`docs/ROADMAP.md`](docs/ROADMAP.md) — план, экраны, тесты, риски.
-7. [`docs/DECISIONS.md`](docs/DECISIONS.md) — принятые решения.
-8. [`docs/GLOSSARY.md`](docs/GLOSSARY.md) — термины.
+5. [`docs/ROADMAP.md`](docs/ROADMAP.md) — план, экраны, тесты, риски.
+6. [`docs/DECISIONS.md`](docs/DECISIONS.md) — принятые решения.
+7. [`docs/GLOSSARY.md`](docs/GLOSSARY.md) — термины.
 
 ## Компонентные README
 

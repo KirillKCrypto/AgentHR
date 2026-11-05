@@ -11,7 +11,6 @@ from sqlalchemy import select, text
 from sqlalchemy.exc import SQLAlchemyError
 
 from app.api.deps import get_embedder, get_llm_provider
-from app.assessment.seed import seed_assessment_questions
 from app.db.session import async_session_factory, engine
 from app.llm.base import (
     ChatMessage,
@@ -138,7 +137,6 @@ async def seeded_db() -> AsyncGenerator[None]:
 
     async with async_session_factory() as session:
         await seed_ontology(session)
-        await seed_assessment_questions(session)
 
     yield
 

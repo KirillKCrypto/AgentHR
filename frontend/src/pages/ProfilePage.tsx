@@ -283,11 +283,6 @@ function TopicRow({ topic, gap }: { topic: ProfileTopic; gap?: GapItem }) {
             <Badge variant="secondary">на проверке</Badge>
           ) : null}
           {topic.category ? <Badge variant="outline">{topic.category}</Badge> : null}
-          {topic.verified_level !== null ? (
-            <Badge>подтверждено тестом</Badge>
-          ) : (
-            <Badge variant="outline">самоотчёт</Badge>
-          )}
           {gap && !gap.satisfied ? (
             <Badge variant="destructive">пробел −{gap.gap}</Badge>
           ) : null}
@@ -297,18 +292,6 @@ function TopicRow({ topic, gap }: { topic: ProfileTopic; gap?: GapItem }) {
       <Progress value={topic.proficiency} />
       <div className="flex flex-wrap gap-2 text-xs text-muted-foreground">
         <span>источник: {sourceLabel(topic.source)}</span>
-        {topic.claimed_level !== null ? (
-          <>
-            <span>·</span>
-            <span>в резюме: {topic.claimed_level}%</span>
-          </>
-        ) : null}
-        {topic.verified_level !== null ? (
-          <>
-            <span>·</span>
-            <span>тест: {topic.verified_level}%</span>
-          </>
-        ) : null}
         <span>·</span>
         <span>уверенность: {Math.round(topic.confidence * 100)}%</span>
         {topic.last_assessed ? (

@@ -26,17 +26,17 @@ backend/
 │   ├── api/
 │   │   ├── deps.py             auth, LLM, embedder
 │   │   ├── mappers.py          доменные объекты → Pydantic
-│   │   └── routes/             auth, users, vacancies, resumes, profile, analysis, assessments
+│   │   └── routes/             auth, users, vacancies, resumes, profile, plans, questions, analysis
 │   ├── core/                   config, JWT/пароли
 │   ├── db/                     async engine, Base
 │   ├── embeddings/             none/local/mock эмбеддинги
 │   ├── llm/                    base, mock, openai (DeepSeek/OpenAI-совместимый), factory
-│   ├── assessment/             вопросы и сид мини-тестов
-│   ├── models/                 User, AgentAction, Topic, Vacancy, Resume, Assessment...
+│   ├── models/                 User, AgentAction, Topic, Vacancy, Resume, LearningPlan...
 │   ├── ontology/               topics.py, seed.py, graph.py, review.py
+│   ├── questions/              генерация вопросов и вариантов, сид банка
 │   ├── schemas/                Pydantic-схемы API
-│   └── services/               analysis, documents, normalization, profile, topics,
-│                               ontology_review, ontology_auto_review, assessment
+│   └── services/               analysis, documents, normalization, profile, gaps, plans,
+│                               questions, topics, ontology_review, ontology_auto_review
 ├── alembic/versions/           миграции
 ├── docker/entrypoint.sh        миграции + uvicorn
 ├── Dockerfile
@@ -57,8 +57,7 @@ backend/
 | Автоматическое ревью | `app/services/ontology_auto_review.py` |
 | Профиль и gap-анализ | `app/services/profile.py`, `gaps.py` |
 | План подготовки | `app/services/plans.py`, `app/api/routes/plans.py` |
-| Банк вопросов | `app/services/questions.py`, `app/questions/` |
-| Мини-тесты навыков | `app/assessment/`, `app/services/assessment.py` |
+| Банк вопросов и тесты | `app/services/questions.py`, `app/questions/` |
 | REST API | `app/api/routes/` |
 | Agent Harness и tools | `app/agent/` |
 | ORM-модели | `app/models/` |
@@ -111,8 +110,10 @@ infra/
 10. `a4b5c6d7e8f9` — поля автоматического ревью тем
 11. `b6d7e8f9a0b1` — планы подготовки
 12. `c7e8f9a0b1c2` — банк вопросов
-13. `b5c6d7e8f9a0` — assessment: вопросы, попытки, ответы, claimed/verified
-14. `c6d7e8f9a0b1` — запрет повторного завершённого теста
+13. `d7e8f9a0b1c2` — варианты ответа и пояснения
+14. `b5c6d7e8f9a0` — assessment: вопросы, попытки, ответы (удалено)
+15. `c6d7e8f9a0b1` — запрет повторного теста (удалено)
+16. `e8f9a0b1c2d3` — удаление assessment и полей claimed/verified
 
 Новое состояние — только через новую миграцию.
 
@@ -127,7 +128,7 @@ infra/
 | Сид онтологии | `cd backend && uv run python -m app.ontology.seed` |
 | Ревью онтологии | `cd backend && uv run python -m app.ontology.review list` |
 | Авто-ревью | `cd backend && uv run python -m app.ontology.review auto` |
-| Сид тестов | `cd backend && uv run python -m app.assessment.seed` |
+| Сид банка вопросов | `cd backend && uv run python -m app.questions.seed --all` |
 | Тесты | `cd backend && uv run pytest -q` |
 | Frontend build | `cd frontend && npm.cmd run build` |
 
