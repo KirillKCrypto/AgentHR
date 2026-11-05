@@ -2,7 +2,7 @@ import { useQuery } from '@tanstack/react-query'
 import { useEffect, useState, type ReactNode } from 'react'
 import { Link, useNavigate } from 'react-router'
 
-import { ApiError, fetchMe, fetchProfile, listVacancies } from '@/api/client'
+import { ApiError, fetchMe, fetchProfile, listPlans, listVacancies } from '@/api/client'
 import { Button, buttonVariants } from '@/components/ui/button'
 import {
   Card,
@@ -35,6 +35,13 @@ export default function DashboardPage() {
   const profileQuery = useQuery({
     queryKey: ['profile', token],
     queryFn: () => fetchProfile(token as string),
+    enabled: token !== null,
+    retry: false,
+  })
+
+  const plansQuery = useQuery({
+    queryKey: ['plans', token],
+    queryFn: () => listPlans(token as string),
     enabled: token !== null,
     retry: false,
   })
@@ -123,6 +130,34 @@ export default function DashboardPage() {
                   <span className="text-xs text-muted-foreground">
                     {vacancy.company ? `${vacancy.company} · ` : ''}
                     {formatDate(vacancy.created_at)}
+                  </span>
+                </Button>
+              ))}
+            </div>
+          )}
+        </div>
+        <div className="flex flex-col gap-2">
+          <p className="text-sm font-medium">Планы подготовки</p>
+          {plansQuery.isPending ? (
+            <p className="text-sm text-muted-foreground">Загружаем планы…</p>
+          ) : plansQuery.error ? (
+            <p className="text-sm text-muted-foreground">Не удалось загрузить планы.</p>
+          ) : (plansQuery.data ?? []).length === 0 ? (
+            <p className="text-sm text-muted-foreground">
+              Планов пока нет — постройте план из профиля или после проверки вакансии.
+            </p>
+          ) : (
+            <div className="flex flex-col gap-1">
+              {(plansQuery.data ?? []).map((plan) => (
+                <Button
+                  key={plan.id}
+                  variant="ghost"
+                  className="h-auto justify-between gap-3 py-2"
+                  onClick={() => navigate(`/plans/${plan.id}`)}
+                >
+                  <span className="font-medium">{plan.title}</span>
+                  <span className="text-xs text-muted-foreground">
+                    {plan.topic_count} тем · {plan.status}
                   </span>
                 </Button>
               ))}
