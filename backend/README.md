@@ -2,7 +2,7 @@
 
 Backend-приложение AgentHR на FastAPI. Реализованы: каркас, health-эндпоинты,
 JWT-аутентификация, слой LLM (mock/DeepSeek), подключение к БД, Agent Harness на Deep Agents,
-модели User/AgentAction/граф знаний и онтология v2 с идемпотентным сидом, доменные REST API
+модели User/AgentAction/граф знаний и онтология v3 с идемпотентным сидом, доменные REST API
 (вакансии, резюме, профиль знаний, gap-анализ) и агентские tools поверх сервисного слоя.
 
 Стек: Python 3.13, FastAPI, SQLAlchemy 2 (async) + asyncpg, Alembic, PyJWT, pwdlib (argon2),
@@ -49,7 +49,10 @@ docker compose up -d --build    # agenthr-api на http://127.0.0.1:8000
   опционально `title`): извлечение текста, навыков и пересборка профиля; файл не сохраняется;
 - `GET /resumes`, `GET /resumes/{id}` — список и карточка резюме;
 - `GET /profile` — профиль знаний: уровень по темам онтологии + навыки вне онтологии;
-- `GET /profile/gaps?vacancy_id=...` — разрывы между вакансией и профилем;
+- `GET /profile/gaps?vacancy_id=...` — разрывы, метрики и рекомендации по вакансии;
+- `POST /plans` — построить план из тем резюме (`vacancy_id` опционален);
+- `GET /plans`, `GET /plans/{id}` — список и карточка плана;
+- `GET /questions?topic_key=...&difficulty=...&limit=...` — случайные вопросы банка;
 - `POST /analysis` — совместный анализ загруженных документов `{vacancy_id, resume_id}`:
   документы, профиль и разрывы одним ответом (без вызовов LLM — только чтение и расчёт).
 
@@ -91,7 +94,7 @@ docker compose up -d --build    # agenthr-api на http://127.0.0.1:8000
 
 ## Онтология и граф знаний
 
-- `app/ontology/topics.py` — онтология v2: 89 атомарных тем с описаниями, алиасами и пререквизитами
+- `app/ontology/topics.py` — онтология v3: 90 атомарных тем с описаниями, алиасами и пререквизитами
   (`REQUIRES`); описания используются как текст для эмбеддингов при нормализации навыков.
 - `app/ontology/graph.py` — операции над графом: поиск циклов, топологический порядок,
   транзитивные пререквизиты.
@@ -101,6 +104,17 @@ docker compose up -d --build    # agenthr-api на http://127.0.0.1:8000
 ```powershell
 uv run python -m app.ontology.seed    # засеять онтологию (нужна запущенная БД)
 ```
+
+Банк вопросов:
+
+```powershell
+uv run python -m app.questions.seed --all --dry-run   # оценка: 90 тем × 3 сложности
+uv run python -m app.questions.seed --all             # полная генерация, идемпотентно
+uv run python -m app.questions.seed --topics oop,algorithms --difficulties 1,3,5
+```
+
+Полный прогон — около 270 вызовов LLM и 300–350 тыс. токенов; повторный запуск
+добирает только отсутствующие вопросы.
 
 Онтология — словарь верхнего уровня, а не фильтр: для навыка без темы создаётся
 provisional-тема, запись в `topic_aliases` и кандидат в `topic_candidates` на ревью.
@@ -127,6 +141,10 @@ canonical-темой «Прочее (авто-ревью)». Provisional-ста�
 
 ## Анализ и нормализация
 
+- `app/services/gaps.py` — gap-анализ: разрывы, `critical_readiness`, `average_gap`,
+  рекомендации «что подтянуть».
+- `app/services/plans.py` — план подготовки из 5–12 тем резюме.
+- `app/services/questions.py` — банк вопросов: дедуп по fingerprint, случайная выборка.
 - `app/services/documents.py` — извлечение текста из PDF/DOCX для `POST /resumes/upload`:
   лимит 5 МБ, защита от zip-бомб, отказ для сканов без текстового слоя.
 - `app/services/analysis.py` — извлечение требований вакансии и навыков резюме
@@ -237,7 +255,7 @@ URL БД берётся из настроек (`backend/.env`, переменн�
 - `app/models/` — ORM-модели (`User`, `AgentAction`, `OntologyReviewAction`, `Topic`,
   `TopicAlias`, `TopicPrerequisite`, `TopicCandidate`, `Vacancy`, `VacancySkill`, `Resume`,
   `ResumeSkill`, `UserSkillState`)
-- `app/ontology/` — онтология v2, операции над графом зависимостей, идемпотентный сид
+- `app/ontology/` — онтология v3, операции над графом зависимостей, идемпотентный сид
 - `app/embeddings/` — слой эмбеддингов (none / local ONNX / mock)
 - `app/services/` — сервисный слой: анализ (извлечение), нормализация, профиль и gap-анализ,
   метрики качества

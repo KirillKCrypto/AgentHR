@@ -24,11 +24,12 @@ LLM + Agent Harness + Tool Calling + Knowledge Graph + Persistent Memory + Adapt
 
 - **M0–M2 закрыты:** инфраструктура, auth, Deep Agents, извлечение навыков,
   нормализация, профиль знаний, gap-анализ.
-- **Онтология:** этапы 1–4 закрыты — 89 canonical-тем, provisional-темы,
+- **M3 в работе:** профиль-first, план подготовки из резюме, банк вопросов;
+  сессия интервью — следующий шаг.
+- **Онтология:** этапы 1–4 закрыты — 90 canonical-тем, provisional-темы,
   backfill, CLI ревью, автоматическое ревью, `coverage_all` / `confirmed_readiness`,
   группы `AND/OR`, `criticality`.
 - **Следующий этап онтологии:** `evidence_type` / `verified_level`.
-- **Следующая веха продукта:** M3 — план подготовки и сессия интервью.
 
 Подробный статус и план: [`docs/ONTOLOGY.md`](docs/ONTOLOGY.md),
 [`docs/ROADMAP.md`](docs/ROADMAP.md).
@@ -128,6 +129,14 @@ cd backend
 uv run python -m app.ontology.seed
 uv run python -m app.ontology.review list
 uv run python -m app.ontology.review auto
+```
+
+Банк вопросов:
+
+```powershell
+cd backend
+uv run python -m app.questions.seed --all --dry-run
+uv run python -m app.questions.seed --all
 ```
 
 ## 7. Правила работы агента

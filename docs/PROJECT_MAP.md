@@ -54,7 +54,9 @@ backend/
 | Provisional-темы / resolver | `app/services/topics.py` |
 | Ручное ревью | `app/services/ontology_review.py`, `app/ontology/review.py` |
 | Автоматическое ревью | `app/services/ontology_auto_review.py` |
-| Профиль и gap-анализ | `app/services/profile.py` |
+| Профиль и gap-анализ | `app/services/profile.py`, `gaps.py` |
+| План подготовки | `app/services/plans.py`, `app/api/routes/plans.py` |
+| Банк вопросов | `app/services/questions.py`, `app/questions/` |
 | REST API | `app/api/routes/` |
 | Agent Harness и tools | `app/agent/` |
 | ORM-модели | `app/models/` |
@@ -105,6 +107,8 @@ infra/
 8. `e2f3a4b5c6d7` — группы требований `AND/OR`
 9. `f3a4b5c6d7e8` — критичность `must_have` / `nice_to_have`
 10. `a4b5c6d7e8f9` — поля автоматического ревью тем
+11. `b6d7e8f9a0b1` — планы подготовки
+12. `c7e8f9a0b1c2` — банк вопросов
 
 Новое состояние — только через новую миграцию.
 

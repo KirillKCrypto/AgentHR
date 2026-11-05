@@ -46,6 +46,12 @@ def _parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--per-topic", type=int, default=5, help="вопросов на тему и сложность")
     parser.add_argument("--limit", type=int, default=None, help="максимум LLM-вызовов за прогон")
+    parser.add_argument(
+        "--retries",
+        type=int,
+        default=2,
+        help="повторы одного вызова при таймауте или ошибке сети",
+    )
     parser.add_argument("--dry-run", action="store_true", help="только оценить объём")
     return parser
 
@@ -96,7 +102,13 @@ async def _run(args: argparse.Namespace) -> int:
         failed = 0
         try:
             for topic, difficulty, missing in plan:
-                questions = await generate_questions(provider, topic, difficulty, missing)
+                questions: list[dict] = []
+                for attempt in range(max(1, args.retries + 1)):
+                    questions = await generate_questions(provider, topic, difficulty, missing)
+                    if questions:
+                        break
+                    if attempt < args.retries:
+                        await asyncio.sleep(2 * (attempt + 1))
                 calls += 1
                 if not questions:
                     failed += 1

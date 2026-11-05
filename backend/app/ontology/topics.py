@@ -16,7 +16,7 @@ TTL не содержит иерархии, уровней и пререквиз
 from dataclasses import dataclass, field
 
 # Версия онтологии: повышается при изменении состава тем или зависимостей
-ONTOLOGY_VERSION = 2
+ONTOLOGY_VERSION = 3
 
 
 @dataclass(frozen=True)

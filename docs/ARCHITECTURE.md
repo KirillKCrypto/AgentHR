@@ -66,7 +66,7 @@ frontend (SPA со входом/регистрацией, загрузка ре�
    │                                                 - Agent Harness: Deep Agents + middleware аудита/лимитов (app/agent/)
    │                                                 - модели User, AgentAction, Topic, Vacancy, Resume, UserSkillState (app/models/)
    │                                                 - Alembic-миграции (pgvector, users, agent_actions, граф знаний и документы)
-   │                                                 - онтология v2: 89 тем, 75 пререквизитов, идемпотентный сид (app/ontology/)
+   │                                                 - онтология v3: 90 тем, 75 пререквизитов, идемпотентный сид (app/ontology/)
    └── npm run dev (frontend/) ──▶ Vite dev-сервер (SPA)
                                      - /login: регистрация и вход через REST API
                                      - /: дашборд — /me через TanStack Query, выход
@@ -196,7 +196,7 @@ Tools — типизированные функции, единственный 
 **Факт:** созданы таблицы `topics` (ключ, название, описание, алиасы, версия онтологии,
 флаг автосозданной темы), `topic_prerequisites` (ребро `REQUIRES`), `topic_candidates`
 (навыки вне онтологии — пул тем на ревью) и `user_skill_states` (срез профиля по
-паре «пользователь × тема»). Онтология v2 — 89 атомарных тем и 75 рёбер `REQUIRES`,
+паре «пользователь × тема»). Онтология v3 — 90 атомарных тем и 75 рёбер `REQUIRES`,
 сид идемпотентен (`app/ontology/`); состав и ограничения — в [`ONTOLOGY.md`](ONTOLOGY.md). Слой эмбеддингов (`app/embeddings/`): локальная ONNX-модель
 (multilingual MiniLM, 384 измерения) без внешних сервисов, с деградацией к alias и
 нечёткому совпадению, если пакет не установлен.
@@ -255,7 +255,9 @@ JWT-токенов в SPA; дашборд → `GET /me` с access-токеном
   `resumes` / `resume_skills` → пересборка профиля; файл не сохраняется;
 - `GET /resumes`, `GET /resumes/{id}` — список и карточка резюме;
 - `GET /profile` — срез `user_skill_states` + навыки вне онтологии;
-- `GET /profile/gaps?vacancy_id=...` — разрывы и готовность к вакансии;
+- `GET /profile/gaps?vacancy_id=...` — разрывы, метрики и рекомендации к вакансии;
+- `POST /plans`, `GET /plans`, `GET /plans/{id}` — планы подготовки из тем резюме;
+- `GET /questions?topic_key=...` — случайные вопросы банка по теме и сложности;
 - `POST /analysis` — документы, профиль и разрывы одним ответом; LLM не вызывается.
 
 Доменные эндпоинты защищены `get_current_user` и изолированы по владельцу: обращение к чужому
@@ -351,6 +353,12 @@ JWT-токенов в SPA; дашборд → `GET /me` с access-токеном
   - каждое решение — в `ontology_review_actions` с `actor="auto"`; неуверенные
     темы остаются provisional, CLI `python -m app.ontology.review auto` —
     повторный пакетный прогон.
+- Миграция `b6d7e8f9a0b1` — планы подготовки:
+  - `learning_plans` — план пользователя, опциональная вакансия, статус;
+  - `plan_items` — тема плана, позиция, текущий и целевой уровень, приоритет, причина.
+- Миграция `c7e8f9a0b1c2` — банк вопросов:
+  - `questions` — тема, сложность 1–5, текст, эталонные пункты JSONB, fingerprint;
+  - уникальный fingerprint и индекс `(topic_id, difficulty)`.
 - Подключение: `DATABASE_URL` из `backend/.env` (локальный дефолт в `app/core/config.py`);
   движок и сессии — `backend/app/db/session.py` (asyncpg, `pool_pre_ping`).
 - Миграции: Alembic (async-шаблон), URL берётся в `alembic/env.py` из настроек;

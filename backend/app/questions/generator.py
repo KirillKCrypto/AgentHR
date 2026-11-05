@@ -96,4 +96,5 @@ async def generate_questions(
     raw_questions = data.get("questions")
     if not isinstance(raw_questions, list):
         return []
-    return [item for item in raw_questions if isinstance(item, dict)]
+    valid = [item for item in raw_questions if isinstance(item, dict)]
+    return valid[: max(1, count)]

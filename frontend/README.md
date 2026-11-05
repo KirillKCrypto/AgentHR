@@ -25,10 +25,11 @@ npm run generate:api # обновить src/api/schema.d.ts из OpenAPI (нуж
 - `src/main.tsx` — точка входа: QueryClientProvider + BrowserRouter
 - `src/App.tsx` — шапка и маршруты
 - `src/pages/` — экраны: `DashboardPage` (`/`), `LoginPage` (`/login`),
-  `VacancyUploadPage` (`/vacancies/new`), `ProfilePage` (`/profile`), `NotFoundPage` (404)
-- `src/components/` — `ResumeUploadCard` (текст или PDF/DOCX), `VacancyAssessment`
-  (готовность, коэффициенты и разрывы), `ui/` — компоненты shadcn/ui
-- `src/api/` — `client.ts` (единый клиент: auth, вакансии, резюме, профиль, разрывы,
+  `ProfilePage` (`/profile`), `VacancyUploadPage` (`/vacancies/new`),
+  `VacancyPage` (`/vacancies/:id`), `PlanPage` (`/plans/:id`), `NotFoundPage` (404)
+- `src/components/` — `ResumeUploadCard`, `VacancyAssessment`, `CreatePlanButton`,
+  `Gaps` (общие метрики, таблица и рекомендации), `ui/` — shadcn/ui
+- `src/api/` — `client.ts` (auth, вакансии, резюме, профиль, разрывы, планы, вопросы,
   `/analysis`, `ApiError`), `schema.d.ts` (типы из OpenAPI, генерируется)
 - `src/lib/` — `tokens.ts` (токены в localStorage), `useAuthToken.ts` (токен + сброс сессии
   при 401), `errors.ts` (понятные сообщения), `labels.ts` (источники, методы, даты),
@@ -47,6 +48,11 @@ npm run generate:api # обновить src/api/schema.d.ts из OpenAPI (нуж
   `GET /profile`. Загруженное резюме дополняет профиль, старые оценки не снижаются.
 - Проверка вакансии: `/vacancies/new` → `POST /vacancies` → `GET /profile/gaps`; резюме
   в этой форме не требуется. Если профиль пуст, экран предлагает загрузить резюме.
+- Вакансия: `/vacancies/:id` → `GET /vacancies/{id}` + `GET /profile/gaps`; полный текст,
+  оценка и рекомендации.
+- План: кнопка «Построить план» → `POST /plans` → `/plans/:id` → `GET /plans/{id}`.
+  В плане 5–12 тем резюме, цель и число вопросов в банке.
+- Вопросы: `GET /questions?topic_key=...&difficulty=...` (пока используется счётчик в плане).
 - Профиль и сохранённые вакансии: `/profile` → `GET /profile` + `GET /vacancies`; для
   выбранной вакансии — `GET /profile/gaps`; параметр `?vacancy=<id>` предвыбирает вакансию.
 - Явные состояния loading / error / empty / ready на всех доменных экранах.

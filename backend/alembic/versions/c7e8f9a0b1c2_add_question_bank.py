@@ -49,10 +49,9 @@ def upgrade() -> None:
         ),
         sa.ForeignKeyConstraint(["topic_id"], ["topics.id"], ondelete="RESTRICT"),
         sa.PrimaryKeyConstraint("id"),
-        sa.UniqueConstraint("fingerprint"),
     )
     op.create_index("ix_questions_topic_id", "questions", ["topic_id"])
-    op.create_index("ix_questions_fingerprint", "questions", ["fingerprint"])
+    op.create_index("ix_questions_fingerprint", "questions", ["fingerprint"], unique=True)
     op.create_index(
         "ix_questions_topic_difficulty", "questions", ["topic_id", "difficulty"]
     )
