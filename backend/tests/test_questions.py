@@ -2,7 +2,7 @@
 
 from uuid import uuid4
 
-from sqlalchemy import delete, select
+from sqlalchemy import delete, select, update
 
 from app.db.session import async_session_factory
 from app.models import Question, Topic
@@ -132,3 +132,54 @@ async def test_questions_test_api_returns_mixed_difficulty(api_user: ApiUser) ->
     body = response.json()
     assert 5 <= len(body) <= 10
     assert len({item["difficulty"] for item in body}) >= 2
+
+
+async def test_quiz_api_returns_options_and_grades(api_user: ApiUser) -> None:
+    """Тест отдаёт варианты ответа, а проверка считает метрику и разбор."""
+    api_user.provider.responses["quiz_options"] = {
+        "items": [
+            {
+                "number": number,
+                "options": ["Вариант A", "Вариант B", "Вариант C", "Вариант D"],
+                "correct_index": 0,
+                "explanation": "A — правильный ответ",
+            }
+            for number in range(1, 11)
+        ]
+    }
+
+    started = await api_user.client.post(
+        "/questions/quiz",
+        json={"topic_key": "python", "count": 10},
+        headers=api_user.headers,
+    )
+    assert started.status_code == 201, started.text
+    quiz = started.json()
+    assert 5 <= len(quiz["questions"]) <= 10
+    assert all(len(question["options"]) == 4 for question in quiz["questions"])
+    assert all("correct_option" not in question for question in quiz["questions"])
+
+    answers = [
+        {"question_id": question["id"], "selected_option": 0}
+        for question in quiz["questions"]
+    ]
+    graded = await api_user.client.post(
+        "/questions/quiz/grade",
+        json={"topic_key": "python", "answers": answers},
+        headers=api_user.headers,
+    )
+    assert graded.status_code == 200, graded.text
+    result = graded.json()
+    assert result["total"] == len(quiz["questions"])
+    assert result["correct_count"] == sum(item["is_correct"] for item in result["items"])
+    assert 0 <= result["score"] <= 1
+    assert result["level"] == round(result["score"] * 100)
+    assert all(item["correct_option"] in range(4) for item in result["items"])
+
+    async with async_session_factory() as session:
+        await session.execute(
+            update(Question)
+            .where(Question.id.in_([question["id"] for question in quiz["questions"]]))
+            .values(options=[], correct_option=None, explanation=None)
+        )
+        await session.commit()

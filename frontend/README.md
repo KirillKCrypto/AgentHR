@@ -28,7 +28,8 @@ npm run generate:api # обновить src/api/schema.d.ts из OpenAPI (нуж
   `ProfilePage` (`/profile`), `VacancyUploadPage` (`/vacancies/new`),
   `VacancyPage` (`/vacancies/:id`), `PlanPage` (`/plans/:id`), `NotFoundPage` (404)
 - `src/components/` — `ResumeUploadCard`, `VacancyAssessment`, `CreatePlanButton`,
-  `Gaps`, `PlanSkillTestsCard` + `TopicTest` (10 вопросов по темам плана), `ui/`
+  `Gaps`, `PlanSkillTestsCard` + `TopicTest` (тест из 10 вопросов с вариантами ответа,
+  метрикой и разбором), `ui/`
 - `src/api/` — `client.ts` (auth, вакансии, резюме, профиль, разрывы, планы, вопросы,
   assessments, `/analysis`, `ApiError`), `schema.d.ts` (типы из OpenAPI, генерируется)
 - `src/lib/` — `tokens.ts` (токены в localStorage), `useAuthToken.ts` (токен + сброс сессии
@@ -52,7 +53,8 @@ npm run generate:api # обновить src/api/schema.d.ts из OpenAPI (нуж
   оценка и рекомендации.
 - План: кнопка «Построить план» → `POST /plans` → `/plans/:id` → `GET /plans/{id}`.
   В плане 5–12 тем резюме, цель и число вопросов в банке.
-- Вопросы: `GET /questions?topic_key=...&difficulty=...` (пока используется счётчик в плане).
+- Вопросы: `POST /questions/quiz` → ответы → `POST /questions/quiz/grade`; метрика и разбор
+  показываются после проверки.
 - Профиль и сохранённые вакансии: `/profile` → `GET /profile` + `GET /vacancies`; для
   выбранной вакансии — `GET /profile/gaps`; параметр `?vacancy=<id>` предвыбирает вакансию.
 - Проверка навыков: `/profile` → `GET /assessments/topics` → `POST /assessments/{topic}/start`

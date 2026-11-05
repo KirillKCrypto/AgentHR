@@ -46,6 +46,12 @@ class Question(Base):
     expected_points: Mapped[list[Any]] = mapped_column(
         JSONB, default=list, server_default=sa_text("'[]'::jsonb")
     )
+    # Варианты ответа для теста и индекс правильного; заполняются лениво.
+    options: Mapped[list[Any]] = mapped_column(
+        JSONB, default=list, server_default=sa_text("'[]'::jsonb")
+    )
+    correct_option: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    explanation: Mapped[str | None] = mapped_column(Text, nullable=True)
     # llm | manual | seed
     source: Mapped[str] = mapped_column(
         String(20), default="llm", server_default=sa_text("'llm'")

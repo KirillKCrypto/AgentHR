@@ -259,6 +259,8 @@ JWT-токенов в SPA; дашборд → `GET /me` с access-токеном
 - `GET /profile/gaps?vacancy_id=...` — разрывы, метрики и рекомендации к вакансии;
 - `POST /plans`, `GET /plans`, `GET /plans/{id}` — планы подготовки из тем резюме;
 - `GET /questions?topic_key=...` — случайные вопросы банка по теме и сложности;
+- `POST /questions/quiz` — тест из 10 вопросов с вариантами ответа;
+- `POST /questions/quiz/grade` — проверка ответов и разбор;
 - `POST /analysis` — документы, профиль и разрывы одним ответом; LLM не вызывается.
 - `GET /assessments/topics`, `POST /assessments/{topic}/start`,
   `POST /assessments/{id}/answers`, `POST /assessments/{id}/finish` — мини-тесты и `verified_level`.

@@ -279,6 +279,46 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/questions/quiz": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Start Quiz
+         * @description Собирает тест по теме и при необходимости готовит варианты ответа.
+         */
+        post: operations["start_quiz_questions_quiz_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/questions/quiz/grade": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Grade Quiz
+         * @description Проверяет ответы и возвращает разбор с метрикой по теме.
+         */
+        post: operations["grade_quiz_questions_quiz_grade_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/questions/test": {
         parameters: {
             query?: never;
@@ -288,7 +328,7 @@ export interface paths {
         };
         /**
          * Read Test
-         * @description Тест из вопросов разной сложности по теме.
+         * @description Открытые вопросы разной сложности без вариантов ответа.
          */
         get: operations["read_test_questions_test_get"];
         put?: never;
@@ -994,6 +1034,133 @@ export interface components {
             expected_points: string[];
             /** Source */
             source: string;
+        };
+        /**
+         * QuizAnswer
+         * @description Ответ пользователя на вопрос.
+         */
+        QuizAnswer: {
+            /**
+             * Question Id
+             * Format: uuid
+             */
+            question_id: string;
+            /** Selected Option */
+            selected_option: number;
+        };
+        /**
+         * QuizGradeRequest
+         * @description Ответы пользователя для проверки.
+         */
+        QuizGradeRequest: {
+            /** Topic Key */
+            topic_key: string;
+            /** Answers */
+            answers: components["schemas"]["QuizAnswer"][];
+        };
+        /**
+         * QuizQuestionRead
+         * @description Вопрос теста без правильного ответа.
+         */
+        QuizQuestionRead: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Difficulty */
+            difficulty: number;
+            /** Text */
+            text: string;
+            /** Options */
+            options: string[];
+        };
+        /**
+         * QuizRead
+         * @description Тест по теме.
+         */
+        QuizRead: {
+            /** Topic Key */
+            topic_key: string;
+            /** Topic Name */
+            topic_name: string;
+            /**
+             * Questions
+             * @default []
+             */
+            questions: components["schemas"]["QuizQuestionRead"][];
+        };
+        /**
+         * QuizResultItemRead
+         * @description Разбор одного вопроса.
+         */
+        QuizResultItemRead: {
+            /**
+             * Question Id
+             * Format: uuid
+             */
+            question_id: string;
+            /** Text */
+            text: string;
+            /** Difficulty */
+            difficulty: number;
+            /** Options */
+            options: string[];
+            /** Selected Option */
+            selected_option: number;
+            /** Correct Option */
+            correct_option: number;
+            /** Is Correct */
+            is_correct: boolean;
+            /** Explanation */
+            explanation?: string | null;
+            /**
+             * Expected Points
+             * @default []
+             */
+            expected_points: string[];
+        };
+        /**
+         * QuizResultRead
+         * @description Итог теста.
+         */
+        QuizResultRead: {
+            /** Topic Key */
+            topic_key: string;
+            /** Topic Name */
+            topic_name: string;
+            /**
+             * Score
+             * @description Взвешенная доля правильных ответов
+             */
+            score: number;
+            /**
+             * Level
+             * @description Оценка знания темы 0..100
+             */
+            level: number;
+            /** Correct Count */
+            correct_count: number;
+            /** Total */
+            total: number;
+            /**
+             * Items
+             * @default []
+             */
+            items: components["schemas"]["QuizResultItemRead"][];
+        };
+        /**
+         * QuizStartRequest
+         * @description Запрос теста по теме.
+         */
+        QuizStartRequest: {
+            /** Topic Key */
+            topic_key: string;
+            /**
+             * Count
+             * @default 10
+             */
+            count: number;
         };
         /**
          * RefreshRequest
@@ -1721,6 +1888,72 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["PlanRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    start_quiz_questions_quiz_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["QuizStartRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["QuizRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    grade_quiz_questions_quiz_grade_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["QuizGradeRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["QuizResultRead"];
                 };
             };
             /** @description Validation Error */

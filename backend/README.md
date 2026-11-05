@@ -53,6 +53,8 @@ docker compose up -d --build    # agenthr-api на http://127.0.0.1:8000
 - `POST /plans` — построить план из тем резюме (`vacancy_id` опционален);
 - `GET /plans`, `GET /plans/{id}` — список и карточка плана;
 - `GET /questions?topic_key=...&difficulty=...&limit=...` — случайные вопросы банка;
+- `POST /questions/quiz` — тест из 10 вопросов с вариантами ответа;
+- `POST /questions/quiz/grade` — проверка ответов, метрика и разбор.
 - `POST /analysis` — совместный анализ загруженных документов `{vacancy_id, resume_id}`:
   документы, профиль и разрывы одним ответом (без вызовов LLM — только чтение и расчёт);
 - `GET /assessments/topics` — темы с доступными мини-тестами;

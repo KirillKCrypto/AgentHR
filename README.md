@@ -20,6 +20,7 @@ LLM + Agent Harness + Tool Calling + Knowledge Graph + Persistent Memory + Adapt
 - рекомендации «что подтянуть» и разрыв по обязательным требованиям;
 - персональный план подготовки из 5–12 тем резюме;
 - банк вопросов по темам и сложности, полная генерация через CLI;
+- тесты из 10 вопросов с вариантами ответа, метрикой знания темы и разбором ошибок;
 - provisional-темы для новых навыков, автоматическое ревью;
 - группы требований `AND/OR` и критичность `must_have` / `nice_to_have`;
 - метрики: `coverage_all`, `confirmed_readiness`, `critical_readiness`, `average_gap`.

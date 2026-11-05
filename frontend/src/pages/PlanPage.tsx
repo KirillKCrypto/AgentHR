@@ -140,7 +140,7 @@ export default function PlanPage() {
                   <span>·</span>
                   <span>{item.reason}</span>
                 </div>
-                <TopicTest topicKey={item.topic_key} token={token} />
+                <TopicTest topicKey={item.topic_key} token={token} onUnauthorized={expire} />
               </div>
             ))
           )}

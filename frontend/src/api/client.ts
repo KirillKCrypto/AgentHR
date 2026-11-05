@@ -21,6 +21,8 @@ export type PlanCreate = components['schemas']['PlanCreate']
 export type PlanRead = components['schemas']['PlanRead']
 export type PlanSummary = components['schemas']['PlanSummaryRead']
 export type QuestionRead = components['schemas']['QuestionRead']
+export type QuizRead = components['schemas']['QuizRead']
+export type QuizResultRead = components['schemas']['QuizResultRead']
 export type AssessmentTopicRead = components['schemas']['AssessmentTopicRead']
 export type AssessmentStartRead = components['schemas']['AssessmentStartRead']
 export type AssessmentAnswerRead = components['schemas']['AssessmentAnswerRead']
@@ -158,6 +160,26 @@ export function fetchTestQuestions(
 ): Promise<QuestionRead[]> {
   const params = new URLSearchParams({ topic_key: topicKey, count: String(count) })
   return apiFetch(`/questions/test?${params.toString()}`, { token })
+}
+
+export function fetchQuiz(topicKey: string, token: string, count = 10): Promise<QuizRead> {
+  return apiFetch('/questions/quiz', {
+    method: 'POST',
+    token,
+    body: JSON.stringify({ topic_key: topicKey, count }),
+  })
+}
+
+export function gradeQuiz(
+  topicKey: string,
+  answers: { question_id: string; selected_option: number }[],
+  token: string,
+): Promise<QuizResultRead> {
+  return apiFetch('/questions/quiz/grade', {
+    method: 'POST',
+    token,
+    body: JSON.stringify({ topic_key: topicKey, answers }),
+  })
 }
 
 export function runAnalysis(payload: AnalysisRequest, token: string): Promise<AnalysisResponse> {

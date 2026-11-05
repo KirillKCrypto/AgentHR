@@ -90,7 +90,7 @@ export function PlanSkillTestsCard({
                       {item.current_level} → {item.target_level}
                     </span>
                   </div>
-                  <TopicTest topicKey={item.topic_key} token={token} />
+                  <TopicTest topicKey={item.topic_key} token={token} onUnauthorized={onUnauthorized} />
                 </div>
               ))}
             </div>
