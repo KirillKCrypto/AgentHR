@@ -319,6 +319,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/questions/quiz/{topic_key}/result": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Read Test Result
+         * @description Сохранённый результат теста по теме.
+         */
+        get: operations["read_test_result_questions_quiz__topic_key__result_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/questions/test": {
         parameters: {
             query?: never;
@@ -1714,6 +1734,37 @@ export interface operations {
                 "application/json": components["schemas"]["QuizGradeRequest"];
             };
         };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["QuizResultRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    read_test_result_questions_quiz__topic_key__result_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                topic_key: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
         responses: {
             /** @description Successful Response */
             200: {

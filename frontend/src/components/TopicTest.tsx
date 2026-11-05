@@ -1,8 +1,10 @@
-import { useState } from 'react'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { useEffect, useState } from 'react'
 
 import {
   ApiError,
   fetchQuiz,
+  fetchQuizResult,
   gradeQuiz,
   type QuizRead,
   type QuizResultRead,
@@ -14,7 +16,7 @@ import { errorMessage } from '@/lib/errors'
 
 const OPTION_LABELS = ['A', 'B', 'C', 'D']
 
-/** Тест по теме: 10 вопросов с вариантами ответа и разбором после проверки. */
+/** Единоразовый тест по теме: 10 вопросов, варианты ответа и разбор. */
 export function TopicTest({
   topicKey,
   token,
@@ -24,22 +26,40 @@ export function TopicTest({
   token: string
   onUnauthorized?: () => void
 }) {
+  const queryClient = useQueryClient()
   const [quiz, setQuiz] = useState<QuizRead | null>(null)
   const [answers, setAnswers] = useState<Record<string, number>>({})
   const [result, setResult] = useState<QuizResultRead | null>(null)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
+  const savedQuery = useQuery<QuizResultRead, ApiError>({
+    queryKey: ['quiz-result', topicKey, token],
+    queryFn: () => fetchQuizResult(topicKey, token),
+    retry: false,
+  })
+
+  useEffect(() => {
+    if (savedQuery.error instanceof ApiError && savedQuery.error.status === 401) {
+      onUnauthorized?.()
+    }
+  }, [savedQuery.error, onUnauthorized])
+
+  const effectiveResult = result ?? savedQuery.data ?? null
+
   async function start() {
     setBusy(true)
     setError(null)
-    setResult(null)
     setAnswers({})
     try {
       setQuiz(await fetchQuiz(topicKey, token, 10))
     } catch (value) {
       if (value instanceof ApiError && value.status === 401) {
         onUnauthorized?.()
+        return
+      }
+      if (value instanceof ApiError && value.status === 409) {
+        await savedQuery.refetch()
         return
       }
       setError(errorMessage(value))
@@ -59,11 +79,19 @@ export function TopicTest({
         question_id: question.id,
         selected_option: answers[question.id],
       }))
-      setResult(await gradeQuiz(topicKey, payload, token))
+      const graded = await gradeQuiz(topicKey, payload, token)
+      setResult(graded)
       setQuiz(null)
+      await queryClient.invalidateQueries({ queryKey: ['profile', token] })
+      await queryClient.invalidateQueries({ queryKey: ['quiz-result', topicKey, token] })
     } catch (value) {
       if (value instanceof ApiError && value.status === 401) {
         onUnauthorized?.()
+        return
+      }
+      if (value instanceof ApiError && value.status === 409) {
+        await savedQuery.refetch()
+        setQuiz(null)
         return
       }
       setError(errorMessage(value))
@@ -72,23 +100,26 @@ export function TopicTest({
     }
   }
 
-  if (result !== null) {
+  if (effectiveResult !== null) {
     return (
       <div className="flex flex-col gap-4 rounded-md border p-4">
         <div className="flex flex-wrap items-end gap-4">
-          <span className="text-3xl font-medium">{result.level}</span>
+          <span className="text-3xl font-medium">{effectiveResult.level}</span>
           <span className="text-sm text-muted-foreground">
-            {result.topic_name}: оценка знания темы
+            {effectiveResult.topic_name}: оценка знания темы
           </span>
           <Badge variant="outline">
-            {result.correct_count} из {result.total} верно
+            {effectiveResult.correct_count} из {effectiveResult.total} верно
           </Badge>
-          <Badge variant="secondary">{Math.round(result.score * 100)}%</Badge>
+          <Badge variant="secondary">{Math.round(effectiveResult.score * 100)}%</Badge>
         </div>
-        <Progress value={result.level} />
+        <Progress value={effectiveResult.level} />
+        <p className="text-xs text-muted-foreground">
+          Тест пройден. Результат сохранён в профиле, повторное прохождение недоступно.
+        </p>
 
         <ol className="flex list-decimal flex-col gap-4 pl-5 text-sm">
-          {result.items.map((item) => (
+          {effectiveResult.items.map((item) => (
             <li key={item.question_id} className="flex flex-col gap-1">
               <div className="flex flex-wrap items-start justify-between gap-2">
                 <span>{item.text}</span>
@@ -113,12 +144,6 @@ export function TopicTest({
             </li>
           ))}
         </ol>
-
-        <div>
-          <Button type="button" variant="outline" onClick={() => void start()} disabled={busy}>
-            {busy ? 'Готовим новый тест…' : 'Пройти ещё раз'}
-          </Button>
-        </div>
       </div>
     )
   }
@@ -184,6 +209,14 @@ export function TopicTest({
     )
   }
 
+  if (savedQuery.isPending) {
+    return (
+      <div className="rounded-md border p-3 text-sm text-muted-foreground">
+        Проверяем результат теста…
+      </div>
+    )
+  }
+
   return (
     <div className="flex flex-col gap-2 rounded-md border p-3">
       <div className="flex flex-wrap items-center gap-2">
@@ -191,7 +224,7 @@ export function TopicTest({
           {busy ? 'Готовим тест…' : 'Пройти тест (10 вопросов)'}
         </Button>
         <span className="text-xs text-muted-foreground">
-          Вопросы разной сложности, без выбора сложности.
+          Одна попытка на тему. 10 вопросов разной сложности.
         </span>
       </div>
       {error ? <p className="text-sm text-destructive">{error}</p> : null}

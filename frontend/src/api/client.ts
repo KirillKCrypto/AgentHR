@@ -178,6 +178,10 @@ export function gradeQuiz(
   })
 }
 
+export function fetchQuizResult(topicKey: string, token: string): Promise<QuizResultRead> {
+  return apiFetch(`/questions/quiz/${encodeURIComponent(topicKey)}/result`, { token })
+}
+
 export function runAnalysis(payload: AnalysisRequest, token: string): Promise<AnalysisResponse> {
   return apiFetch('/analysis', { method: 'POST', token, body: JSON.stringify(payload) })
 }

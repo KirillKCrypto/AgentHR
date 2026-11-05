@@ -3,13 +3,15 @@
 import hashlib
 import uuid
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from typing import Any
 
 from sqlalchemy import func, select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models import Question
+from app.models import Question, Topic, TopicTestResult, UserSkillState
 from app.services.normalization import normalize_name
 
 
@@ -167,4 +169,79 @@ async def pick_test_questions(
 
     selected.sort(key=lambda item: (item.difficulty, item.id))
     return tuple(selected[:count])
+
+
+class TestAlreadyCompleted(ValueError):
+    """Пользователь уже проходил тест по этой теме."""
+
+
+async def get_test_result(
+    session: AsyncSession,
+    user_id: uuid.UUID,
+    topic_id: uuid.UUID,
+) -> TopicTestResult | None:
+    """Сохранённый результат теста по теме, если он есть."""
+    return await session.scalar(
+        select(TopicTestResult).where(
+            TopicTestResult.user_id == user_id,
+            TopicTestResult.topic_id == topic_id,
+        )
+    )
+
+
+async def save_test_result(
+    session: AsyncSession,
+    user_id: uuid.UUID,
+    topic: Topic,
+    *,
+    score: float,
+    level: int,
+    correct_count: int,
+    total: int,
+    details: list[dict[str, Any]],
+) -> TopicTestResult:
+    """Сохраняет результат один раз и обновляет профиль пользователя."""
+    existing = await get_test_result(session, user_id, topic.id)
+    if existing is not None:
+        raise TestAlreadyCompleted("Тест по этой теме уже пройден")
+
+    result = TopicTestResult(
+        user_id=user_id,
+        topic_id=topic.id,
+        score=score,
+        level=level,
+        correct_count=correct_count,
+        total=total,
+        details=details,
+    )
+    session.add(result)
+
+    state = await session.scalar(
+        select(UserSkillState).where(
+            UserSkillState.user_id == user_id,
+            UserSkillState.topic_id == topic.id,
+        )
+    )
+    if state is None:
+        state = UserSkillState(user_id=user_id, topic_id=topic.id)
+        session.add(state)
+    state.proficiency = level
+    state.confidence = round(min(0.95, 0.5 + 0.45 * score), 3)
+    state.source = "test"
+    state.last_assessed = datetime.now(UTC)
+    state.evidence = [
+        *(state.evidence or []),
+        {
+            "type": "test",
+            "text": f"Тест по теме: {correct_count} из {total} верно",
+            "score": level,
+        },
+    ][-10:]
+
+    try:
+        await session.flush()
+    except IntegrityError as exc:
+        await session.rollback()
+        raise TestAlreadyCompleted("Тест по этой теме уже пройден") from exc
+    return result
 

@@ -1,6 +1,7 @@
 const SOURCE_LABELS: Record<string, string> = {
   manual: 'вручную',
   interview: 'интервью',
+  test: 'тест',
   resume: 'резюме',
 }
 

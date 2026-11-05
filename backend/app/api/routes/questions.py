@@ -16,7 +16,13 @@ from app.schemas.quiz import (
     QuizResultRead,
     QuizStartRequest,
 )
-from app.services.questions import pick_questions, pick_test_questions
+from app.services.questions import (
+    TestAlreadyCompleted,
+    get_test_result,
+    pick_questions,
+    pick_test_questions,
+    save_test_result,
+)
 
 router = APIRouter(prefix="/questions", tags=["questions"])
 
@@ -38,6 +44,11 @@ async def start_quiz(
 ) -> QuizRead:
     """Собирает тест по теме и при необходимости готовит варианты ответа."""
     topic = await _load_topic(db, payload.topic_key)
+    if await get_test_result(db, current_user.id, topic.id) is not None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Тест по этой теме уже пройден",
+        )
     picked = await pick_test_questions(db, topic.id, count=payload.count)
     if not picked:
         raise HTTPException(
@@ -126,7 +137,7 @@ async def grade_quiz(
         )
 
     score = earned / total if total > 0 else 0.0
-    return QuizResultRead(
+    result = QuizResultRead(
         topic_key=topic.key,
         topic_name=topic.name,
         score=round(score, 3),
@@ -134,6 +145,49 @@ async def grade_quiz(
         correct_count=sum(1 for item in items if item.is_correct),
         total=len(items),
         items=items,
+    )
+    try:
+        await save_test_result(
+            db,
+            current_user.id,
+            topic,
+            score=result.score,
+            level=result.level,
+            correct_count=result.correct_count,
+            total=result.total,
+            details=[item.model_dump(mode="json") for item in items],
+        )
+    except TestAlreadyCompleted as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=str(exc),
+        ) from exc
+    await db.commit()
+    return result
+
+
+@router.get("/quiz/{topic_key}/result")
+async def read_test_result(
+    topic_key: str,
+    db: DbSession,
+    current_user: CurrentUser,
+) -> QuizResultRead:
+    """Сохранённый результат теста по теме."""
+    topic = await _load_topic(db, topic_key)
+    saved = await get_test_result(db, current_user.id, topic.id)
+    if saved is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Тест по этой теме ещё не пройден",
+        )
+    return QuizResultRead(
+        topic_key=topic.key,
+        topic_name=topic.name,
+        score=saved.score,
+        level=saved.level,
+        correct_count=saved.correct_count,
+        total=saved.total,
+        items=[QuizResultItemRead(**item) for item in saved.details or []],
     )
 
 

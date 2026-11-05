@@ -10,6 +10,7 @@ from app.models.ontology_review import OntologyReviewAction
 from app.models.plan import LearningPlan, PlanItem
 from app.models.question import Question
 from app.models.resume import Resume, ResumeSkill
+from app.models.test_result import TopicTestResult
 from app.models.topic import Topic, TopicAlias, TopicCandidate, TopicPrerequisite
 from app.models.user import User
 from app.models.user_skill_state import UserSkillState
@@ -28,6 +29,7 @@ __all__ = [
     "TopicAlias",
     "TopicCandidate",
     "TopicPrerequisite",
+    "TopicTestResult",
     "User",
     "UserSkillState",
     "Vacancy",

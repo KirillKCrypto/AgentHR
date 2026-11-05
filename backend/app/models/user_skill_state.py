@@ -56,7 +56,7 @@ class UserSkillState(Base):
     proficiency: Mapped[int] = mapped_column(Integer, default=0, server_default=text("0"))
     # Уверенность оценки, 0..1
     confidence: Mapped[float] = mapped_column(Float, default=0.5, server_default=text("0.5"))
-    # resume | interview | manual
+    # resume | interview | manual | test
     source: Mapped[str] = mapped_column(
         String(30), default="resume", server_default=text("'resume'")
     )

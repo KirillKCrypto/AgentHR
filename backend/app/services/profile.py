@@ -52,6 +52,7 @@ from app.services.topics import (
 SOURCE_WEIGHTS: dict[str, float] = {
     "manual": 1.0,
     "interview": 0.9,
+    "test": 0.85,
     "resume": 0.6,
 }
 

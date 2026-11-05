@@ -261,6 +261,7 @@ JWT-токенов в SPA; дашборд → `GET /me` с access-токеном
 - `GET /questions?topic_key=...` — случайные вопросы банка по теме и сложности;
 - `POST /questions/quiz` — тест из 10 вопросов с вариантами ответа;
 - `POST /questions/quiz/grade` — проверка ответов и разбор;
+- `GET /questions/quiz/{topic_key}/result` — сохранённый результат; повторный тест запрещён;
 - `POST /analysis` — документы, профиль и разрывы одним ответом; LLM не вызывается.
 
 Доменные эндпоинты защищены `get_current_user` и изолированы по владельцу: обращение к чужому
@@ -365,6 +366,10 @@ JWT-токенов в SPA; дашборд → `GET /me` с access-токеном
 - Миграции `b5c6d7e8f9a0` / `c6d7e8f9a0b1` — assessment-подсистема, удалена миграцией
   `e8f9a0b1c2d3`; таблицы `assessment_*` и поля `claimed_level` / `verified_level` /
   `evidence_strength` больше не используются.
+- Миграция `e9f0a1b2c3d4` — единоразовые результаты тестов:
+  - `topic_test_results` — пользователь, тема, score, level, разбор, `completed_at`;
+  - уникальная пара `(user_id, topic_id)` не даёт пройти тест повторно;
+  - результат обновляет `user_skill_states` (`proficiency`, `source="test"`).
 - Подключение: `DATABASE_URL` из `backend/.env` (локальный дефолт в `app/core/config.py`);
   движок и сессии — `backend/app/db/session.py` (asyncpg, `pool_pre_ping`).
 - Миграции: Alembic (async-шаблон), URL берётся в `alembic/env.py` из настроек;

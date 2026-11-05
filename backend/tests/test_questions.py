@@ -176,6 +176,27 @@ async def test_quiz_api_returns_options_and_grades(api_user: ApiUser) -> None:
     assert result["level"] == round(result["score"] * 100)
     assert all(item["correct_option"] in range(4) for item in result["items"])
 
+    repeated = await api_user.client.post(
+        "/questions/quiz",
+        json={"topic_key": "python", "count": 10},
+        headers=api_user.headers,
+    )
+    assert repeated.status_code == 409
+
+    saved = await api_user.client.get(
+        "/questions/quiz/python/result",
+        headers=api_user.headers,
+    )
+    assert saved.status_code == 200
+    assert saved.json()["level"] == result["level"]
+
+    profile = await api_user.client.get("/profile", headers=api_user.headers)
+    python = next(
+        topic for topic in profile.json()["topics"] if topic["topic_key"] == "python"
+    )
+    assert python["source"] == "test"
+    assert python["proficiency"] == result["level"]
+
     async with async_session_factory() as session:
         await session.execute(
             update(Question)

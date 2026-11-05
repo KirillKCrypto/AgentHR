@@ -53,8 +53,8 @@ npm run generate:api # обновить src/api/schema.d.ts из OpenAPI (нуж
   оценка и рекомендации.
 - План: кнопка «Построить план» → `POST /plans` → `/plans/:id` → `GET /plans/{id}`.
   В плане 5–12 тем резюме, цель и число вопросов в банке.
-- Вопросы: `POST /questions/quiz` → ответы → `POST /questions/quiz/grade`; метрика и разбор
-  показываются после проверки.
+- Вопросы: `POST /questions/quiz` → ответы → `POST /questions/quiz/grade`; результат
+  сохраняется, тест по теме проходится один раз, `GET .../result` показывает сохранённый разбор.
 - Профиль и сохранённые вакансии: `/profile` → `GET /profile` + `GET /vacancies`; для
   выбранной вакансии — `GET /profile/gaps`; параметр `?vacancy=<id>` предвыбирает вакансию.
 - Явные состояния loading / error / empty / ready на всех доменных экранах.
