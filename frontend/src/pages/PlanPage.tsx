@@ -1,10 +1,16 @@
 import { useQuery } from '@tanstack/react-query'
-import { useEffect } from 'react'
+import { useEffect, useState } from 'react'
 import { Link, useParams } from 'react-router'
 
-import { ApiError, fetchPlan, type PlanRead } from '@/api/client'
+import {
+  ApiError,
+  fetchPlan,
+  fetchQuestions,
+  type PlanRead,
+  type QuestionRead,
+} from '@/api/client'
 import { Badge } from '@/components/ui/badge'
-import { buttonVariants } from '@/components/ui/button'
+import { Button, buttonVariants } from '@/components/ui/button'
 import {
   Card,
   CardContent,
@@ -19,6 +25,7 @@ import { useAuthToken } from '@/lib/useAuthToken'
 export default function PlanPage() {
   const { planId } = useParams<{ planId: string }>()
   const { token, expire } = useAuthToken()
+  const [difficulty, setDifficulty] = useState(3)
 
   const planQuery = useQuery<PlanRead>({
     queryKey: ['plan', planId, token],
@@ -110,6 +117,20 @@ export default function PlanPage() {
           </CardDescription>
         </CardHeader>
         <CardContent className="flex flex-col gap-5">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="text-sm text-muted-foreground">Сложность вопросов:</span>
+            {[1, 2, 3, 4, 5].map((value) => (
+              <Button
+                key={value}
+                type="button"
+                size="sm"
+                variant={difficulty === value ? 'default' : 'outline'}
+                onClick={() => setDifficulty(value)}
+              >
+                {value}
+              </Button>
+            ))}
+          </div>
           {plan.items.length === 0 ? (
             <p className="text-sm text-muted-foreground">
               В плане нет тем — загрузите резюме и постройте план заново.
@@ -139,11 +160,92 @@ export default function PlanPage() {
                   <span>·</span>
                   <span>{item.reason}</span>
                 </div>
+                <TopicQuestions
+                  topicKey={item.topic_key}
+                  token={token}
+                  difficulty={difficulty}
+                />
               </div>
             ))
           )}
         </CardContent>
       </Card>
+    </div>
+  )
+}
+
+function TopicQuestions({
+  topicKey,
+  token,
+  difficulty,
+}: {
+  topicKey: string
+  token: string
+  difficulty: number
+}) {
+  const [open, setOpen] = useState(false)
+  const questionsQuery = useQuery<QuestionRead[]>({
+    queryKey: ['questions', topicKey, difficulty, token],
+    queryFn: () => fetchQuestions(topicKey, token, { difficulty, limit: 5 }),
+    enabled: open,
+    retry: false,
+  })
+
+  return (
+    <div className="flex flex-col gap-2 rounded-md border p-3">
+      <div className="flex flex-wrap items-center gap-2">
+        <Button
+          type="button"
+          size="sm"
+          variant={open ? 'outline' : 'secondary'}
+          onClick={() => setOpen((value) => !value)}
+        >
+          {open ? 'Скрыть вопросы' : 'Проверить знания'}
+        </Button>
+        {open ? (
+          <Button
+            type="button"
+            size="sm"
+            variant="ghost"
+            onClick={() => void questionsQuery.refetch()}
+            disabled={questionsQuery.isFetching}
+          >
+            Другие вопросы
+          </Button>
+        ) : null}
+      </div>
+
+      {open ? (
+        questionsQuery.isPending ? (
+          <p className="text-sm text-muted-foreground">Загружаем вопросы…</p>
+        ) : questionsQuery.isError ? (
+          <p className="text-sm text-destructive">{errorMessage(questionsQuery.error)}</p>
+        ) : (questionsQuery.data ?? []).length === 0 ? (
+          <p className="text-sm text-muted-foreground">
+            Для сложности {difficulty} вопросов пока нет — банк ещё наполняется.
+          </p>
+        ) : (
+          <ol className="flex list-decimal flex-col gap-3 pl-5 text-sm">
+            {(questionsQuery.data ?? []).map((question) => (
+              <li key={question.id} className="flex flex-col gap-1">
+                <span>{question.text}</span>
+                {question.expected_points.length > 0 ? (
+                  <details>
+                    <summary className="cursor-pointer text-xs text-muted-foreground">
+                      Эталонные пункты ответа
+                    </summary>
+                    <ul className="mt-1 list-disc pl-4 text-xs text-muted-foreground">
+                      {question.expected_points.map((point) => (
+                        <li key={point}>{point}</li>
+                      ))}
+                    </ul>
+                  </details>
+                ) : null}
+              </li>
+            ))}
+          </ol>
+        )
+      ) : null}
     </div>
   )
 }

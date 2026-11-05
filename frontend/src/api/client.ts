@@ -20,6 +20,7 @@ export type AnalysisResponse = components['schemas']['AnalysisResponse']
 export type PlanCreate = components['schemas']['PlanCreate']
 export type PlanRead = components['schemas']['PlanRead']
 export type PlanSummary = components['schemas']['PlanSummaryRead']
+export type QuestionRead = components['schemas']['QuestionRead']
 
 export class ApiError extends Error {
   readonly status: number
@@ -131,6 +132,19 @@ export function fetchPlan(planId: string, token: string): Promise<PlanRead> {
 
 export function listPlans(token: string): Promise<PlanSummary[]> {
   return apiFetch('/plans', { token })
+}
+
+export function fetchQuestions(
+  topicKey: string,
+  token: string,
+  options: { difficulty?: number; limit?: number } = {},
+): Promise<QuestionRead[]> {
+  const params = new URLSearchParams({ topic_key: topicKey })
+  if (options.difficulty !== undefined) {
+    params.set('difficulty', String(options.difficulty))
+  }
+  params.set('limit', String(options.limit ?? 5))
+  return apiFetch(`/questions?${params.toString()}`, { token })
 }
 
 export function runAnalysis(payload: AnalysisRequest, token: string): Promise<AnalysisResponse> {
