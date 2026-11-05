@@ -14,9 +14,9 @@ from app.schemas.analysis import (
     VacancyRead,
 )
 from app.schemas.plan import PlanItemRead, PlanRead, PlanSummaryRead
+from app.services.gaps import GapReport
 from app.services.plans import PlanSnapshot, PlanSummary
 from app.services.profile import (
-    GapReport,
     ProfileSnapshot,
     SkillEntry,
     TopicBriefData,

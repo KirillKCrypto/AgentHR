@@ -5,9 +5,9 @@ from fastapi import APIRouter, HTTPException, status
 from app.api.deps import CurrentUser, DbSession
 from app.api.mappers import gap_analysis_read, profile_read, resume_read, vacancy_read
 from app.schemas.analysis import AnalysisRequest, AnalysisResponse
+from app.services.gaps import compute_gaps
 from app.services.profile import (
     NotFoundError,
-    compute_gaps,
     get_profile,
     get_resume,
     get_vacancy,

@@ -16,9 +16,9 @@ from app.embeddings.base import EmbeddingProvider
 from app.llm.base import LLMProvider
 from app.models import Topic, TopicPrerequisite
 from app.services.analysis import extract_resume_skills, extract_vacancy_requirements
+from app.services.gaps import compute_gaps
 from app.services.profile import (
     SkillEntry,
-    compute_gaps,
     get_profile,
     get_vacancy,
     load_vacancy_skills,

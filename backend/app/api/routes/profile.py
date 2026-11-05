@@ -7,7 +7,8 @@ from fastapi import APIRouter, HTTPException, status
 from app.api.deps import CurrentUser, DbSession
 from app.api.mappers import gap_analysis_read, profile_read
 from app.schemas.analysis import GapAnalysisRead, ProfileRead
-from app.services.profile import NotFoundError, compute_gaps, get_profile
+from app.services.gaps import compute_gaps
+from app.services.profile import NotFoundError, get_profile
 
 router = APIRouter(prefix="/profile", tags=["profile"])
 

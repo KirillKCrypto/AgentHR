@@ -21,15 +21,8 @@ import {
 } from '@/components/ui/card'
 import { Progress } from '@/components/ui/progress'
 import { CreatePlanButton } from '@/components/CreatePlanButton'
+import { GapMetrics, GapRecommendations, GapTable } from '@/components/Gaps'
 import { ResumeUploadCard } from '@/components/ResumeUploadCard'
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from '@/components/ui/table'
 import { errorMessage } from '@/lib/errors'
 import { formatDate, sourceLabel } from '@/lib/labels'
 import { useAuthToken } from '@/lib/useAuthToken'
@@ -400,120 +393,17 @@ function GapsSection({
 }
 
 function GapsView({ gaps, hasTopics }: { gaps: GapAnalysisRead; hasTopics: boolean }) {
-  const coverage = Math.round(gaps.coverage_all * 100)
-  const confirmed =
-    gaps.confirmed_readiness === null || gaps.confirmed_readiness === undefined
-      ? null
-      : Math.round(gaps.confirmed_readiness * 100)
-
   return (
     <div className="flex flex-col gap-3">
-      <div className="grid gap-4 sm:grid-cols-2">
-        <div className="flex flex-col gap-1">
-          <span className="text-2xl font-medium">{coverage}%</span>
-          <span className="text-sm text-muted-foreground">покрытие всех требований</span>
-          <Progress value={coverage} />
-        </div>
-        <div className="flex flex-col gap-1">
-          <span className="text-2xl font-medium">
-            {confirmed === null ? '—' : `${confirmed}%`}
-          </span>
-          <span className="text-sm text-muted-foreground">подтверждённая готовность</span>
-          {confirmed === null ? (
-            <span className="text-xs text-muted-foreground">
-              нет подтверждённых требований
-            </span>
-          ) : (
-            <Progress value={confirmed} />
-          )}
-        </div>
-      </div>
-      <div className="flex items-end justify-between gap-3">
-        <span className="text-sm text-muted-foreground">
-          {gaps.items.filter((item) => item.satisfied).length} из {gaps.items.length}{' '}
-          требований закрыто
-        </span>
-      </div>
-      {hasTopics ? null : (
+      {hasTopics ? (
+        <GapMetrics gaps={gaps} />
+      ) : (
         <p className="text-sm text-muted-foreground">
           Профиль пуст — все требования пока считаются разрывами.
         </p>
       )}
-      {gaps.provisional_count > 0 ? (
-        <p className="text-sm text-muted-foreground">
-          {gaps.provisional_count} требований опираются на непроверенные темы (вес{' '}
-          {gaps.provisional_weight.toFixed(2)}). Они входят в покрытие, но не в
-          подтверждённую готовность.
-        </p>
-      ) : null}
-      {gaps.critical_gap_count > 0 ? (
-        <p className="text-sm text-destructive">
-          {gaps.critical_gap_count} обязательных требований не закрыто.
-        </p>
-      ) : null}
-      {gaps.unmatched_count > 0 ? (
-        <p className="text-sm text-muted-foreground">
-          {gaps.unmatched_count} навык(ов) вакансии вне онтологии: показаны в таблице,
-          но не входят в покрытие.
-        </p>
-      ) : null}
-      {gaps.items.length === 0 ? (
-        <p className="text-sm text-muted-foreground">Требований в вакансии нет.</p>
-      ) : (
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead>Навык</TableHead>
-              <TableHead>Тема</TableHead>
-              <TableHead>Требуется</TableHead>
-              <TableHead>В профиле</TableHead>
-              <TableHead>Разрыв</TableHead>
-              <TableHead>Критичность</TableHead>
-              <TableHead>Логика</TableHead>
-              <TableHead>Статус</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {gaps.items.map((item) => (
-              <TableRow key={item.skill_name}>
-                <TableCell>{item.skill_name}</TableCell>
-                <TableCell>
-                  <div className="flex flex-wrap items-center gap-2">
-                    {item.topic_name ?? <Badge variant="outline">вне онтологии</Badge>}
-                    {item.topic_status === 'provisional' ? (
-                      <Badge variant="secondary">на проверке</Badge>
-                    ) : null}
-                  </div>
-                </TableCell>
-                <TableCell>{item.required_level}</TableCell>
-                <TableCell>{item.user_level}</TableCell>
-                <TableCell>{item.gap}</TableCell>
-                <TableCell>
-                  {item.criticality === 'must_have' ? (
-                    <Badge>обязательно</Badge>
-                  ) : (
-                    <Badge variant="outline">желательно</Badge>
-                  )}
-                </TableCell>
-                <TableCell>
-                  {item.requirement_logic === 'SINGLE' ? (
-                    <span className="text-muted-foreground">—</span>
-                  ) : (
-                    <Badge variant="outline">{item.requirement_logic}</Badge>
-                  )}
-                </TableCell>
-                <TableCell>
-                  {item.satisfied ? (
-                    <Badge>закрыто</Badge>
-                  ) : (
-                    <Badge variant="destructive">разрыв</Badge>
-                  )}
-                </TableCell>
-              </TableRow>
-            ))}
-          </TableBody>
-        </Table>
-      )}
+      <GapTable items={gaps.items} />
+      <GapRecommendations items={gaps.recommendations} />
     </div>
   )
 }

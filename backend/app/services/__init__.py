@@ -1,6 +1,8 @@
 """РЎРµСЂРІРёСЃРЅС‹Р№ СЃР»РѕР№ AgentHR: Р°РЅР°Р»РёР· РґРѕРєСѓРјРµРЅС‚РѕРІ, РїСЂРѕС„РёР»СЊ Р·РЅР°РЅРёР№, РЅРѕСЂРјР°Р»РёР·Р°С†РёСЏ."""
 
+from app.services.errors import NotFoundError
 from app.services.evaluation import precision_recall
+from app.services.gaps import GapItem, GapReport, compute_gaps
 from app.services.normalization import (
     SkillMatcher,
     TopicIndex,
@@ -9,15 +11,11 @@ from app.services.normalization import (
     normalize_name,
 )
 from app.services.profile import (
-    GapItem,
-    GapReport,
-    NotFoundError,
     ProfileSnapshot,
     ProfileTopic,
     UnmatchedSkill,
     analyze_resume,
     analyze_vacancy,
-    compute_gaps,
     get_profile,
     rebuild_profile,
     update_skill_proficiency,
