@@ -7,6 +7,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models import LearningPlan, PlanItem, Topic, UserSkillState, Vacancy, VacancySkill
+from app.services.questions import count_by_topic
 
 MIN_TOPICS = 5
 MAX_TOPICS = 12
@@ -33,6 +34,7 @@ class PlanTopic:
     target_level: int
     priority: float
     reason: str
+    question_count: int = 0
 
 
 @dataclass(frozen=True)
@@ -120,6 +122,7 @@ async def create_plan(
     session.add(plan)
     await session.flush()
 
+    question_counts = await count_by_topic(session, [topic.id for _, _, topic in selected])
     items: list[PlanTopic] = []
     for position, (score, state, topic) in enumerate(selected, start=1):
         target = required_by_topic.get(topic.id, 100)
@@ -152,6 +155,7 @@ async def create_plan(
                 target_level=target,
                 priority=score,
                 reason="; ".join(reason_parts),
+                question_count=question_counts.get(topic.id, 0),
             )
         )
     await session.commit()
@@ -185,6 +189,8 @@ async def get_plan(session: AsyncSession, user_id: uuid.UUID, plan_id: uuid.UUID
         vacancy = await session.get(Vacancy, plan.vacancy_id)
         vacancy_title = vacancy.title if vacancy is not None else None
 
+    question_counts = await count_by_topic(session, [topic.id for _, topic in rows])
+
     return PlanSnapshot(
         id=plan.id,
         user_id=plan.user_id,
@@ -203,6 +209,7 @@ async def get_plan(session: AsyncSession, user_id: uuid.UUID, plan_id: uuid.UUID
                 target_level=item.target_level,
                 priority=item.priority,
                 reason=item.reason,
+                question_count=question_counts.get(topic.id, 0),
             )
             for item, topic in rows
         ),

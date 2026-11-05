@@ -24,6 +24,7 @@ class PlanItemRead(BaseModel):
     confidence: float = Field(ge=0, le=1)
     priority: float
     reason: str
+    question_count: int = 0
 
 
 class PlanRead(BaseModel):
@@ -47,3 +48,14 @@ class PlanSummaryRead(BaseModel):
     status: str
     vacancy_id: UUID | None = None
     topic_count: int
+
+
+class QuestionRead(BaseModel):
+    """Вопрос банка."""
+
+    id: UUID
+    topic_id: UUID
+    difficulty: int
+    text: str
+    expected_points: list[str] = []
+    source: str

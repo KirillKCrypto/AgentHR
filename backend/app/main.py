@@ -16,6 +16,7 @@ from app.api.routes.analysis import router as analysis_router
 from app.api.routes.auth import router as auth_router
 from app.api.routes.plans import router as plans_router
 from app.api.routes.profile import router as profile_router
+from app.api.routes.questions import router as questions_router
 from app.api.routes.resumes import router as resumes_router
 from app.api.routes.users import router as users_router
 from app.api.routes.vacancies import router as vacancies_router
@@ -53,6 +54,7 @@ app.include_router(vacancies_router)
 app.include_router(resumes_router)
 app.include_router(profile_router)
 app.include_router(plans_router)
+app.include_router(questions_router)
 app.include_router(analysis_router)
 
 

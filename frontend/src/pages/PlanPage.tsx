@@ -133,6 +133,8 @@ export default function PlanPage() {
                 <div className="flex flex-wrap gap-2 text-xs text-muted-foreground">
                   <span>приоритет {Math.round(item.priority)}</span>
                   <span>·</span>
+                  <span>вопросов в банке: {item.question_count}</span>
+                  <span>·</span>
                   <span>уверенность {Math.round(item.confidence * 100)}%</span>
                   <span>·</span>
                   <span>{item.reason}</span>

@@ -8,6 +8,7 @@ from app.db.base import Base
 from app.models.agent_action import AgentAction
 from app.models.ontology_review import OntologyReviewAction
 from app.models.plan import LearningPlan, PlanItem
+from app.models.question import Question
 from app.models.resume import Resume, ResumeSkill
 from app.models.topic import Topic, TopicAlias, TopicCandidate, TopicPrerequisite
 from app.models.user import User
@@ -20,6 +21,7 @@ __all__ = [
     "LearningPlan",
     "OntologyReviewAction",
     "PlanItem",
+    "Question",
     "Resume",
     "ResumeSkill",
     "Topic",

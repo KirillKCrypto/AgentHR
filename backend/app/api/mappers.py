@@ -135,6 +135,7 @@ def plan_read(plan: PlanSnapshot) -> PlanRead:
                 confidence=item.confidence,
                 priority=item.priority,
                 reason=item.reason,
+                question_count=item.question_count,
             )
             for item in plan.items
         ],

@@ -279,6 +279,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/questions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Read Questions
+         * @description Случайные вопросы по теме онтологии.
+         */
+        get: operations["read_questions_questions_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/analysis": {
         parameters: {
             query?: never;
@@ -589,6 +609,11 @@ export interface components {
             priority: number;
             /** Reason */
             reason: string;
+            /**
+             * Question Count
+             * @default 0
+             */
+            question_count: number;
         };
         /**
          * PlanRead
@@ -690,6 +715,33 @@ export interface components {
              * @default canonical
              */
             status: string;
+        };
+        /**
+         * QuestionRead
+         * @description Вопрос банка.
+         */
+        QuestionRead: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Topic Id
+             * Format: uuid
+             */
+            topic_id: string;
+            /** Difficulty */
+            difficulty: number;
+            /** Text */
+            text: string;
+            /**
+             * Expected Points
+             * @default []
+             */
+            expected_points: string[];
+            /** Source */
+            source: string;
         };
         /**
          * RefreshRequest
@@ -1417,6 +1469,39 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["PlanRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    read_questions_questions_get: {
+        parameters: {
+            query: {
+                topic_key: string;
+                difficulty?: number | null;
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["QuestionRead"][];
                 };
             };
             /** @description Validation Error */
