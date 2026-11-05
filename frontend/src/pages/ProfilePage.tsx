@@ -1,4 +1,4 @@
-import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { useQuery } from '@tanstack/react-query'
 import { useEffect, useState } from 'react'
 import { Link, useSearchParams } from 'react-router'
 
@@ -22,8 +22,8 @@ import {
 import { Progress } from '@/components/ui/progress'
 import { CreatePlanButton } from '@/components/CreatePlanButton'
 import { GapMetrics, GapRecommendations, GapTable } from '@/components/Gaps'
+import { PlanSkillTestsCard } from '@/components/PlanSkillTestsCard'
 import { ResumeUploadCard } from '@/components/ResumeUploadCard'
-import { SkillAssessmentCard } from '@/components/SkillAssessmentCard'
 import { errorMessage } from '@/lib/errors'
 import { formatDate, sourceLabel } from '@/lib/labels'
 import { useAuthToken } from '@/lib/useAuthToken'
@@ -33,7 +33,6 @@ type GapItem = GapAnalysisRead['items'][number]
 
 export default function ProfilePage() {
   const { token, expire } = useAuthToken()
-  const queryClient = useQueryClient()
   const [searchParams] = useSearchParams()
   const [selectedVacancyId, setSelectedVacancyId] = useState<string | null>(() =>
     searchParams.get('vacancy'),
@@ -170,15 +169,7 @@ export default function ProfilePage() {
 
       <ResumeUploadCard token={token} onUnauthorized={expire} />
 
-      <SkillAssessmentCard
-        token={token}
-        topicKeys={profile.topics.map((topic) => topic.topic_key)}
-        onUnauthorized={expire}
-        onCompleted={() => {
-          void queryClient.invalidateQueries({ queryKey: ['profile', token] })
-          void queryClient.invalidateQueries({ queryKey: ['gaps'] })
-        }}
-      />
+      <PlanSkillTestsCard token={token} onUnauthorized={expire} />
 
       {isEmpty ? (
         <Card>

@@ -28,7 +28,7 @@ npm run generate:api # обновить src/api/schema.d.ts из OpenAPI (нуж
   `ProfilePage` (`/profile`), `VacancyUploadPage` (`/vacancies/new`),
   `VacancyPage` (`/vacancies/:id`), `PlanPage` (`/plans/:id`), `NotFoundPage` (404)
 - `src/components/` — `ResumeUploadCard`, `VacancyAssessment`, `CreatePlanButton`,
-  `Gaps`, `SkillAssessmentCard` (тест из 10 вопросов, один раз на тему), `ui/`
+  `Gaps`, `PlanSkillTestsCard` + `TopicTest` (10 вопросов по темам плана), `ui/`
 - `src/api/` — `client.ts` (auth, вакансии, резюме, профиль, разрывы, планы, вопросы,
   assessments, `/analysis`, `ApiError`), `schema.d.ts` (типы из OpenAPI, генерируется)
 - `src/lib/` — `tokens.ts` (токены в localStorage), `useAuthToken.ts` (токен + сброс сессии
