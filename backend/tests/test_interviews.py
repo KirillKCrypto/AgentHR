@@ -1,6 +1,15 @@
 """Интервью: сценарий из плана, ответы, SSE и обновление профиля."""
 
+from app.services.interview import _verdict_for
 from tests.conftest import ApiUser
+
+
+def test_verdict_consistency() -> None:
+    """Вердикт соответствует числовой оценке."""
+    assert _verdict_for(85) == "strong"
+    assert _verdict_for(75) == "partial"
+    assert _verdict_for(49) == "weak"
+
 
 RESUME_DATA = {
     "experience_years": 3.0,

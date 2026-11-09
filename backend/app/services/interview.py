@@ -41,11 +41,21 @@ EVALUATION_SCHEMA: dict[str, Any] = {
 
 EVALUATION_SYSTEM_PROMPT = (
     "Ты — технический интервьюер. Оцени ответ кандидата по вопросу и эталонным пунктам.\n"
+    "Эталонные пункты — ориентир, а не обязательный чек-лист. Оценивай корректность, "
+    "понимание и связь с вопросом, а не количество упомянутых деталей.\n"
+    "Шкала score:\n"
+    "- 85–100: ответ верный и глубокий, раскрывает суть, примеры и ограничения;\n"
+    "- 70–84: верный по сути ответ, второстепенные детали могут отсутствовать;\n"
+    "- 50–69: частично верный, есть существенные пробелы;\n"
+    "- 30–49: слабый, много ошибок или ответ по касательной;\n"
+    "- 0–29: не по вопросу, пустой или полностью неверный.\n"
     "Правила:\n"
-    "- score 0..100: насколько ответ полный и корректный.\n"
-    "- verdict: strong / partial / weak.\n"
+    "- Ответ на 3–4 предложения может быть сильным, если он отвечает на вопрос.\n"
+    "- Не снижай оценку только за отсутствие второстепенных эталонных пунктов.\n"
+    "- Если основная мысль верна, минимальная оценка — 70, даже при неполном списке.\n"
+    "- verdict: strong при score >= 80, partial при 50–79, weak ниже 50.\n"
     "- covered_points: что кандидат действительно объяснил.\n"
-    "- missed_points: важные пункты, которых не хватило.\n"
+    "- missed_points: только существенные пункты, без которых ответ неполный.\n"
     "- feedback_brief: 2–4 предложения, что верно и что подтянуть.\n"
     "- Не придумывай факты, которых нет в ответе."
 )
@@ -379,12 +389,9 @@ async def _evaluate_answer(
     )
     data = result.data
     score = _clamp_score(data.get("score"))
-    verdict = str(data.get("verdict") or "weak")
-    if verdict not in ("strong", "partial", "weak"):
-        verdict = "partial"
     return {
         "score": score,
-        "verdict": verdict,
+        "verdict": _verdict_for(score),
         "covered_points": _clean_points(data.get("covered_points")),
         "missed_points": _clean_points(data.get("missed_points")),
         "feedback_brief": _clean_text(data.get("feedback_brief"), 1000),
@@ -536,6 +543,15 @@ def _difficulty_for(current: int, target: int) -> int:
     if gap >= 10:
         return 3
     return 4
+
+
+def _verdict_for(score: float) -> str:
+    """Согласует вердикт с числовой оценкой."""
+    if score >= 80:
+        return "strong"
+    if score >= 50:
+        return "partial"
+    return "weak"
 
 
 def _clamp_score(value: Any) -> float:
