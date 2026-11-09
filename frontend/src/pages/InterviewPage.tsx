@@ -89,6 +89,8 @@ export default function InterviewPage() {
             const updated = data.session as InterviewRead
             setSession(updated)
             setAnswer('')
+            // Фидбек уже перенесён в разбор предыдущего вопроса.
+            setStreamedFeedback('')
           }
         },
       )
