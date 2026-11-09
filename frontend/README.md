@@ -26,12 +26,13 @@ npm run generate:api # обновить src/api/schema.d.ts из OpenAPI (нуж
 - `src/App.tsx` — шапка и маршруты
 - `src/pages/` — экраны: `DashboardPage` (`/`), `LoginPage` (`/login`),
   `ProfilePage` (`/profile`), `VacancyUploadPage` (`/vacancies/new`),
-  `VacancyPage` (`/vacancies/:id`), `PlanPage` (`/plans/:id`), `NotFoundPage` (404)
+  `VacancyPage` (`/vacancies/:id`), `PlanPage` (`/plans/:id`),
+  `InterviewPage` (`/interviews/:id`), `NotFoundPage` (404)
 - `src/components/` — `ResumeUploadCard`, `VacancyAssessment`, `CreatePlanButton`,
-  `Gaps`, `PlanSkillTestsCard` + `TopicTest` (тест из 10 вопросов с вариантами ответа,
-  метрикой и разбором), `ui/`
+  `StartInterviewButton`, `Gaps`, `PlanSkillTestsCard` + `TopicTest` (тест из 10 вопросов
+  с вариантами ответа, метрикой и разбором), `ui/`
 - `src/api/` — `client.ts` (auth, вакансии, резюме, профиль, разрывы, планы, вопросы,
-  `/analysis`, `ApiError`), `schema.d.ts` (типы из OpenAPI, генерируется)
+  интервью включая SSE-парсер, `/analysis`, `ApiError`), `schema.d.ts`
 - `src/lib/` — `tokens.ts` (токены в localStorage), `useAuthToken.ts` (токен + сброс сессии
   при 401), `errors.ts` (понятные сообщения), `labels.ts` (источники, методы, даты),
   `utils.ts` (`cn`)
@@ -55,6 +56,9 @@ npm run generate:api # обновить src/api/schema.d.ts из OpenAPI (нуж
   В плане 5–12 тем резюме, цель и число вопросов в банке.
 - Вопросы: `POST /questions/quiz` → ответы → `POST /questions/quiz/grade`; результат
   сохраняется, тест по теме проходится один раз, `GET .../result` показывает сохранённый разбор.
+- Интервью: `/plans/:id` → `POST /interviews` → `/interviews/:id`; ответы уходят в
+  `POST /interviews/{id}/answers/stream`, SSE-кадры `evaluation` / `token` / `done`
+  обновляют чат и фидбек.
 - Профиль и сохранённые вакансии: `/profile` → `GET /profile` + `GET /vacancies`; для
   выбранной вакансии — `GET /profile/gaps`; параметр `?vacancy=<id>` предвыбирает вакансию.
 - Явные состояния loading / error / empty / ready на всех доменных экранах.
@@ -67,5 +71,6 @@ npm run generate:api # обновить src/api/schema.d.ts из OpenAPI (нуж
 - Tailwind 4 подключён через `@tailwindcss/vite`; тема — в `src/index.css`
 - Никаких анимаций и кастомных визуализаций без явного запроса
 
-Экраны продукта (по [`docs/ROADMAP.md`](../docs/ROADMAP.md) §5): реализованы `/`, `/login`, `/vacancies/new`, `/profile`;
-`/plans/:id`, `/interview/:id`, `/reports/:id` — по плану M3–M5.
+Экраны продукта (по [`docs/ROADMAP.md`](../docs/ROADMAP.md) §5): реализованы `/`, `/login`,
+`/profile`, `/vacancies/new`, `/vacancies/:id`, `/plans/:id`, `/interviews/:id`;
+`/reports/:id` — по плану M5.

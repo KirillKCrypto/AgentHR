@@ -1,6 +1,6 @@
 """Общие фикстуры интеграционных тестов: БД, HTTP-клиент и заглушка LLM."""
 
-from collections.abc import AsyncGenerator, Sequence
+from collections.abc import AsyncGenerator, AsyncIterator, Sequence
 from dataclasses import dataclass, field
 from typing import Any
 from uuid import uuid4
@@ -113,6 +113,13 @@ class SchemaStubProvider:
         if schema_name not in self.responses:
             raise LLMError(f"SchemaStubProvider: нет ответа для схемы {schema_name!r}")
         return StructuredResult(data=self.responses[schema_name])
+
+    async def generate_stream(self, messages: Sequence[ChatMessage]) -> AsyncIterator[str]:
+        """Отдаёт заготовленный текст фидбека кусками."""
+        self.calls.append("interview_feedback")
+        text = str(self.responses.get("interview_feedback", "Ответ принят."))
+        for index in range(0, len(text), 12):
+            yield text[index : index + 12]
 
     async def close(self) -> None:
         """Ресурсов нет."""

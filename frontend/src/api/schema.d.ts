@@ -279,6 +279,90 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/interviews": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Read Interviews
+         * @description Список интервью пользователя.
+         */
+        get: operations["read_interviews_interviews_get"];
+        put?: never;
+        /**
+         * Start Interview
+         * @description Создаёт интервью из последнего плана подготовки.
+         */
+        post: operations["start_interview_interviews_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/interviews/{interview_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Read Interview
+         * @description Сессия интервью с вопросами и разбором.
+         */
+        get: operations["read_interview_interviews__interview_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/interviews/{interview_id}/answers": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Answer
+         * @description Оценивает ответ и возвращает следующий вопрос.
+         */
+        post: operations["answer_interviews__interview_id__answers_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/interviews/{interview_id}/answers/stream": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Answer Stream
+         * @description Оценивает ответ и стримит фидбек через SSE.
+         */
+        post: operations["answer_stream_interviews__interview_id__answers_stream_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/questions/quiz": {
         parameters: {
             query?: never;
@@ -641,6 +725,159 @@ export interface components {
         HTTPValidationError: {
             /** Detail */
             detail?: components["schemas"]["ValidationError"][];
+        };
+        /**
+         * InterviewAnswerRead
+         * @description Результат ответа.
+         */
+        InterviewAnswerRead: {
+            turn: components["schemas"]["InterviewTurnRead"];
+            next_turn?: components["schemas"]["InterviewTurnRead"] | null;
+            session: components["schemas"]["InterviewRead"];
+            /** Finished */
+            finished: boolean;
+        };
+        /**
+         * InterviewAnswerRequest
+         * @description Ответ на текущий вопрос.
+         */
+        InterviewAnswerRequest: {
+            /**
+             * Turn Id
+             * Format: uuid
+             */
+            turn_id: string;
+            /** Answer Text */
+            answer_text: string;
+        };
+        /**
+         * InterviewCreate
+         * @description Запрос на создание интервью.
+         */
+        InterviewCreate: {
+            /**
+             * Plan Id
+             * Format: uuid
+             */
+            plan_id: string;
+        };
+        /**
+         * InterviewRead
+         * @description Сессия интервью.
+         */
+        InterviewRead: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * User Id
+             * Format: uuid
+             */
+            user_id: string;
+            /** Plan Id */
+            plan_id?: string | null;
+            /** Title */
+            title: string;
+            /** Status */
+            status: string;
+            /** Score */
+            score?: number | null;
+            /** Level */
+            level?: number | null;
+            /** Question Count */
+            question_count: number;
+            /** Answered Count */
+            answered_count: number;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Started At */
+            started_at?: string | null;
+            /** Finished At */
+            finished_at?: string | null;
+            /**
+             * Turns
+             * @default []
+             */
+            turns: components["schemas"]["InterviewTurnRead"][];
+        };
+        /**
+         * InterviewSummaryRead
+         * @description Краткая карточка интервью.
+         */
+        InterviewSummaryRead: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Title */
+            title: string;
+            /** Status */
+            status: string;
+            /** Level */
+            level?: number | null;
+            /** Question Count */
+            question_count: number;
+            /** Answered Count */
+            answered_count: number;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+        };
+        /**
+         * InterviewTurnRead
+         * @description Вопрос интервью и результат ответа.
+         */
+        InterviewTurnRead: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Position */
+            position: number;
+            /**
+             * Topic Id
+             * Format: uuid
+             */
+            topic_id: string;
+            /** Topic Key */
+            topic_key: string;
+            /** Topic Name */
+            topic_name: string;
+            /** Question Text */
+            question_text: string;
+            /** Difficulty */
+            difficulty: number;
+            /** Status */
+            status: string;
+            /** Answer Text */
+            answer_text?: string | null;
+            /** Score */
+            score?: number | null;
+            /** Verdict */
+            verdict?: string | null;
+            /** Feedback */
+            feedback?: string | null;
+            /**
+             * Covered Points
+             * @default []
+             */
+            covered_points: string[];
+            /**
+             * Missed Points
+             * @default []
+             */
+            missed_points: string[];
+            /** Answered At */
+            answered_at?: string | null;
         };
         /**
          * LoginRequest
@@ -1676,6 +1913,160 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["PlanRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    read_interviews_interviews_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["InterviewSummaryRead"][];
+                };
+            };
+        };
+    };
+    start_interview_interviews_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["InterviewCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["InterviewRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    read_interview_interviews__interview_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                interview_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["InterviewRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    answer_interviews__interview_id__answers_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                interview_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["InterviewAnswerRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["InterviewAnswerRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    answer_stream_interviews__interview_id__answers_stream_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                interview_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["InterviewAnswerRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
                 };
             };
             /** @description Validation Error */

@@ -6,6 +6,7 @@
 
 from app.db.base import Base
 from app.models.agent_action import AgentAction
+from app.models.interview import InterviewSession, InterviewTurn
 from app.models.ontology_review import OntologyReviewAction
 from app.models.plan import LearningPlan, PlanItem
 from app.models.question import Question
@@ -19,6 +20,8 @@ from app.models.vacancy import Vacancy, VacancySkill
 __all__ = [
     "AgentAction",
     "Base",
+    "InterviewSession",
+    "InterviewTurn",
     "LearningPlan",
     "OntologyReviewAction",
     "PlanItem",

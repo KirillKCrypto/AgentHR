@@ -1,6 +1,6 @@
 """Базовые типы и интерфейс LLM-провайдера (провайдер-агностичный слой)."""
 
-from collections.abc import Sequence
+from collections.abc import AsyncIterator, Sequence
 from dataclasses import dataclass
 from typing import Any, Literal, Protocol
 
@@ -91,6 +91,10 @@ class LLMProvider(Protocol):
         schema_name: str = "result",
     ) -> StructuredResult:
         """Возвращает JSON-ответ, соответствующий переданной JSON Schema."""
+        ...
+
+    async def generate_stream(self, messages: Sequence[ChatMessage]) -> AsyncIterator[str]:
+        """Отдаёт текст ответа кусками по мере генерации."""
         ...
 
     async def close(self) -> None:

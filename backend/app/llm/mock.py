@@ -1,7 +1,7 @@
 """Детерминированный мок-провайдер для тестов (без сетевых вызовов)."""
 
 import json
-from collections.abc import Sequence
+from collections.abc import AsyncIterator, Sequence
 from dataclasses import dataclass
 from typing import Any
 
@@ -69,6 +69,14 @@ class MockProvider:
         if response.content is None:
             raise LLMError("MockProvider: для структурированного ответа нужен content")
         return StructuredResult(data=json.loads(response.content), usage=response.usage)
+
+    async def generate_stream(self, messages: Sequence[ChatMessage]) -> AsyncIterator[str]:
+        """Отдаёт следующий ответ кусками по 20 символов."""
+        self.calls.append(MockCall("generate_stream", tuple(messages)))
+        response = self._next()
+        text = response.content or ""
+        for index in range(0, len(text), 20):
+            yield text[index : index + 20]
 
     async def close(self) -> None:
         """Ничего не делает: у мока нет ресурсов."""

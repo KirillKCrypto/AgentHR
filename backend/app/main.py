@@ -14,6 +14,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.routes.analysis import router as analysis_router
 from app.api.routes.auth import router as auth_router
+from app.api.routes.interviews import router as interviews_router
 from app.api.routes.plans import router as plans_router
 from app.api.routes.profile import router as profile_router
 from app.api.routes.questions import router as questions_router
@@ -54,6 +55,7 @@ app.include_router(vacancies_router)
 app.include_router(resumes_router)
 app.include_router(profile_router)
 app.include_router(plans_router)
+app.include_router(interviews_router)
 app.include_router(questions_router)
 app.include_router(analysis_router)
 

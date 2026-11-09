@@ -57,6 +57,10 @@ docker compose up -d --build    # agenthr-api на http://127.0.0.1:8000
 - `POST /questions/quiz/grade` — проверка ответов, сохранение результата и обновление профиля;
 - `GET /questions/quiz/{topic_key}/result` — сохранённый результат теста (404, если теста не было).
   Тест по теме проходится один раз, повторный старт возвращает 409.
+- `POST /interviews` — сценарий интервью из плана, первый вопрос;
+- `GET /interviews`, `GET /interviews/{id}` — история и карточка интервью;
+- `POST /interviews/{id}/answers` — ответ и LLM-оценка;
+- `POST /interviews/{id}/answers/stream` — то же, фидбек отдаётся SSE-потоком;
 - `POST /analysis` — совместный анализ загруженных документов `{vacancy_id, resume_id}`:
   документы, профиль и разрывы одним ответом (без вызовов LLM — только чтение и расчёт).
 
@@ -69,8 +73,12 @@ docker compose up -d --build    # agenthr-api на http://127.0.0.1:8000
 - Основной провайдер — DeepSeek: `LLM_PROVIDER=openai`, `OPENAI_BASE_URL=https://api.deepseek.com`,
   `OPENAI_MODEL=deepseek-flash`, `OPENAI_API_KEY` в `backend/.env`. Слой OpenAI-совместимый,
   поэтому официальный OpenAI подключается сменой базового URL и модели.
-- Интерфейс (`app/llm/base.py`): `generate_with_tools` (function calling) и
-  `generate_structured` (структурированный JSON по схеме).
+- Интерфейс (`app/llm/base.py`): `generate_with_tools` (function calling),
+  `generate_structured` (структурированный JSON по схеме) и `generate_stream`
+  (текстовый поток для SSE-фидбека интервью).
+- Стриминг интервью: оценка ответа — structured JSON, затем отдельный
+  `generate_stream` отдаёт текст фидбека токенами через SSE. Оценка и разбор
+  сохраняются до начала потока, поэтому обрыв связи не теряет результат.
 - Структурированный вывод задаётся `LLM_STRUCTURED_MODE`:
   `json_schema` — штатный `response_format=json_schema` с откатом в промпт (OpenAI);
   `json_object` — схема в промпте + `response_format=json_object` (DeepSeek, по умолчанию
@@ -148,6 +156,7 @@ canonical-темой «Прочее (авто-ревью)». Provisional-ста�
 - `app/services/gaps.py` — gap-анализ: разрывы, `critical_readiness`, `average_gap`,
   рекомендации «что подтянуть».
 - `app/services/plans.py` — план подготовки из 5–12 тем резюме.
+- `app/services/interview.py` — сценарий интервью, LLM-оценка ответов, финал и обновление профиля.
 - `app/services/questions.py` — банк вопросов: дедуп по fingerprint, случайная выборка.
 - `app/services/documents.py` — извлечение текста из PDF/DOCX для `POST /resumes/upload`:
   лимит 5 МБ, защита от zip-бомб, отказ для сканов без текстового слоя.

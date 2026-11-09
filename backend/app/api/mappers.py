@@ -13,8 +13,14 @@ from app.schemas.analysis import (
     UnmatchedSkillRead,
     VacancyRead,
 )
+from app.schemas.interview import (
+    InterviewRead,
+    InterviewSummaryRead,
+    InterviewTurnRead,
+)
 from app.schemas.plan import PlanItemRead, PlanRead, PlanSummaryRead
 from app.services.gaps import GapReport
+from app.services.interview import InterviewSnapshot, InterviewSummary, InterviewTurnData
 from app.services.plans import PlanSnapshot, PlanSummary
 from app.services.profile import (
     ProfileSnapshot,
@@ -150,6 +156,59 @@ def plan_summary_read(plan: PlanSummary) -> PlanSummaryRead:
         status=plan.status,
         vacancy_id=plan.vacancy_id,
         topic_count=plan.topic_count,
+    )
+
+
+def interview_turn_read(turn: InterviewTurnData) -> InterviewTurnRead:
+    """Вопрос интервью для ответа API."""
+    return InterviewTurnRead(
+        id=turn.id,
+        position=turn.position,
+        topic_id=turn.topic_id,
+        topic_key=turn.topic_key,
+        topic_name=turn.topic_name,
+        question_text=turn.question_text,
+        difficulty=turn.difficulty,
+        status=turn.status,
+        answer_text=turn.answer_text,
+        score=turn.score,
+        verdict=turn.verdict,
+        feedback=turn.feedback,
+        covered_points=list(turn.covered_points),
+        missed_points=list(turn.missed_points),
+        answered_at=turn.answered_at,
+    )
+
+
+def interview_read(snapshot: InterviewSnapshot) -> InterviewRead:
+    """Сессия интервью для ответа API."""
+    return InterviewRead(
+        id=snapshot.id,
+        user_id=snapshot.user_id,
+        plan_id=snapshot.plan_id,
+        title=snapshot.title,
+        status=snapshot.status,
+        score=snapshot.score,
+        level=snapshot.level,
+        question_count=snapshot.question_count,
+        answered_count=snapshot.answered_count,
+        created_at=snapshot.created_at,
+        started_at=snapshot.started_at,
+        finished_at=snapshot.finished_at,
+        turns=[interview_turn_read(turn) for turn in snapshot.turns],
+    )
+
+
+def interview_summary_read(summary: InterviewSummary) -> InterviewSummaryRead:
+    """Краткая карточка интервью."""
+    return InterviewSummaryRead(
+        id=summary.id,
+        title=summary.title,
+        status=summary.status,
+        level=summary.level,
+        question_count=summary.question_count,
+        answered_count=summary.answered_count,
+        created_at=summary.created_at,
     )
 
 

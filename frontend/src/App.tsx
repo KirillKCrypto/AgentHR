@@ -4,6 +4,7 @@ import { Link, Route, Routes, useNavigate } from 'react-router'
 
 import { ApiError, fetchMe } from '@/api/client'
 import DashboardPage from '@/pages/DashboardPage'
+import InterviewPage from '@/pages/InterviewPage'
 import LoginPage from '@/pages/LoginPage'
 import NotFoundPage from '@/pages/NotFoundPage'
 import PlanPage from '@/pages/PlanPage'
@@ -44,6 +45,7 @@ function App() {
           <Route path="/vacancies/new" element={<VacancyUploadPage />} />
           <Route path="/vacancies/:vacancyId" element={<VacancyPage />} />
           <Route path="/plans/:planId" element={<PlanPage />} />
+          <Route path="/interviews/:interviewId" element={<InterviewPage />} />
           <Route path="/profile" element={<ProfilePage />} />
           <Route path="*" element={<NotFoundPage />} />
         </Routes>

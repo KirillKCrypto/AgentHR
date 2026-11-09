@@ -4,6 +4,7 @@ import { Link, useParams } from 'react-router'
 
 import { ApiError, fetchPlan, type PlanRead } from '@/api/client'
 import { TopicTest } from '@/components/TopicTest'
+import { StartInterviewButton } from '@/components/StartInterviewButton'
 import { Badge } from '@/components/ui/badge'
 import { buttonVariants } from '@/components/ui/button'
 import {
@@ -100,6 +101,7 @@ export default function PlanPage() {
           <Link to="/profile" className={buttonVariants({ variant: 'outline' })}>
             Открыть профиль
           </Link>
+          <StartInterviewButton planId={plan.id} />
         </CardContent>
       </Card>
 

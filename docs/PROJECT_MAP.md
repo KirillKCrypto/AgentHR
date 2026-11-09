@@ -26,7 +26,7 @@ backend/
 │   ├── api/
 │   │   ├── deps.py             auth, LLM, embedder
 │   │   ├── mappers.py          доменные объекты → Pydantic
-│   │   └── routes/             auth, users, vacancies, resumes, profile, plans, questions, analysis
+│   │   └── routes/             auth, users, vacancies, resumes, profile, plans, questions, interviews, analysis
 │   ├── core/                   config, JWT/пароли
 │   ├── db/                     async engine, Base
 │   ├── embeddings/             none/local/mock эмбеддинги
@@ -36,7 +36,8 @@ backend/
 │   ├── questions/              генерация вопросов и вариантов, сид банка
 │   ├── schemas/                Pydantic-схемы API
 │   └── services/               analysis, documents, normalization, profile, gaps, plans,
-│                               questions, topics, ontology_review, ontology_auto_review
+│                               questions, interview, topics, ontology_review,
+│                               ontology_auto_review
 ├── alembic/versions/           миграции
 ├── docker/entrypoint.sh        миграции + uvicorn
 ├── Dockerfile
@@ -58,6 +59,7 @@ backend/
 | Профиль и gap-анализ | `app/services/profile.py`, `gaps.py` |
 | План подготовки | `app/services/plans.py`, `app/api/routes/plans.py` |
 | Банк вопросов и тесты | `app/services/questions.py`, `app/questions/` |
+| Интервью | `app/services/interview.py`, `app/api/routes/interviews.py` |
 | REST API | `app/api/routes/` |
 | Agent Harness и tools | `app/agent/` |
 | ORM-модели | `app/models/` |
@@ -72,14 +74,15 @@ frontend/src/
 ├── api/
 │   ├── client.ts               типизированный API-клиент
 │   └── schema.d.ts             генерация из OpenAPI (не редактировать)
-├── components/                 ResumeUploadCard, VacancyAssessment
+├── components/                 ResumeUploadCard, VacancyAssessment, Gaps, Interview
 ├── components/ui/              shadcn/ui
 ├── lib/                        токены, auth-hook, ошибки, labels
-└── pages/                      Dashboard, Login, VacancyUpload, Profile, 404
+└── pages/                      Dashboard, Login, Profile, Vacancy, Plan, Interview, 404
 ```
 
-Экраны: `/`, `/login`, `/vacancies/new`, `/profile`.
-Планируются: `/plans/:id`, `/interview/:id`, `/reports/:id`.
+Экраны: `/`, `/login`, `/profile`, `/vacancies/new`, `/vacancies/:id`, `/plans/:id`,
+`/interviews/:id`.
+Планируются: `/reports/:id`.
 
 ## 4. Инфраструктура
 
@@ -115,6 +118,7 @@ infra/
 15. `c6d7e8f9a0b1` — запрет повторного теста (удалено)
 16. `e8f9a0b1c2d3` — удаление assessment и полей claimed/verified
 17. `e9f0a1b2c3d4` — единоразовые результаты тестов по темам
+18. `f0a1b2c3d4e5` — сессии интервью и вопросы
 
 Новое состояние — только через новую миграцию.
 

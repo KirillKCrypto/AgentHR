@@ -3,7 +3,7 @@
 import json
 import logging
 import re
-from collections.abc import Sequence
+from collections.abc import AsyncIterator, Sequence
 from typing import Any, Literal
 
 from openai import AsyncOpenAI, OpenAIError
@@ -157,6 +157,23 @@ class OpenAIProvider:
         if content is None:
             raise LLMError("LLM: пустой ответ при структурированной генерации")
         return StructuredResult(data=_parse_json_object(content), usage=_usage(completion.usage))
+
+    async def generate_stream(self, messages: Sequence[ChatMessage]) -> AsyncIterator[str]:
+        """Отдаёт текст ответа по мере генерации через streaming Chat Completions."""
+        try:
+            stream = await self._client.chat.completions.create(
+                model=self._model,
+                messages=_to_openai_messages(messages),
+                stream=True,
+            )
+            async for chunk in stream:
+                if not chunk.choices:
+                    continue
+                content = chunk.choices[0].delta.content
+                if content:
+                    yield content
+        except OpenAIError as exc:
+            raise LLMError(f"LLM: потоковый запрос не выполнен — {exc}") from exc
 
     async def _generate_prompt_json(
         self,

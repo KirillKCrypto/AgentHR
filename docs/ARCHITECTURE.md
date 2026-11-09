@@ -262,6 +262,9 @@ JWT-токенов в SPA; дашборд → `GET /me` с access-токеном
 - `POST /questions/quiz` — тест из 10 вопросов с вариантами ответа;
 - `POST /questions/quiz/grade` — проверка ответов и разбор;
 - `GET /questions/quiz/{topic_key}/result` — сохранённый результат; повторный тест запрещён;
+- `POST /interviews` — сценарий интервью из плана и первый вопрос;
+- `GET /interviews`, `GET /interviews/{id}` — история и карточка интервью;
+- `POST /interviews/{id}/answers` — REST-ответ; `POST /interviews/{id}/answers/stream` — ответ с SSE-фидбеком;
 - `POST /analysis` — документы, профиль и разрывы одним ответом; LLM не вызывается.
 
 Доменные эндпоинты защищены `get_current_user` и изолированы по владельцу: обращение к чужому
@@ -370,6 +373,10 @@ JWT-токенов в SPA; дашборд → `GET /me` с access-токеном
   - `topic_test_results` — пользователь, тема, score, level, разбор, `completed_at`;
   - уникальная пара `(user_id, topic_id)` не даёт пройти тест повторно;
   - результат обновляет `user_skill_states` (`proficiency`, `source="test"`).
+- Миграция `f0a1b2c3d4e5` — интервью:
+  - `interview_sessions` — сессия по плану, статус, итоговый score/level;
+  - `interview_turns` — вопрос, эталонные пункты, ответ, оценка, разбор;
+  - итог обновляет `user_skill_states` с `source="interview"`; фидбек отдаётся SSE.
 - Подключение: `DATABASE_URL` из `backend/.env` (локальный дефолт в `app/core/config.py`);
   движок и сессии — `backend/app/db/session.py` (asyncpg, `pool_pre_ping`).
 - Миграции: Alembic (async-шаблон), URL берётся в `alembic/env.py` из настроек;

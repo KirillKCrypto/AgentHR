@@ -2,7 +2,7 @@ import { useQuery } from '@tanstack/react-query'
 import { useEffect, useState, type ReactNode } from 'react'
 import { Link, useNavigate } from 'react-router'
 
-import { ApiError, fetchMe, fetchProfile, listPlans, listVacancies } from '@/api/client'
+import { ApiError, fetchMe, fetchProfile, listInterviews, listPlans, listVacancies } from '@/api/client'
 import { Button, buttonVariants } from '@/components/ui/button'
 import {
   Card,
@@ -42,6 +42,13 @@ export default function DashboardPage() {
   const plansQuery = useQuery({
     queryKey: ['plans', token],
     queryFn: () => listPlans(token as string),
+    enabled: token !== null,
+    retry: false,
+  })
+
+  const interviewsQuery = useQuery({
+    queryKey: ['interviews', token],
+    queryFn: () => listInterviews(token as string),
     enabled: token !== null,
     retry: false,
   })
@@ -158,6 +165,35 @@ export default function DashboardPage() {
                   <span className="font-medium">{plan.title}</span>
                   <span className="text-xs text-muted-foreground">
                     {plan.topic_count} тем · {plan.status}
+                  </span>
+                </Button>
+              ))}
+            </div>
+          )}
+        </div>
+        <div className="flex flex-col gap-2">
+          <p className="text-sm font-medium">Интервью</p>
+          {interviewsQuery.isPending ? (
+            <p className="text-sm text-muted-foreground">Загружаем интервью…</p>
+          ) : interviewsQuery.error ? (
+            <p className="text-sm text-muted-foreground">Не удалось загрузить интервью.</p>
+          ) : (interviewsQuery.data ?? []).length === 0 ? (
+            <p className="text-sm text-muted-foreground">
+              Интервью пока нет — начните с плана подготовки.
+            </p>
+          ) : (
+            <div className="flex flex-col gap-1">
+              {(interviewsQuery.data ?? []).map((interview) => (
+                <Button
+                  key={interview.id}
+                  variant="ghost"
+                  className="h-auto justify-between gap-3 py-2"
+                  onClick={() => navigate(`/interviews/${interview.id}`)}
+                >
+                  <span className="font-medium">{interview.title || 'Интервью'}</span>
+                  <span className="text-xs text-muted-foreground">
+                    {interview.answered_count}/{interview.question_count} ·{' '}
+                    {interview.level === null ? interview.status : `${interview.level}/100`}
                   </span>
                 </Button>
               ))}

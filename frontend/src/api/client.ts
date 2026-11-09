@@ -23,6 +23,11 @@ export type PlanSummary = components['schemas']['PlanSummaryRead']
 export type QuestionRead = components['schemas']['QuestionRead']
 export type QuizRead = components['schemas']['QuizRead']
 export type QuizResultRead = components['schemas']['QuizResultRead']
+export type InterviewCreate = components['schemas']['InterviewCreate']
+export type InterviewRead = components['schemas']['InterviewRead']
+export type InterviewTurnRead = components['schemas']['InterviewTurnRead']
+export type InterviewSummary = components['schemas']['InterviewSummaryRead']
+export type InterviewAnswerRead = components['schemas']['InterviewAnswerRead']
 
 export class ApiError extends Error {
   readonly status: number
@@ -180,6 +185,108 @@ export function gradeQuiz(
 
 export function fetchQuizResult(topicKey: string, token: string): Promise<QuizResultRead> {
   return apiFetch(`/questions/quiz/${encodeURIComponent(topicKey)}/result`, { token })
+}
+
+export function createInterview(
+  planId: string,
+  token: string,
+): Promise<InterviewRead> {
+  return apiFetch('/interviews', {
+    method: 'POST',
+    token,
+    body: JSON.stringify({ plan_id: planId }),
+  })
+}
+
+export function fetchInterview(interviewId: string, token: string): Promise<InterviewRead> {
+  return apiFetch(`/interviews/${encodeURIComponent(interviewId)}`, { token })
+}
+
+export function listInterviews(token: string): Promise<InterviewSummary[]> {
+  return apiFetch('/interviews', { token })
+}
+
+export function answerInterview(
+  interviewId: string,
+  turnId: string,
+  answerText: string,
+  token: string,
+): Promise<InterviewAnswerRead> {
+  return apiFetch(`/interviews/${encodeURIComponent(interviewId)}/answers`, {
+    method: 'POST',
+    token,
+    body: JSON.stringify({ turn_id: turnId, answer_text: answerText }),
+  })
+}
+
+/** Читает SSE-поток интервью и передаёт события в onEvent. */
+export async function streamInterviewAnswer(
+  interviewId: string,
+  turnId: string,
+  answerText: string,
+  token: string,
+  onEvent: (event: string, data: Record<string, unknown>) => void,
+  signal?: AbortSignal,
+): Promise<void> {
+  const response = await fetch(
+    `${API_BASE_URL}/interviews/${encodeURIComponent(interviewId)}/answers/stream`,
+    {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Accept: 'text/event-stream',
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify({ turn_id: turnId, answer_text: answerText }),
+      signal,
+    },
+  )
+
+  if (!response.ok) {
+    throw new ApiError(response.status, await readErrorMessage(response))
+  }
+  if (!response.body) {
+    throw new ApiError(0, 'Браузер не поддерживает потоковый ответ')
+  }
+
+  const reader = response.body.getReader()
+  const decoder = new TextDecoder()
+  let buffer = ''
+
+  const handleFrame = (frame: string) => {
+    let event = 'message'
+    const dataLines: string[] = []
+    for (const rawLine of frame.split('\n')) {
+      const line = rawLine.replace(/\r$/, '')
+      if (line.startsWith('event:')) {
+        event = line.slice(6).trim()
+      } else if (line.startsWith('data:')) {
+        dataLines.push(line.slice(5).trimStart())
+      }
+    }
+    if (dataLines.length === 0) {
+      return
+    }
+    try {
+      onEvent(event, JSON.parse(dataLines.join('\n')) as Record<string, unknown>)
+    } catch {
+      // повреждённый кадр не должен ломать весь поток
+    }
+  }
+
+  while (true) {
+    const { done, value } = await reader.read()
+    if (done) {
+      break
+    }
+    buffer += decoder.decode(value, { stream: true })
+    while (buffer.includes('\n\n')) {
+      const boundary = buffer.indexOf('\n\n')
+      const frame = buffer.slice(0, boundary)
+      buffer = buffer.slice(boundary + 2)
+      handleFrame(frame)
+    }
+  }
 }
 
 export function runAnalysis(payload: AnalysisRequest, token: string): Promise<AnalysisResponse> {
