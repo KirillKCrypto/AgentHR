@@ -12,6 +12,7 @@ import {
 } from '@/api/client'
 import { Badge } from '@/components/ui/badge'
 import { Button, buttonVariants } from '@/components/ui/button'
+import { StartInterviewButton } from '@/components/StartInterviewButton'
 import {
   Card,
   CardContent,
@@ -210,6 +211,9 @@ export default function InterviewPage() {
             <Link to="/profile" className={buttonVariants()}>
               Открыть профиль
             </Link>
+            {session.plan_id ? (
+              <StartInterviewButton planId={session.plan_id} />
+            ) : null}
             <Link to="/" className={buttonVariants({ variant: 'outline' })}>
               На дашборд
             </Link>

@@ -19,8 +19,9 @@ from app.models import (
     Topic,
     UserSkillState,
 )
+from app.questions.generator import generate_questions
 from app.services.profile import weighted_estimate
-from app.services.questions import pick_questions
+from app.services.questions import add_questions, pick_questions
 
 MAX_INTERVIEW_QUESTIONS = 8
 EVALUATION_SCHEMA_NAME = "interview_evaluation"
@@ -136,8 +137,14 @@ async def create_interview(
     session: AsyncSession,
     user_id: uuid.UUID,
     plan_id: uuid.UUID,
+    *,
+    provider: LLMProvider | None = None,
 ) -> InterviewSnapshot:
-    """Создаёт сценарий интервью из тем плана."""
+    """Создаёт сценарий интервью из тем плана.
+
+    Темы без вопросов добираются ленивой генерацией, чтобы интервью не
+    обрывалось на двух вопросах из-за неполного банка.
+    """
     plan = await session.get(LearningPlan, plan_id)
     if plan is None or plan.user_id != user_id:
         raise InterviewNotFound("План не найден")
@@ -154,14 +161,13 @@ async def create_interview(
         raise InterviewError("В плане нет тем")
 
     selected: list[tuple[PlanItem, Topic, Question]] = []
-    for item, topic in rows[:MAX_INTERVIEW_QUESTIONS]:
+    for item, topic in rows:
+        if len(selected) >= MAX_INTERVIEW_QUESTIONS:
+            break
         difficulty = _difficulty_for(item.current_level, item.target_level)
-        questions = await pick_questions(session, topic.id, difficulty=difficulty, limit=1)
-        if not questions:
-            questions = await pick_questions(session, topic.id, difficulty=None, limit=1)
-        if not questions:
-            continue
-        question = await session.get(Question, questions[0].id)
+        question = await _pick_or_generate_question(
+            session, topic, difficulty, provider
+        )
         if question is not None:
             selected.append((item, topic, question))
 
@@ -489,6 +495,37 @@ def _find_turn(snapshot: InterviewSnapshot, turn_id: uuid.UUID) -> InterviewTurn
         if turn.id == turn_id:
             return turn
     raise InterviewNotFound("Вопрос интервью не найден")
+
+
+async def _pick_or_generate_question(
+    session: AsyncSession,
+    topic: Topic,
+    difficulty: int,
+    provider: LLMProvider | None,
+) -> Question | None:
+    """Берёт вопрос из банка или генерирует его для темы плана."""
+    questions = await pick_questions(session, topic.id, difficulty=difficulty, limit=1)
+    if not questions:
+        questions = await pick_questions(session, topic.id, difficulty=None, limit=1)
+    if questions:
+        return await session.get(Question, questions[0].id)
+
+    if provider is None:
+        return None
+    try:
+        generated = await generate_questions(provider, topic, difficulty, 3)
+    except LLMError:
+        return None
+    if not generated:
+        return None
+    await add_questions(session, topic.id, difficulty, generated)
+    await session.flush()
+    questions = await pick_questions(session, topic.id, difficulty=difficulty, limit=1)
+    if not questions:
+        questions = await pick_questions(session, topic.id, difficulty=None, limit=1)
+    if not questions:
+        return None
+    return await session.get(Question, questions[0].id)
 
 
 def _difficulty_for(current: int, target: int) -> int:

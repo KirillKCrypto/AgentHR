@@ -57,7 +57,8 @@ docker compose up -d --build    # agenthr-api на http://127.0.0.1:8000
 - `POST /questions/quiz/grade` — проверка ответов, сохранение результата и обновление профиля;
 - `GET /questions/quiz/{topic_key}/result` — сохранённый результат теста (404, если теста не было).
   Тест по теме проходится один раз, повторный старт возвращает 409.
-- `POST /interviews` — сценарий интервью из плана, первый вопрос;
+- `POST /interviews` — сценарий интервью из плана, первый вопрос; недостающие вопросы
+  тем генерируются лениво при первом старте и кэшируются;
 - `GET /interviews`, `GET /interviews/{id}` — история и карточка интервью;
 - `POST /interviews/{id}/answers` — ответ и LLM-оценка;
 - `POST /interviews/{id}/answers/stream` — то же, фидбек отдаётся SSE-потоком;

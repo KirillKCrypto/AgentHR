@@ -45,11 +45,14 @@ def _raise(exc: Exception) -> None:
 async def start_interview(
     payload: InterviewCreate,
     db: DbSession,
+    provider: LlmProvider,
     current_user: CurrentUser,
 ) -> InterviewRead:
     """Создаёт интервью из последнего плана подготовки."""
     try:
-        snapshot = await create_interview(db, current_user.id, payload.plan_id)
+        snapshot = await create_interview(
+            db, current_user.id, payload.plan_id, provider=provider
+        )
     except (InterviewError, InterviewNotFound, InterviewStateError) as exc:
         _raise(exc)
         raise
