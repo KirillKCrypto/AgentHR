@@ -1,7 +1,8 @@
 """Планы подготовки по темам из резюме."""
 
+import hashlib
 import uuid
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -48,6 +49,7 @@ class PlanSnapshot:
     title: str
     status: str
     items: tuple[PlanTopic, ...]
+    reused: bool = False
 
 
 @dataclass(frozen=True)
@@ -101,6 +103,21 @@ async def create_plan(
     if not rows:
         raise PlanError("Профиль пуст: сначала загрузите резюме")
 
+    fingerprint = await _profile_fingerprint(session, user_id)
+    latest = await session.scalar(
+        select(LearningPlan)
+        .where(LearningPlan.user_id == user_id, LearningPlan.status == "active")
+        .order_by(LearningPlan.created_at.desc())
+        .limit(1)
+    )
+    if latest is not None:
+        if latest.profile_fingerprint is None:
+            latest.profile_fingerprint = fingerprint
+            await session.commit()
+            return replace(await get_plan(session, user_id, latest.id), reused=True)
+        if latest.profile_fingerprint == fingerprint:
+            return replace(await get_plan(session, user_id, latest.id), reused=True)
+
     candidates: list[tuple[float, UserSkillState, Topic]] = []
     for state, topic in rows:
         score = state.proficiency * (0.6 + 0.4 * state.confidence)
@@ -118,6 +135,7 @@ async def create_plan(
             else "План подготовки"
         ),
         status="active",
+        profile_fingerprint=fingerprint,
     )
     session.add(plan)
     await session.flush()
@@ -242,3 +260,27 @@ async def list_plans(session: AsyncSession, user_id: uuid.UUID) -> list[PlanSumm
             )
         )
     return result
+
+
+async def _profile_fingerprint(session: AsyncSession, user_id: uuid.UUID) -> str:
+    """Стабильный отпечаток текущего профиля знаний."""
+    states = (
+        await session.scalars(
+            select(UserSkillState)
+            .where(UserSkillState.user_id == user_id)
+            .order_by(UserSkillState.topic_id)
+        )
+    ).all()
+    parts = [
+        ":".join(
+            [
+                str(state.topic_id),
+                str(state.proficiency),
+                str(state.confidence),
+                state.source,
+                state.last_assessed.isoformat() if state.last_assessed else "",
+            ]
+        )
+        for state in states
+    ]
+    return hashlib.sha256("|".join(parts).encode("utf-8")).hexdigest()

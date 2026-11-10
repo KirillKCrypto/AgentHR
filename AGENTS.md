@@ -48,7 +48,7 @@ LLM + Agent Harness + Tool Calling + Knowledge Graph + Persistent Memory + Adapt
 | Frontend | React 19, TypeScript, Vite |
 | UI | Tailwind CSS 4, shadcn/ui |
 | Client state | TanStack Query + `useState`, без Redux/Zustand |
-| Real-time | WebSocket |
+| Real-time | SSE (фидбек интервью) |
 | Auth | JWT (access + refresh) |
 | Миграции | Alembic + SQLAlchemy 2 (async) |
 | Инфраструктура | Docker Compose |

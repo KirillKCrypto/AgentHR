@@ -40,6 +40,9 @@ class InterviewSession(Base):
     plan_id: Mapped[uuid.UUID | None] = mapped_column(
         Uuid, ForeignKey("learning_plans.id", ondelete="SET NULL"), nullable=True, index=True
     )
+    vacancy_id: Mapped[uuid.UUID | None] = mapped_column(
+        Uuid, ForeignKey("vacancies.id", ondelete="SET NULL"), nullable=True, index=True
+    )
     title: Mapped[str] = mapped_column(String(200), default="")
     # in_progress | completed
     status: Mapped[str] = mapped_column(
@@ -85,6 +88,8 @@ class InterviewTurn(Base):
     )
     position: Mapped[int] = mapped_column(Integer, default=0)
     question_text: Mapped[str] = mapped_column(Text)
+    # Контекст из вакансии: исходное требование и evidence.
+    context: Mapped[str | None] = mapped_column(Text, nullable=True)
     expected_points: Mapped[list[Any]] = mapped_column(
         JSONB, default=list, server_default=text("'[]'::jsonb")
     )

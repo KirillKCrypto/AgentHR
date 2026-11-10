@@ -51,14 +51,16 @@ npm run generate:api # обновить src/api/schema.d.ts из OpenAPI (нуж
 - Проверка вакансии: `/vacancies/new` → `POST /vacancies` → `GET /profile/gaps`; резюме
   в этой форме не требуется. Если профиль пуст, экран предлагает загрузить резюме.
 - Вакансия: `/vacancies/:id` → `GET /vacancies/{id}` + `GET /profile/gaps`; полный текст,
-  оценка и рекомендации.
+  оценка, рекомендации и кнопка «Пройти интервью» по требованиям этой вакансии.
 - План: кнопка «Построить план» → `POST /plans` → `/plans/:id` → `GET /plans/{id}`.
-  В плане 5–12 тем резюме, цель и число вопросов в банке.
+  В плане 5–12 тем резюме, цель и число вопросов в банке. Повторное нажатие при неизменном
+  профиле возвращает тот же план (`reused=true`), а не создаёт новый.
 - Вопросы: `POST /questions/quiz` → ответы → `POST /questions/quiz/grade`; результат
   сохраняется, тест по теме проходится один раз, `GET .../result` показывает сохранённый разбор.
-- Интервью: `/plans/:id` → `POST /interviews` → `/interviews/:id`; ответы уходят в
-  `POST /interviews/{id}/answers/stream`, SSE-кадры `evaluation` / `token` / `done`
-  обновляют чат и фидбек.
+- Интервью: `/plans/:id` или `/vacancies/:id` → `POST /interviews` с `plan_id` или `vacancy_id` →
+  `/interviews/:id`; ответы уходят в `POST /interviews/{id}/answers/stream`, SSE-кадры
+  `evaluation` / `token` / `done` обновляют карточки «Вопрос / Ответ / Анализ / Упущено».
+  После завершения кнопка нового интервью открывает новую сессию, а не прошлую.
 - Профиль и сохранённые вакансии: `/profile` → `GET /profile` + `GET /vacancies`; для
   выбранной вакансии — `GET /profile/gaps`; параметр `?vacancy=<id>` предвыбирает вакансию.
 - Явные состояния loading / error / empty / ready на всех доменных экранах.

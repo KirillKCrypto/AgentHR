@@ -103,6 +103,50 @@ async def test_interview_flow_updates_profile(api_user: ApiUser) -> None:
     assert topics["python"]["source"] == "interview"
 
 
+async def test_vacancy_interview_uses_vacancy_topics(api_user: ApiUser) -> None:
+    """Интервью по вакансии строится из её требований."""
+    api_user.provider.responses["vacancy_requirements"] = {
+        "title": "Backend",
+        "company": "Acme",
+        "level": "middle",
+        "skills": [
+            {
+                "name": "Python",
+                "required_level": 80,
+                "weight": 1.0,
+                "evidence": "Python в проде",
+                "confidence": 0.9,
+            },
+            {
+                "name": "SQL",
+                "required_level": 70,
+                "weight": 0.8,
+                "evidence": "SQL-запросы",
+                "confidence": 0.8,
+            },
+        ],
+    }
+    vacancy = await api_user.client.post(
+        "/vacancies",
+        json={"title": "Backend", "raw_text": "Python SQL"},
+        headers=api_user.headers,
+    )
+    assert vacancy.status_code == 201, vacancy.text
+
+    interview = await api_user.client.post(
+        "/interviews",
+        json={"vacancy_id": vacancy.json()["id"]},
+        headers=api_user.headers,
+    )
+
+    assert interview.status_code == 201, interview.text
+    body = interview.json()
+    assert body["vacancy_id"] == vacancy.json()["id"]
+    assert body["question_count"] >= 1
+    assert {turn["topic_key"] for turn in body["turns"]} == {"python", "sql"}
+    assert all(turn["context"] for turn in body["turns"])
+
+
 async def test_interview_stream_returns_events(api_user: ApiUser) -> None:
     """SSE-эндпоинт отдаёт оценку, токены фидбека и завершение."""
     plan_id = await _create_plan(api_user)

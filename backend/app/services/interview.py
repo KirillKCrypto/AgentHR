@@ -18,6 +18,8 @@ from app.models import (
     Question,
     Topic,
     UserSkillState,
+    Vacancy,
+    VacancySkill,
 )
 from app.questions.generator import generate_questions
 from app.services.profile import weighted_estimate
@@ -90,6 +92,7 @@ class InterviewTurnData:
     topic_name: str
     question_id: uuid.UUID | None
     question_text: str
+    context: str | None
     difficulty: int
     status: str
     answer_text: str | None
@@ -108,6 +111,8 @@ class InterviewSnapshot:
     id: uuid.UUID
     user_id: uuid.UUID
     plan_id: uuid.UUID | None
+    vacancy_id: uuid.UUID | None
+    vacancy_title: str | None
     title: str
     status: str
     score: float | None
@@ -146,48 +151,102 @@ class InterviewSummary:
 async def create_interview(
     session: AsyncSession,
     user_id: uuid.UUID,
-    plan_id: uuid.UUID,
     *,
+    plan_id: uuid.UUID | None = None,
+    vacancy_id: uuid.UUID | None = None,
     provider: LLMProvider | None = None,
 ) -> InterviewSnapshot:
-    """Создаёт сценарий интервью из тем плана.
+    """Создаёт сценарий интервью из плана или требований вакансии.
 
     Темы без вопросов добираются ленивой генерацией, чтобы интервью не
     обрывалось на двух вопросах из-за неполного банка.
     """
-    plan = await session.get(LearningPlan, plan_id)
-    if plan is None or plan.user_id != user_id:
-        raise InterviewNotFound("План не найден")
+    if (plan_id is None) == (vacancy_id is None):
+        raise InterviewError("Укажите ровно один источник: plan_id или vacancy_id")
 
-    rows = (
-        await session.execute(
-            select(PlanItem, Topic)
-            .join(Topic, Topic.id == PlanItem.topic_id)
-            .where(PlanItem.plan_id == plan.id)
-            .order_by(PlanItem.position)
-        )
-    ).all()
-    if not rows:
-        raise InterviewError("В плане нет тем")
+    plan: LearningPlan | None = None
+    vacancy: Vacancy | None = None
+    rows: list[tuple[Topic, int, int, str | None]] = []
 
-    selected: list[tuple[PlanItem, Topic, Question]] = []
-    for item, topic in rows:
+    if plan_id is not None:
+        plan = await session.get(LearningPlan, plan_id)
+        if plan is None or plan.user_id != user_id:
+            raise InterviewNotFound("План не найден")
+        plan_rows = (
+            await session.execute(
+                select(PlanItem, Topic)
+                .join(Topic, Topic.id == PlanItem.topic_id)
+                .where(PlanItem.plan_id == plan.id)
+                .order_by(PlanItem.position)
+            )
+        ).all()
+        rows = [
+            (topic, item.current_level, item.target_level, None)
+            for item, topic in plan_rows
+        ]
+        source_title = plan.title
+        if not rows:
+            raise InterviewError("В плане нет тем")
+    else:
+        vacancy = await session.get(Vacancy, vacancy_id)
+        if vacancy is None or vacancy.user_id != user_id:
+            raise InterviewNotFound("Вакансия не найдена")
+        states = {
+            state.topic_id: state
+            for state in (
+                await session.scalars(
+                    select(UserSkillState).where(UserSkillState.user_id == user_id)
+                )
+            ).all()
+        }
+        skill_rows = (
+            await session.execute(
+                select(VacancySkill, Topic)
+                .join(Topic, Topic.id == VacancySkill.topic_id)
+                .where(
+                    VacancySkill.vacancy_id == vacancy.id,
+                    VacancySkill.topic_id.is_not(None),
+                )
+                .order_by(VacancySkill.weight.desc(), VacancySkill.raw_name)
+            )
+        ).all()
+        seen: set[uuid.UUID] = set()
+        for skill, topic in skill_rows:
+            if topic.id in seen:
+                continue
+            seen.add(topic.id)
+            state = states.get(topic.id)
+            rows.append(
+                (
+                    topic,
+                    state.proficiency if state is not None else 0,
+                    skill.required_level,
+                    skill.evidence or skill.raw_name,
+                )
+            )
+        source_title = vacancy.title or "Интервью по вакансии"
+        if not rows:
+            raise InterviewError("В вакансии нет тем для интервью")
+
+    selected: list[tuple[Topic, str | None, Question]] = []
+    for topic, current, target, context in rows:
         if len(selected) >= MAX_INTERVIEW_QUESTIONS:
             break
-        difficulty = _difficulty_for(item.current_level, item.target_level)
+        difficulty = _difficulty_for(current, target)
         question = await _pick_or_generate_question(
             session, topic, difficulty, provider
         )
         if question is not None:
-            selected.append((item, topic, question))
+            selected.append((topic, context, question))
 
     if not selected:
-        raise InterviewError("В банке нет вопросов для тем плана")
+        raise InterviewError("В банке нет вопросов для выбранных тем")
 
     interview = InterviewSession(
         user_id=user_id,
-        plan_id=plan.id,
-        title=plan.title,
+        plan_id=plan.id if plan is not None else None,
+        vacancy_id=vacancy.id if vacancy is not None else None,
+        title=source_title,
         status="in_progress",
         question_count=len(selected),
         started_at=datetime.now(UTC),
@@ -195,7 +254,7 @@ async def create_interview(
     session.add(interview)
     await session.flush()
 
-    for position, (_, _, question) in enumerate(selected, start=1):
+    for position, (topic, context, question) in enumerate(selected, start=1):
         session.add(
             InterviewTurn(
                 session_id=interview.id,
@@ -203,6 +262,7 @@ async def create_interview(
                 question_id=question.id,
                 position=position,
                 question_text=question.text,
+                context=context,
                 expected_points=list(question.expected_points or []),
                 difficulty=question.difficulty,
                 status="pending",
@@ -231,7 +291,11 @@ async def get_interview(
         )
     ).all()
     turns = tuple(_turn_data(turn, topic) for turn, topic in rows)
-    return _snapshot(interview, turns)
+    vacancy_title = None
+    if interview.vacancy_id is not None:
+        vacancy = await session.get(Vacancy, interview.vacancy_id)
+        vacancy_title = vacancy.title if vacancy is not None else None
+    return _snapshot(interview, turns, vacancy_title)
 
 
 async def list_interviews(
@@ -378,7 +442,8 @@ async def _evaluate_answer(
             "user",
             (
                 f"Вопрос: {turn.question_text}\n"
-                f"Сложность: {turn.difficulty}/5\n"
+                + (f"Контекст вакансии: {turn.context}\n" if turn.context else "")
+                + f"Сложность: {turn.difficulty}/5\n"
                 f"Эталонные пункты: {'; '.join(str(item) for item in turn.expected_points or []) or '—'}\n"
                 f"Ответ кандидата: {answer_text}"
             ),
@@ -455,12 +520,15 @@ async def _finish(session: AsyncSession, interview: InterviewSession) -> None:
 def _snapshot(
     interview: InterviewSession,
     turns: Sequence[InterviewTurnData],
+    vacancy_title: str | None = None,
 ) -> InterviewSnapshot:
     """Собирает доменный снимок сессии."""
     return InterviewSnapshot(
         id=interview.id,
         user_id=interview.user_id,
         plan_id=interview.plan_id,
+        vacancy_id=interview.vacancy_id,
+        vacancy_title=vacancy_title,
         title=interview.title,
         status=interview.status,
         score=interview.score,
@@ -484,6 +552,7 @@ def _turn_data(turn: InterviewTurn, topic: Topic) -> InterviewTurnData:
         topic_name=topic.name,
         question_id=turn.question_id,
         question_text=turn.question_text,
+        context=turn.context,
         difficulty=turn.difficulty,
         status=turn.status,
         answer_text=turn.answer_text,

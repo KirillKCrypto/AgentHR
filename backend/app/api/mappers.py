@@ -130,6 +130,7 @@ def plan_read(plan: PlanSnapshot) -> PlanRead:
         title=plan.title,
         status=plan.status,
         created_at=None,
+        reused=plan.reused,
         items=[
             PlanItemRead(
                 topic_id=item.topic_id,
@@ -168,6 +169,7 @@ def interview_turn_read(turn: InterviewTurnData) -> InterviewTurnRead:
         topic_key=turn.topic_key,
         topic_name=turn.topic_name,
         question_text=turn.question_text,
+        context=turn.context,
         difficulty=turn.difficulty,
         status=turn.status,
         answer_text=turn.answer_text,
@@ -186,6 +188,8 @@ def interview_read(snapshot: InterviewSnapshot) -> InterviewRead:
         id=snapshot.id,
         user_id=snapshot.user_id,
         plan_id=snapshot.plan_id,
+        vacancy_id=snapshot.vacancy_id,
+        vacancy_title=snapshot.vacancy_title,
         title=snapshot.title,
         status=snapshot.status,
         score=snapshot.score,

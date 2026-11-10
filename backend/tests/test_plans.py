@@ -44,6 +44,11 @@ async def test_create_plan_from_resume(api_user: ApiUser) -> None:
     assert body["items"][0]["priority"] == pytest.approx(90 * (0.6 + 0.4 * 0.9), abs=0.01)
     assert all(item["target_level"] == 100 for item in body["items"])
 
+    repeated = await api_user.client.post("/plans", json={}, headers=api_user.headers)
+    assert repeated.status_code == 200
+    assert repeated.json()["id"] == body["id"]
+    assert repeated.json()["reused"] is True
+
 
 async def test_create_plan_uses_vacancy_targets(api_user: ApiUser) -> None:
     """Если вакансия выбрана, цель по теме берётся из её требований."""

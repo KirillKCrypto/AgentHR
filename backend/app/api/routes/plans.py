@@ -2,7 +2,7 @@
 
 from uuid import UUID
 
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter, HTTPException, Response, status
 
 from app.api.deps import CurrentUser, DbSession
 from app.api.mappers import plan_read, plan_summary_read
@@ -23,6 +23,7 @@ async def create_learning_plan(
     payload: PlanCreate,
     db: DbSession,
     current_user: CurrentUser,
+    response: Response,
 ) -> PlanRead:
     """Строит план из самых сильных тем резюме."""
     try:
@@ -33,6 +34,8 @@ async def create_learning_plan(
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail=str(exc)
         ) from exc
+    if plan.reused:
+        response.status_code = status.HTTP_200_OK
     return plan_read(plan)
 
 

@@ -40,6 +40,8 @@ services:
       OPENAI_MODEL: ${OPENAI_MODEL:-}
       # Базовый URL OpenAI-совместимого шлюза (пусто = api.openai.com)
       OPENAI_BASE_URL: ${OPENAI_BASE_URL:-}
+      # Извлечение вакансии бывает медленнее резюме: даём модели 60 секунд
+      OPENAI_TIMEOUT_SECONDS: ${OPENAI_TIMEOUT_SECONDS:-60}
       # Режим структурированного вывода: json_schema (OpenAI), json_object (DeepSeek), prompt
       LLM_STRUCTURED_MODE: ${LLM_STRUCTURED_MODE:-json_schema}
       # Эмбеддинги: none (по умолчанию) или local (нужен образ с --extra embeddings)

@@ -43,6 +43,8 @@ class LearningPlan(Base):
     status: Mapped[str] = mapped_column(
         String(20), default="active", server_default=text("'active'")
     )
+    # Отпечаток профиля на момент построения: план не пересоздаётся без изменений.
+    profile_fingerprint: Mapped[str | None] = mapped_column(String(64), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()

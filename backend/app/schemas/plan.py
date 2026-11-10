@@ -37,6 +37,7 @@ class PlanRead(BaseModel):
     title: str
     status: str
     created_at: datetime | None = None
+    reused: bool = False
     items: list[PlanItemRead] = []
 
 

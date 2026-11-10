@@ -51,7 +51,11 @@ async def start_interview(
     """Создаёт интервью из последнего плана подготовки."""
     try:
         snapshot = await create_interview(
-            db, current_user.id, payload.plan_id, provider=provider
+            db,
+            current_user.id,
+            plan_id=payload.plan_id,
+            vacancy_id=payload.vacancy_id,
+            provider=provider,
         )
     except (InterviewError, InterviewNotFound, InterviewStateError) as exc:
         _raise(exc)

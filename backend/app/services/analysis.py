@@ -5,10 +5,13 @@
 поэтому доступ LLM к данным остаётся только через инструменты.
 """
 
+import logging
 from dataclasses import dataclass
 from typing import Any
 
-from app.llm.base import ChatMessage, LLMProvider
+from app.llm.base import ChatMessage, LLMError, LLMProvider
+
+logger = logging.getLogger(__name__)
 
 VACANCY_SCHEMA_NAME = "vacancy_requirements"
 RESUME_SCHEMA_NAME = "resume_skills"
@@ -152,18 +155,34 @@ class ResumeProfile:
 
 
 async def extract_vacancy_requirements(provider: LLMProvider, text: str) -> VacancyRequirements:
-    """Извлекает требования вакансии из её текста."""
+    """Извлекает требования вакансии из её текста.
+
+    Вакансия даёт более длинный ответ, чем резюме, поэтому при сетевом таймауте
+    делается один повтор. Это не скрывает реальную ошибку модели: после второго
+    сбоя `LLMError` уходит в HTTP-контур как 502.
+    """
     if not text or not text.strip():
         raise AnalysisError("Текст вакансии пуст")
-    result = await provider.generate_structured(
-        messages=[
-            ChatMessage(role="system", content=VACANCY_SYSTEM_PROMPT),
-            ChatMessage(role="user", content=text),
-        ],
-        schema=VACANCY_SCHEMA,
-        schema_name=VACANCY_SCHEMA_NAME,
-    )
-    return _parse_vacancy(result.data)
+    messages = [
+        ChatMessage(role="system", content=VACANCY_SYSTEM_PROMPT),
+        ChatMessage(role="user", content=text),
+    ]
+    for attempt in range(2):
+        try:
+            result = await provider.generate_structured(
+                messages=messages,
+                schema=VACANCY_SCHEMA,
+                schema_name=VACANCY_SCHEMA_NAME,
+            )
+            return _parse_vacancy(result.data)
+        except LLMError as exc:
+            if attempt == 0 and _is_transient_llm_error(exc):
+                logger.warning(
+                    "Извлечение вакансии не уложилось в таймаут, повтор: %s", exc
+                )
+                continue
+            raise
+    raise AnalysisError("Не удалось извлечь требования вакансии")
 
 
 async def extract_resume_skills(provider: LLMProvider, text: str) -> ResumeProfile:
@@ -210,6 +229,15 @@ def _parse_resume(data: dict[str, Any]) -> ResumeProfile:
         experience_years=float(years) if isinstance(years, (int, float)) else None,
         self_level=_optional_str(data.get("self_level")),
         skills=skills,
+    )
+
+
+def _is_transient_llm_error(exc: Exception) -> bool:
+    """Таймаут или обрыв соединения имеет смысл повторить один раз."""
+    text = str(exc).lower()
+    return any(
+        marker in text
+        for marker in ("timed out", "timeout", "connection error", "connection reset")
     )
 
 

@@ -53,6 +53,14 @@ export default function InterviewPage() {
     }
   }, [interviewQuery.data, session])
 
+  useEffect(() => {
+    // Новый URL — новое интервью: не показываем состояние предыдущего.
+    setSession(null)
+    setAnswer('')
+    setStreamedFeedback('')
+    setError(null)
+  }, [interviewId])
+
   const currentTurn = session?.turns.find((turn) => turn.status === 'pending') ?? null
   const completed = session?.status === 'completed'
 
@@ -176,12 +184,20 @@ export default function InterviewPage() {
         </CardHeader>
         <CardContent className="flex flex-col gap-3">
           <Progress value={completed ? 100 : progress} />
+          {session.vacancy_id ? (
+            <Link
+              to={`/vacancies/${session.vacancy_id}`}
+              className="text-sm underline underline-offset-4"
+            >
+              Вакансия: {session.vacancy_title ?? 'открыть'}
+            </Link>
+          ) : null}
           {completed ? (
             <div className="flex flex-wrap items-end gap-4">
               <span className="text-3xl font-medium">{session.level ?? 0}</span>
               <span className="text-sm text-muted-foreground">итоговый уровень</span>
               <Badge variant="outline">
-                {Math.round((session.score ?? 0) * 100)}% по сложности
+                {Math.round(session.score ?? 0)}% по сложности
               </Badge>
             </div>
           ) : null}
@@ -191,7 +207,7 @@ export default function InterviewPage() {
       {answered.length > 0 ? (
         <Card>
           <CardHeader>
-            <CardTitle>Разбор предыдущих ответов</CardTitle>
+            <CardTitle>Предыдущие вопросы</CardTitle>
           </CardHeader>
           <CardContent className="flex flex-col gap-4">
             {answered.map((turn) => (
@@ -215,6 +231,8 @@ export default function InterviewPage() {
             </Link>
             {session.plan_id ? (
               <StartInterviewButton planId={session.plan_id} />
+            ) : session.vacancy_id ? (
+              <StartInterviewButton vacancyId={session.vacancy_id} />
             ) : null}
             <Link to="/" className={buttonVariants({ variant: 'outline' })}>
               На дашборд
@@ -234,17 +252,31 @@ export default function InterviewPage() {
           </CardHeader>
           <CardContent>
             <form className="flex flex-col gap-4" onSubmit={handleSubmit}>
-              <p className="text-sm">{currentTurn.question_text}</p>
-              <Textarea
-                rows={6}
-                value={answer}
-                onChange={(event) => setAnswer(event.target.value)}
-                placeholder="Ваш ответ: определения, примеры, trade-offs."
-              />
+              <div className="flex flex-col gap-1">
+                <p className="text-sm font-medium">Вопрос</p>
+                <p className="text-sm">{currentTurn.question_text}</p>
+                {currentTurn.context ? (
+                  <p className="text-xs text-muted-foreground">
+                    Требование вакансии: {currentTurn.context}
+                  </p>
+                ) : null}
+              </div>
+              <div className="flex flex-col gap-1">
+                <p className="text-sm font-medium">Ответ</p>
+                <Textarea
+                  rows={6}
+                  value={answer}
+                  onChange={(event) => setAnswer(event.target.value)}
+                  placeholder="Определения, примеры, trade-offs."
+                />
+              </div>
               {streamedFeedback ? (
-                <div className="rounded-md border bg-muted/40 p-3 text-sm">
-                  {streamedFeedback}
-                  {busy ? <span className="animate-pulse">▍</span> : null}
+                <div className="flex flex-col gap-1 rounded-md border bg-muted/40 p-3 text-sm">
+                  <span className="font-medium">Анализ</span>
+                  <span>
+                    {streamedFeedback}
+                    {busy ? <span className="animate-pulse">▍</span> : null}
+                  </span>
                 </div>
               ) : null}
               {error ? <p className="text-sm text-destructive">{error}</p> : null}
@@ -263,7 +295,7 @@ export default function InterviewPage() {
 
 function AnsweredTurn({ turn }: { turn: InterviewTurnRead }) {
   return (
-    <div className="flex flex-col gap-1 border-b pb-3 last:border-b-0 last:pb-0">
+    <div className="flex flex-col gap-2 border-b pb-4 last:border-b-0 last:pb-0">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <span className="font-medium">
           {turn.position}. {turn.topic_name}
@@ -272,12 +304,25 @@ function AnsweredTurn({ turn }: { turn: InterviewTurnRead }) {
           {turn.score ?? 0}/100
         </Badge>
       </div>
-      <span className="text-xs text-muted-foreground">{turn.question_text}</span>
-      {turn.feedback ? <span className="text-sm">{turn.feedback}</span> : null}
+      <div className="flex flex-col gap-1">
+        <span className="text-sm font-medium">Вопрос</span>
+        <span className="text-sm">{turn.question_text}</span>
+      </div>
+      <div className="flex flex-col gap-1">
+        <span className="text-sm font-medium">Ответ</span>
+        <span className="text-sm">{turn.answer_text ?? '—'}</span>
+      </div>
+      <div className="flex flex-col gap-1">
+        <span className="text-sm font-medium">Анализ</span>
+        <span className="text-sm">{turn.feedback ?? '—'}</span>
+      </div>
       {turn.missed_points.length > 0 ? (
-        <span className="text-xs text-muted-foreground">
-          Упущено: {turn.missed_points.join('; ')}
-        </span>
+        <div className="flex flex-col gap-1">
+          <span className="text-sm font-medium">Упущено</span>
+          <span className="text-xs text-muted-foreground">
+            {turn.missed_points.join('; ')}
+          </span>
+        </div>
       ) : null}
     </div>
   )

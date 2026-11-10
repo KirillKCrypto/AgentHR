@@ -57,9 +57,9 @@ backend/
 | Ручное ревью | `app/services/ontology_review.py`, `app/ontology/review.py` |
 | Автоматическое ревью | `app/services/ontology_auto_review.py` |
 | Профиль и gap-анализ | `app/services/profile.py`, `gaps.py` |
-| План подготовки | `app/services/plans.py`, `app/api/routes/plans.py` |
+| План подготовки | `app/services/plans.py`, `app/api/routes/plans.py` — reuse по `profile_fingerprint` |
 | Банк вопросов и тесты | `app/services/questions.py`, `app/questions/` |
-| Интервью | `app/services/interview.py`, `app/api/routes/interviews.py` |
+| Интервью | `app/services/interview.py`, `app/api/routes/interviews.py` — план/вакансия, SSE |
 | REST API | `app/api/routes/` |
 | Agent Harness и tools | `app/agent/` |
 | ORM-модели | `app/models/` |
@@ -119,6 +119,8 @@ infra/
 16. `e8f9a0b1c2d3` — удаление assessment и полей claimed/verified
 17. `e9f0a1b2c3d4` — единоразовые результаты тестов по темам
 18. `f0a1b2c3d4e5` — сессии интервью и вопросы
+19. `a1b2c3d4e5f6` — отпечаток профиля у плана
+20. `b2c3d4e5f6a7` — интервью по вакансии и контекст требования
 
 Новое состояние — только через новую миграцию.
 

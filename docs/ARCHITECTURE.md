@@ -76,13 +76,11 @@ frontend (SPA со входом/регистрацией, загрузка ре�
                                      └── REST (fetch) ──▶ Backend API
 ```
 
-### 3.2 План (не реализовано)
-
-Схема зафиксирована в ??. §3.1:
+### 3.2 Схема компонентов
 
 ```text
 Frontend (React SPA)
-    │ REST + WebSocket
+    │ REST + SSE (фидбек интервью)
 Backend API (FastAPI)          ← auth, бизнес-логика, владелец БД, запуск сессий
     │
     ├── Agent Harness (Deep Agents) ──► LLM Agent
@@ -142,13 +140,14 @@ Backend API (FastAPI)          ← auth, бизнес-логика, владел
 **Стек:** Python 3.13, FastAPI, SQLAlchemy 2 (async) + asyncpg, Alembic, PyJWT, pwdlib (argon2),
 openai, Deep Agents (LangGraph + LangChain core); образ — `python:3.13-slim` + uv.
 
-### Frontend (экраны M2 реализованы)
+### Frontend (экраны M3 реализованы)
 
 **Location:** `frontend/`
 
 **Реализовано:** SPA на Vite + React 19 + TypeScript; Tailwind CSS 4; shadcn/ui (Base UI);
 роутинг react-router 8 (`/` — дашборд, `/login` — вход/регистрация, `/profile` — профиль
-знаний и загрузка резюме, `/vacancies/new` — проверка вакансии, 404); TanStack Query;
+знаний и загрузка резюме, `/vacancies/new` — проверка вакансии, `/vacancies/:id` — карточка
+вакансии, `/plans/:id` — план подготовки, `/interviews/:id` — интервью, 404); TanStack Query;
 типизированный API-клиент `src/api/client.ts` (типы из OpenAPI — `src/api/schema.d.ts`,
 генерация `npm run generate:api`); хранение токенов (`src/lib/tokens.ts`, localStorage) и
 сброс сессии при 401 (`src/lib/useAuthToken.ts`); экран `/login` с регистрацией и понятными
@@ -156,11 +155,13 @@ openai, Deep Agents (LangGraph + LangChain core); образ — `python:3.13-sl
 `/profile` с загрузкой резюме файлом PDF/DOCX или текстом, темами 0–100, источником и
 уверенностью, подсветкой пробелов по выбранной вакансии; `/vacancies/new` с загрузкой
 только вакансии и оценкой по готовому профилю (коэффициент, разрыв, достаточно/нет);
-состояния loading/error/empty/ready; зафиксированные версии зависимостей; линтер oxlint.
+`/plans/:id` с темами плана и тестом из 10 вопросов; `/interviews/:id` с карточками
+«Вопрос / Ответ / Анализ / Упущено», SSE-фидбеком, итогом и запуском новой сессии;
+кнопка интервью на карточке вакансии; состояния loading/error/empty/ready;
+зафиксированные версии зависимостей; линтер oxlint.
 
-**Ответственность по плану:** остальные экраны — план подготовки (`/plans/:id`), интервью
-с WebSocket-стримингом (`/interview/:id`), отчёт (`/reports/:id`)
-([`AGENTS.md`](../AGENTS.md) §7).
+**Ответственность по плану:** отчёт по сессии (`/reports/:id`) — M5
+([`ROADMAP.md`](ROADMAP.md)).
 
 **Ограничения:** без state-менеджеров (TanStack Query + `useState`), без анимаций и кастомных
 визуализаций; UI — только shadcn/ui; версии зависимостей фиксированы.
@@ -258,11 +259,14 @@ JWT-токенов в SPA; дашборд → `GET /me` с access-токеном
 - `GET /profile` — срез `user_skill_states` + навыки вне онтологии;
 - `GET /profile/gaps?vacancy_id=...` — разрывы, метрики и рекомендации к вакансии;
 - `POST /plans`, `GET /plans`, `GET /plans/{id}` — планы подготовки из тем резюме;
+  повторный запрос при неизменном профиле возвращает существующий план с 200 и `reused=true`;
 - `GET /questions?topic_key=...` — случайные вопросы банка по теме и сложности;
 - `POST /questions/quiz` — тест из 10 вопросов с вариантами ответа;
 - `POST /questions/quiz/grade` — проверка ответов и разбор;
 - `GET /questions/quiz/{topic_key}/result` — сохранённый результат; повторный тест запрещён;
-- `POST /interviews` — сценарий интервью из плана и первый вопрос;
+- `POST /interviews` — сценарий интервью из плана или требований вакансии
+  (`plan_id` или `vacancy_id`, ровно один) и первый вопрос; темы вакансии берутся
+  только из `vacancy_skills`, требование сохраняется в `interview_turns.context`;
 - `GET /interviews`, `GET /interviews/{id}` — история и карточка интервью;
 - `POST /interviews/{id}/answers` — REST-ответ; `POST /interviews/{id}/answers/stream` — ответ с SSE-фидбеком;
 - `POST /analysis` — документы, профиль и разрывы одним ответом; LLM не вызывается.
@@ -298,8 +302,8 @@ JWT-токенов в SPA; дашборд → `GET /me` с access-токеном
           └── пусто ──▶ «Профиль пока пуст» + форма загрузки резюме
 ```
 
-**План:** WebSocket для стриминга интервью (??. §3.1 ? §5);
-эндпоинты плана подготовки и сессий интервью — M3–M4.
+**Факт:** стриминг фидбека интервью — SSE (`/interviews/{id}/answers/stream`);
+эндпоинты плана и интервью реализованы в M3. WebSocket не используется.
 
 ---
 
@@ -377,6 +381,12 @@ JWT-токенов в SPA; дашборд → `GET /me` с access-токеном
   - `interview_sessions` — сессия по плану, статус, итоговый score/level;
   - `interview_turns` — вопрос, эталонные пункты, ответ, оценка, разбор;
   - итог обновляет `user_skill_states` с `source="interview"`; фидбек отдаётся SSE.
+- Миграция `a1b2c3d4e5f6` — отпечаток профиля плана:
+  - `learning_plans.profile_fingerprint` — SHA-256 по `user_skill_states`; при совпадении
+    `POST /plans` возвращает существующий план (`reused=true`, HTTP 200).
+- Миграция `b2c3d4e5f6a7` — интервью по вакансии:
+  - `interview_sessions.vacancy_id` — источник тем, `SET NULL` при удалении вакансии;
+  - `interview_turns.context` — исходное требование вакансии для LLM-оценки.
 - Подключение: `DATABASE_URL` из `backend/.env` (локальный дефолт в `app/core/config.py`);
   движок и сессии — `backend/app/db/session.py` (asyncpg, `pool_pre_ping`).
 - Миграции: Alembic (async-шаблон), URL берётся в `alembic/env.py` из настроек;
@@ -401,6 +411,8 @@ DeepSeek не поддерживает `response_format=json_schema`. Загру
 модель из HTTP-контура (`POST /vacancies`, `POST /resumes`); `POST /analysis` модель не вызывает.
 В режиме `json_schema` структурированный вывод сначала использует штатную схему, при отказе
 API повторяется с описанием схемы в промпте. Ошибки SDK и сети превращаются в `LLMError` → 502.
+Извлечение вакансии при таймауте или обрыве соединения повторяется один раз на уровне сервиса;
+резюме повторно не отправляется.
 Frontend и backend связаны по REST (CORS-разрешение для dev-сервера).
 
 **План** ([`ROADMAP.md`](ROADMAP.md)):
@@ -451,7 +463,7 @@ Frontend и backend связаны по REST (CORS-разрешение для d
 | `OPENAI_MODEL` | модель API (для DeepSeek — `deepseek-flash`) | нет |
 | `OPENAI_BASE_URL` | базовый URL OpenAI-совместимого API (для DeepSeek — `https://api.deepseek.com`) | нет |
 | `LLM_STRUCTURED_MODE` | режим структурированного вывода: `json_schema`, `json_object` (DeepSeek), `prompt` | нет |
-| `OPENAI_TIMEOUT_SECONDS` | таймаут одного запроса к LLM, сек (по умолчанию 30) | нет |
+| `OPENAI_TIMEOUT_SECONDS` | таймаут одного запроса к LLM, сек (по умолчанию 60) | нет |
 | `OPENAI_MAX_RETRIES` | повторы SDK при ошибках (по умолчанию 0: резервный запрос делает провайдер) | нет |
 | `CORS_ORIGINS` | браузерные источники (по умолчанию `["http://localhost:5173"]`) | нет |
 | `AGENT_MAX_STEPS` | максимум шагов агентского цикла (по умолчанию 10) | нет |
@@ -557,6 +569,11 @@ Frontend: `ApiError` со статусом; на `/login` показываютс
   источников, ошибка на неизвестной теме;
 - `test_e2e_scenario.py` — E2E-скелет M2 на уровне API: вакансия → резюме → профиль →
   разрывы → `/analysis` → новая вакансия с переиспользованием профиля;
+- `test_plans.py` — план из тем профиля и повторный `POST /plans` без изменений профиля;
+- `test_interviews.py` — интервью по плану и по вакансии, SSE-фидбек, повторные ответы,
+  сохранение результата в профиль;
+- `test_analysis_retry.py` — повтор извлечения вакансии после таймаута, без повтора
+  на нетранзиентной ошибке;
 - `test_analysis.py`, `test_normalization.py`, `test_extraction_golden.py`, `test_embeddings*.py` —
   извлечение, нормализация и golden-набор (без сети).
 

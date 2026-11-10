@@ -755,11 +755,10 @@ export interface components {
          * @description Запрос на создание интервью.
          */
         InterviewCreate: {
-            /**
-             * Plan Id
-             * Format: uuid
-             */
-            plan_id: string;
+            /** Plan Id */
+            plan_id?: string | null;
+            /** Vacancy Id */
+            vacancy_id?: string | null;
         };
         /**
          * InterviewRead
@@ -778,6 +777,10 @@ export interface components {
             user_id: string;
             /** Plan Id */
             plan_id?: string | null;
+            /** Vacancy Id */
+            vacancy_id?: string | null;
+            /** Vacancy Title */
+            vacancy_title?: string | null;
             /** Title */
             title: string;
             /** Status */
@@ -854,6 +857,8 @@ export interface components {
             topic_name: string;
             /** Question Text */
             question_text: string;
+            /** Context */
+            context?: string | null;
             /** Difficulty */
             difficulty: number;
             /** Status */
@@ -957,6 +962,11 @@ export interface components {
             status: string;
             /** Created At */
             created_at?: string | null;
+            /**
+             * Reused
+             * @default false
+             */
+            reused: boolean;
             /**
              * Items
              * @default []

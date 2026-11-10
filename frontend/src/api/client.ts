@@ -188,13 +188,13 @@ export function fetchQuizResult(topicKey: string, token: string): Promise<QuizRe
 }
 
 export function createInterview(
-  planId: string,
+  payload: { plan_id?: string; vacancy_id?: string },
   token: string,
 ): Promise<InterviewRead> {
   return apiFetch('/interviews', {
     method: 'POST',
     token,
-    body: JSON.stringify({ plan_id: planId }),
+    body: JSON.stringify(payload),
   })
 }
 

@@ -39,7 +39,7 @@ class Settings(BaseSettings):
     #   prompt      — только схема в промпте, без response_format.
     llm_structured_mode: Literal["json_schema", "json_object", "prompt"] = "json_schema"
     # Таймаут одного запроса к LLM: внешние API отвечают неравномерно
-    openai_timeout_seconds: float = 30.0
+    openai_timeout_seconds: float = 60.0
     # Повторы на уровне SDK: наш провайдер сам делает резервный запрос,
     # поэтому лишние ретраи только увеличивают худшее время ответа
     openai_max_retries: int = 0

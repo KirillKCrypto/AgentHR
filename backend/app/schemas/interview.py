@@ -3,13 +3,21 @@
 from datetime import datetime
 from uuid import UUID
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 
 class InterviewCreate(BaseModel):
     """Запрос на создание интервью."""
 
-    plan_id: UUID
+    plan_id: UUID | None = None
+    vacancy_id: UUID | None = None
+
+    @model_validator(mode="after")
+    def exactly_one_source(self) -> "InterviewCreate":
+        """Нужен ровно один источник: план или вакансия."""
+        if (self.plan_id is None) == (self.vacancy_id is None):
+            raise ValueError("Укажите ровно один источник: plan_id или vacancy_id")
+        return self
 
 
 class InterviewTurnRead(BaseModel):
@@ -21,6 +29,7 @@ class InterviewTurnRead(BaseModel):
     topic_key: str
     topic_name: str
     question_text: str
+    context: str | None = None
     difficulty: int
     status: str
     answer_text: str | None = None
@@ -38,6 +47,8 @@ class InterviewRead(BaseModel):
     id: UUID
     user_id: UUID
     plan_id: UUID | None = None
+    vacancy_id: UUID | None = None
+    vacancy_title: str | None = None
     title: str
     status: str
     score: float | None = None
