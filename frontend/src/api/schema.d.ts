@@ -716,6 +716,11 @@ export interface components {
              * @default must_have
              */
             criticality: string;
+            /**
+             * Covered By Alternative
+             * @default false
+             */
+            covered_by_alternative: boolean;
         };
         /**
          * GapRecommendationRead

@@ -290,3 +290,128 @@ async def test_llm_failure_returns_502(api_user: ApiUser) -> None:
     )
 
     assert response.status_code == 502
+
+
+async def test_critical_readiness_needs_fully_closed_requirements(
+    api_user: ApiUser,
+) -> None:
+    """Разрыв в один пункт не даёт 100% по обязательным требованиям."""
+    api_user.provider.responses["vacancy_requirements"] = {
+        "title": "Backend",
+        "company": "Acme",
+        "level": "middle",
+        "skills": [
+            {
+                "name": "Python",
+                "required_level": 80,
+                "weight": 1.0,
+                "evidence": "Python",
+                "confidence": 0.9,
+                "criticality": "must_have",
+            }
+        ],
+    }
+    api_user.provider.responses["resume_skills"] = {
+        "experience_years": 3.0,
+        "self_level": "middle",
+        "skills": [
+            {
+                "name": "Python",
+                "proficiency": 79,
+                "evidence": "Python",
+                "confidence": 0.9,
+            }
+        ],
+    }
+    vacancy = await api_user.client.post(
+        "/vacancies",
+        json={"title": "Backend", "raw_text": "Python"},
+        headers=api_user.headers,
+    )
+    assert vacancy.status_code == 201, vacancy.text
+    resume = await api_user.client.post(
+        "/resumes",
+        json={"title": "Резюме", "raw_text": "Python"},
+        headers=api_user.headers,
+    )
+    assert resume.status_code == 201, resume.text
+
+    gaps = await api_user.client.get(
+        f"/profile/gaps?vacancy_id={vacancy.json()['id']}",
+        headers=api_user.headers,
+    )
+    assert gaps.status_code == 200, gaps.text
+    body = gaps.json()
+
+    assert body["critical_readiness"] == 0.0
+    assert body["critical_gap_count"] == 1
+    assert body["satisfied_count"] == 0
+    assert body["coverage_all"] == pytest.approx(0.988, abs=0.001)
+
+
+async def test_or_alternative_closes_critical_requirement(api_user: ApiUser) -> None:
+    """OR-альтернатива закрывает обязательное требование и не считается разрывом."""
+    api_user.provider.responses["vacancy_requirements"] = {
+        "title": "Backend",
+        "company": "Acme",
+        "level": "middle",
+        "skills": [
+            {
+                "name": "Python",
+                "required_level": 70,
+                "weight": 1.0,
+                "evidence": "Python or Java",
+                "confidence": 0.9,
+                "group": "g1",
+                "logic": "OR",
+            },
+            {
+                "name": "Java",
+                "required_level": 70,
+                "weight": 1.0,
+                "evidence": "Python or Java",
+                "confidence": 0.9,
+                "group": "g1",
+                "logic": "OR",
+            },
+        ],
+    }
+    api_user.provider.responses["resume_skills"] = {
+        "experience_years": 3.0,
+        "self_level": "middle",
+        "skills": [
+            {
+                "name": "Python",
+                "proficiency": 80,
+                "evidence": "Python",
+                "confidence": 0.9,
+            }
+        ],
+    }
+    vacancy = await api_user.client.post(
+        "/vacancies",
+        json={"title": "Backend", "raw_text": "Python or Java"},
+        headers=api_user.headers,
+    )
+    assert vacancy.status_code == 201, vacancy.text
+    resume = await api_user.client.post(
+        "/resumes",
+        json={"title": "Резюме", "raw_text": "Python"},
+        headers=api_user.headers,
+    )
+    assert resume.status_code == 201, resume.text
+
+    gaps = await api_user.client.get(
+        f"/profile/gaps?vacancy_id={vacancy.json()['id']}",
+        headers=api_user.headers,
+    )
+    assert gaps.status_code == 200, gaps.text
+    body = gaps.json()
+    items = {item["skill_name"]: item for item in body["items"]}
+
+    assert body["critical_readiness"] == 1.0
+    assert body["critical_gap_count"] == 0
+    assert body["satisfied_count"] == 1
+    assert body["requirements_count"] == 1
+    assert items["Java"]["covered_by_alternative"] is True
+    assert items["Python"]["satisfied"] is True

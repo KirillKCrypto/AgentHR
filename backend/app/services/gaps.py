@@ -1,7 +1,7 @@
 """Gap-анализ вакансии относительно профиля пользователя."""
 
 import uuid
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -26,6 +26,8 @@ class GapItem:
     requirement_group: str | None = None
     requirement_logic: str = "SINGLE"
     criticality: str = "must_have"
+    # Навык не закрыт сам, но его OR-группу закрыла альтернатива.
+    covered_by_alternative: bool = False
 
 
 @dataclass(frozen=True)
@@ -118,8 +120,6 @@ async def compute_gaps(
         if criticality == "must_have":
             critical_count += 1
             critical_weight += skill.weight
-            if gap > 0:
-                critical_gap_count += 1
 
         item = GapItem(
             skill_name=skill.raw_name,
@@ -166,20 +166,36 @@ async def compute_gaps(
     confirmed_weight = 0.0
     weighted_critical_done = 0.0
     critical_metric_weight = 0.0
+    satisfied_groups = 0
+    covered_ids: set[int] = set()
 
     for group in grouped.values():
         logic = group[0][0].requirement_logic or "SINGLE"
         ratios = [ratio for _, _, ratio, _ in group]
         weights = [item.weight for _, item, _, _ in group]
+        satisfied_flags = [item.satisfied for _, item, _, _ in group]
         if logic == "OR":
             group_ratio = max(ratios)
             group_weight = max(weights)
+            group_satisfied = any(satisfied_flags)
         elif logic == "AND":
             group_ratio = min(ratios)
             group_weight = sum(weights)
+            group_satisfied = all(satisfied_flags)
         else:
             group_ratio = ratios[0]
             group_weight = weights[0]
+            group_satisfied = satisfied_flags[0]
+
+        if group_satisfied:
+            satisfied_groups += 1
+        elif any(item.criticality == "must_have" for _, item, _, _ in group):
+            # Считаем не закрытые обязательные группы, а не отдельные навыки:
+            # OR-альтернативы не должны выглядеть как незакрытые требования.
+            critical_gap_count += 1
+
+        if logic == "OR" and group_satisfied:
+            covered_ids.update(id(item) for _, item, _, _ in group if not item.satisfied)
 
         weighted_all_done += group_weight * group_ratio
         weighted_all_total += group_weight
@@ -189,7 +205,9 @@ async def compute_gaps(
             confirmed_weight += group_weight
 
         if any(item.criticality == "must_have" for _, item, _, _ in group):
-            weighted_critical_done += group_weight * group_ratio
+            # Обязательное требование считается закрытым только целиком:
+            # частичный уровень не должен показывать 100%.
+            weighted_critical_done += group_weight * (1.0 if group_satisfied else 0.0)
             critical_metric_weight += group_weight
 
     if weighted_all_total > 0:
@@ -210,6 +228,12 @@ async def compute_gaps(
         round(weighted_gap_total / weighted_gap_weight, 1) if weighted_gap_weight > 0 else 0.0
     )
 
+    if covered_ids:
+        items = [
+            replace(item, covered_by_alternative=True) if id(item) in covered_ids else item
+            for item in items
+        ]
+
     return GapReport(
         vacancy_id=vacancy.id,
         vacancy_title=vacancy.title,
@@ -218,8 +242,8 @@ async def compute_gaps(
         coverage_all=round(coverage_all, 3),
         confirmed_readiness=confirmed_readiness,
         critical_readiness=critical_readiness,
-        satisfied_count=sum(1 for item in items if item.satisfied),
-        requirements_count=len(items),
+        satisfied_count=satisfied_groups,
+        requirements_count=len(grouped),
         average_gap=average_gap,
         recommendations=_recommendations(items),
         provisional_count=provisional_count,

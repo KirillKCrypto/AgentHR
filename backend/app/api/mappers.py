@@ -267,6 +267,7 @@ def gap_analysis_read(report: GapReport) -> GapAnalysisRead:
                 requirement_group=item.requirement_group,
                 requirement_logic=item.requirement_logic,
                 criticality=item.criticality,
+                covered_by_alternative=item.covered_by_alternative,
             )
             for item in report.items
         ],

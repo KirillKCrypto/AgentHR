@@ -39,7 +39,7 @@ export function GapMetrics({ gaps }: { gaps: GapAnalysisRead }) {
           <span className="text-3xl font-medium">
             {critical === null ? '—' : `${critical}%`}
           </span>
-          <span className="text-sm text-muted-foreground">обязательные требования</span>
+          <span className="text-sm text-muted-foreground">обязательные требования закрыты</span>
           {critical === null ? (
             <span className="text-xs text-muted-foreground">нет must_have</span>
           ) : (
@@ -100,6 +100,8 @@ export function GapTable({ items }: { items: GapItem[] }) {
             <TableCell>
               {item.satisfied ? (
                 <Badge>достаточно</Badge>
+              ) : item.covered_by_alternative ? (
+                <Badge variant="outline">закрыто альтернативой</Badge>
               ) : (
                 <Badge variant="destructive">не хватает {item.gap}</Badge>
               )}

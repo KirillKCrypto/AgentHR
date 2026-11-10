@@ -147,6 +147,7 @@ class GapItemRead(BaseModel):
     requirement_group: str | None = None
     requirement_logic: str = "SINGLE"
     criticality: str = "must_have"
+    covered_by_alternative: bool = False
 
 
 class GapRecommendationRead(BaseModel):
