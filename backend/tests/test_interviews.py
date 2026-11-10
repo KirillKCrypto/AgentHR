@@ -1,6 +1,10 @@
 """Интервью: сценарий из плана, ответы, SSE и обновление профиля."""
 
-from app.services.interview import _verdict_for
+from app.services.interview import (
+    _difficulties_for_level,
+    _normalize_level,
+    _verdict_for,
+)
 from tests.conftest import ApiUser
 
 
@@ -9,6 +13,25 @@ def test_verdict_consistency() -> None:
     assert _verdict_for(85) == "strong"
     assert _verdict_for(75) == "partial"
     assert _verdict_for(49) == "weak"
+
+
+def test_difficulty_sequences_follow_vacancy_level() -> None:
+    """Junior/middle не выше 3, senior/lead с упором на 3–5."""
+    assert _normalize_level("Senior Python") == "senior_lead"
+    assert _normalize_level("Junior") == "junior_middle"
+    assert _normalize_level("middle") == "junior_middle"
+    assert _normalize_level("Lead") == "senior_lead"
+    assert _normalize_level(None) is None
+
+    junior = _difficulties_for_level("junior_middle")
+    assert junior is not None
+    assert all(difficulty <= 3 for difficulty in junior)
+
+    senior = _difficulties_for_level("senior_lead")
+    assert senior is not None
+    assert max(senior) == 5
+    assert sum(1 for difficulty in senior if 3 <= difficulty <= 5) >= 6
+    assert _difficulties_for_level(None) is None
 
 
 RESUME_DATA = {
@@ -145,6 +168,144 @@ async def test_vacancy_interview_uses_vacancy_topics(api_user: ApiUser) -> None:
     assert body["question_count"] >= 1
     assert {turn["topic_key"] for turn in body["turns"]} == {"python", "sql"}
     assert all(turn["context"] for turn in body["turns"])
+    assert vacancy.json()["level"] == "middle"
+    assert all(turn["difficulty"] <= 3 for turn in body["turns"])
+
+
+async def test_interview_report_marks_strengths_and_untouched(
+    api_user: ApiUser,
+) -> None:
+    """Отчёт после финиша делит темы на сильные и незатронутые."""
+    names = [
+        "Python",
+        "SQL",
+        "Docker",
+        "FastAPI",
+        "Redis",
+        "Kafka",
+        "PostgreSQL",
+        "Git",
+        "Linux",
+        "REST",
+    ]
+    api_user.provider.responses["vacancy_requirements"] = {
+        "title": "Backend",
+        "company": "Acme",
+        "level": "middle",
+        "skills": [
+            {
+                "name": name,
+                "required_level": 70,
+                "weight": 1.0 - index * 0.02,
+                "evidence": f"{name} в проде",
+                "confidence": 0.9,
+            }
+            for index, name in enumerate(names)
+        ],
+    }
+    vacancy = await api_user.client.post(
+        "/vacancies",
+        json={"title": "Backend", "raw_text": "Backend"},
+        headers=api_user.headers,
+    )
+    assert vacancy.status_code == 201, vacancy.text
+
+    api_user.provider.responses["interview_evaluation"] = {
+        "score": 85,
+        "verdict": "strong",
+        "covered_points": ["основная мысль"],
+        "missed_points": [],
+        "feedback_brief": "Ответ хороший.",
+    }
+    created = await api_user.client.post(
+        "/interviews",
+        json={"vacancy_id": vacancy.json()["id"]},
+        headers=api_user.headers,
+    )
+    assert created.status_code == 201, created.text
+    interview = created.json()
+
+    early = await api_user.client.get(
+        f"/interviews/{interview['id']}/report",
+        headers=api_user.headers,
+    )
+    assert early.status_code == 409
+
+    for turn in interview["turns"]:
+        response = await api_user.client.post(
+            f"/interviews/{interview['id']}/answers",
+            json={"turn_id": turn["id"], "answer_text": "Ответ по существу вопроса."},
+            headers=api_user.headers,
+        )
+        assert response.status_code == 200, response.text
+
+    report = await api_user.client.get(
+        f"/interviews/{interview['id']}/report",
+        headers=api_user.headers,
+    )
+    assert report.status_code == 200, report.text
+    body = report.json()
+    assert body["status"] == "completed"
+    assert body["strengths"]
+    assert body["improvements"] == []
+    assert body["untouched"]
+    asked = {turn["topic_key"] for turn in interview["turns"]}
+    assert all(item["topic_key"] not in asked for item in body["untouched"])
+
+
+async def test_interview_report_marks_weak_topics(api_user: ApiUser) -> None:
+    """Слабые ответы попадают в «что подтянуть» с упущенными пунктами."""
+    api_user.provider.responses["vacancy_requirements"] = {
+        "title": "Backend",
+        "company": "Acme",
+        "level": "middle",
+        "skills": [
+            {
+                "name": "Python",
+                "required_level": 70,
+                "weight": 1.0,
+                "evidence": "Python в проде",
+                "confidence": 0.9,
+            }
+        ],
+    }
+    vacancy = await api_user.client.post(
+        "/vacancies",
+        json={"title": "Backend", "raw_text": "Python"},
+        headers=api_user.headers,
+    )
+    assert vacancy.status_code == 201, vacancy.text
+
+    api_user.provider.responses["interview_evaluation"] = {
+        "score": 40,
+        "verdict": "weak",
+        "covered_points": [],
+        "missed_points": ["индексы", "план запроса"],
+        "feedback_brief": "Нужно подробнее.",
+    }
+    created = await api_user.client.post(
+        "/interviews",
+        json={"vacancy_id": vacancy.json()["id"]},
+        headers=api_user.headers,
+    )
+    interview = created.json()
+    for turn in interview["turns"]:
+        response = await api_user.client.post(
+            f"/interviews/{interview['id']}/answers",
+            json={"turn_id": turn["id"], "answer_text": "Короткий ответ."},
+            headers=api_user.headers,
+        )
+        assert response.status_code == 200, response.text
+
+    report = await api_user.client.get(
+        f"/interviews/{interview['id']}/report",
+        headers=api_user.headers,
+    )
+    body = report.json()
+    assert body["strengths"] == []
+    assert body["improvements"]
+    assert body["improvements"][0]["score"] == 40
+    assert "индексы" in body["improvements"][0]["missed_points"]
 
 
 async def test_interview_stream_returns_events(api_user: ApiUser) -> None:

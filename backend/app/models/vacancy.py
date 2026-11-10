@@ -37,6 +37,8 @@ class Vacancy(Base):
     )
     title: Mapped[str | None] = mapped_column(String(200), nullable=True)
     company: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    # Уровень позиции из текста вакансии: junior | middle | senior | lead.
+    level: Mapped[str | None] = mapped_column(String(20), nullable=True)
     raw_text: Mapped[str] = mapped_column(Text)
     # manual | file — источник загрузки
     source: Mapped[str] = mapped_column(

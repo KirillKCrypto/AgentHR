@@ -12,7 +12,7 @@ from app.services.errors import NotFoundError
 
 @dataclass(frozen=True)
 class GapItem:
-    """Р Р°Р·СЂС‹РІ РјРµР¶РґСѓ С‚СЂРµР±СѓРµРјС‹Рј Рё С‚РµРєСѓС‰РёРј СѓСЂРѕРІРЅРµРј РїРѕ РѕРґРЅРѕРјСѓ РЅР°РІС‹РєСѓ."""
+    """Разрыв между требуемым и текущим уровнем по одному навыку."""
 
     skill_name: str
     required_level: int
@@ -30,7 +30,7 @@ class GapItem:
 
 @dataclass(frozen=True)
 class GapRecommendation:
-    """Р§С‚Рѕ РїРѕРґС‚СЏРЅСѓС‚СЊ РІ РїРµСЂРІСѓСЋ РѕС‡РµСЂРµРґСЊ РїРѕ РёС‚РѕРіР°Рј РІР°РєР°РЅСЃРёРё."""
+    """Что подтянуть в первую очередь по итогам вакансии."""
 
     topic_key: str | None
     topic_name: str | None
@@ -45,7 +45,7 @@ class GapRecommendation:
 
 @dataclass(frozen=True)
 class GapReport:
-    """Gap-Р°РЅР°Р»РёР· РІР°РєР°РЅСЃРёРё РѕС‚РЅРѕСЃРёС‚РµР»СЊРЅРѕ РїСЂРѕС„РёР»СЏ РїРѕР»СЊР·РѕРІР°С‚РµР»СЏ."""
+    """Gap-анализ вакансии относительно профиля пользователя."""
 
     vacancy_id: uuid.UUID
     vacancy_title: str | None
@@ -71,11 +71,11 @@ async def compute_gaps(
     user_id: uuid.UUID,
     vacancy_id: uuid.UUID,
 ) -> GapReport:
-    """РЎС‡РёС‚Р°РµС‚ СЂР°Р·СЂС‹РІС‹ РјРµР¶РґСѓ С‚СЂРµР±РѕРІР°РЅРёСЏРјРё РІР°РєР°РЅСЃРёРё Рё РїСЂРѕС„РёР»РµРј РїРѕР»СЊР·РѕРІР°С‚РµР»СЏ.
+    """Считает разрывы между требованиями вакансии и профилем пользователя.
 
-    Р“РѕС‚РѕРІРЅРѕСЃС‚СЊ СЃС‡РёС‚Р°РµС‚СЃСЏ С‚РѕР»СЊРєРѕ РїРѕ РЅР°РІС‹РєР°Рј, СЃРѕРїРѕСЃС‚Р°РІР»РµРЅРЅС‹Рј СЃ РѕРЅС‚РѕР»РѕРіРёРµР№:
-    РґР»СЏ РЅР°РІС‹РєРѕРІ РІРЅРµ СЃР»РѕРІР°СЂСЏ РЅРµС‚ РґРѕСЃС‚РѕРІРµСЂРЅРѕР№ РѕС†РµРЅРєРё СѓСЂРѕРІРЅСЏ, РїРѕСЌС‚РѕРјСѓ РѕРЅРё
-    РїРѕРєР°Р·С‹РІР°СЋС‚СЃСЏ РІ СЂР°Р·СЂС‹РІР°С…, РЅРѕ РЅРµ РёСЃРєР°Р¶Р°СЋС‚ РѕР±С‰РёР№ РїСЂРѕС†РµРЅС‚.
+    Готовность считается только по навыкам, сопоставленным с онтологией:
+    для навыков вне словаря нет достоверной оценки уровня, поэтому они
+    показываются в разрывах, но не искажают общий процент.
     """
     vacancy = await session.get(Vacancy, vacancy_id)
     if vacancy is None or vacancy.user_id != user_id:
@@ -195,7 +195,7 @@ async def compute_gaps(
     if weighted_all_total > 0:
         coverage_all = weighted_all_done / weighted_all_total
     else:
-        # РќР°РІС‹РєРѕРІ РІРЅРµ РѕРЅС‚РѕР»РѕРіРёРё РЅРµС‚, Р° С‚СЂРµР±РѕРІР°РЅРёР№ РЅРµС‚ РІРѕРІСЃРµ вЂ” РїРѕРєСЂС‹С‚РёРµ РїРѕР»РЅРѕРµ
+        # Навыков вне онтологии нет, а требований нет вовсе — покрытие полное
         coverage_all = 1.0 if not skills else 0.0
 
     confirmed_readiness = (
@@ -232,7 +232,7 @@ async def compute_gaps(
     )
 
 def _recommendations(items: list[GapItem], limit: int = 5) -> tuple[GapRecommendation, ...]:
-    """Р’РѕР·РІСЂР°С‰Р°РµС‚ РґРѕ `limit` С‚РµРј, РєРѕС‚РѕСЂС‹Рµ РЅСѓР¶РЅРѕ РїРѕРґС‚СЏРЅСѓС‚СЊ РІ РїРµСЂРІСѓСЋ РѕС‡РµСЂРµРґСЊ."""
+    """Возвращает до `limit` тем, которые нужно подтянуть в первую очередь."""
     ranked: list[tuple[float, GapItem]] = []
     for item in items:
         if item.satisfied or item.required_level <= 0:
@@ -252,7 +252,7 @@ def _recommendations(items: list[GapItem], limit: int = 5) -> tuple[GapRecommend
         if key in seen:
             continue
         seen.add(key)
-        criticality = "РѕР±СЏР·Р°С‚РµР»СЊРЅРѕРµ" if item.criticality == "must_have" else "Р¶РµР»Р°С‚РµР»СЊРЅРѕРµ"
+        criticality = "обязательное" if item.criticality == "must_have" else "желательное"
         result.append(
             GapRecommendation(
                 topic_key=item.topic_key,
@@ -264,8 +264,8 @@ def _recommendations(items: list[GapItem], limit: int = 5) -> tuple[GapRecommend
                 priority=priority,
                 criticality=item.criticality,
                 reason=(
-                    f"{criticality.capitalize()} С‚СЂРµР±РѕРІР°РЅРёРµ, РІРµСЃ {item.weight:.2f}: "
-                    f"РЅРµ С…РІР°С‚Р°РµС‚ {item.gap} РёР· {item.required_level}"
+                    f"{criticality.capitalize()} требование, вес {item.weight:.2f}: "
+                    f"не хватает {item.gap} из {item.required_level}"
                 ),
             )
         )

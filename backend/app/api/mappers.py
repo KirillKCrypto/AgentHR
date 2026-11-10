@@ -15,12 +15,20 @@ from app.schemas.analysis import (
 )
 from app.schemas.interview import (
     InterviewRead,
+    InterviewReportRead,
+    InterviewReportTopicRead,
     InterviewSummaryRead,
     InterviewTurnRead,
 )
 from app.schemas.plan import PlanItemRead, PlanRead, PlanSummaryRead
 from app.services.gaps import GapReport
-from app.services.interview import InterviewSnapshot, InterviewSummary, InterviewTurnData
+from app.services.interview import (
+    InterviewReport,
+    InterviewSnapshot,
+    InterviewSummary,
+    InterviewTurnData,
+    ReportTopic,
+)
 from app.services.plans import PlanSnapshot, PlanSummary
 from app.services.profile import (
     ProfileSnapshot,
@@ -36,6 +44,7 @@ def vacancy_read(vacancy: Vacancy, skills: tuple[SkillEntry, ...]) -> VacancyRea
         user_id=vacancy.user_id,
         title=vacancy.title,
         company=vacancy.company,
+        level=vacancy.level,
         raw_text=vacancy.raw_text,
         created_at=vacancy.created_at,
         skills=skills_read(skills),
@@ -213,6 +222,29 @@ def interview_summary_read(summary: InterviewSummary) -> InterviewSummaryRead:
         question_count=summary.question_count,
         answered_count=summary.answered_count,
         created_at=summary.created_at,
+    )
+
+
+def interview_report_read(report: InterviewReport) -> InterviewReportRead:
+    """Итоги интервью для ответа API."""
+    return InterviewReportRead(
+        interview_id=report.interview_id,
+        status=report.status,
+        score=report.score,
+        level=report.level,
+        strengths=[_report_topic_read(item) for item in report.strengths],
+        improvements=[_report_topic_read(item) for item in report.improvements],
+        untouched=[_report_topic_read(item) for item in report.untouched],
+    )
+
+
+def _report_topic_read(topic: ReportTopic) -> InterviewReportTopicRead:
+    """Тема отчёта интервью."""
+    return InterviewReportTopicRead(
+        topic_key=topic.topic_key,
+        topic_name=topic.topic_name,
+        score=topic.score,
+        missed_points=list(topic.missed_points),
     )
 
 

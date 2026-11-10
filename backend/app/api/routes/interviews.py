@@ -8,13 +8,19 @@ from fastapi import APIRouter, HTTPException, Request, status
 from fastapi.responses import StreamingResponse
 
 from app.api.deps import CurrentUser, DbSession, LlmProvider
-from app.api.mappers import interview_read, interview_summary_read, interview_turn_read
+from app.api.mappers import (
+    interview_read,
+    interview_report_read,
+    interview_summary_read,
+    interview_turn_read,
+)
 from app.models import InterviewTurn
 from app.schemas.interview import (
     InterviewAnswerRead,
     InterviewAnswerRequest,
     InterviewCreate,
     InterviewRead,
+    InterviewReportRead,
     InterviewSummaryRead,
 )
 from app.services.interview import (
@@ -22,6 +28,7 @@ from app.services.interview import (
     InterviewNotFound,
     InterviewStateError,
     answer_turn,
+    build_report,
     create_interview,
     get_interview,
     list_interviews,
@@ -88,6 +95,21 @@ async def read_interview(
         _raise(exc)
         raise
     return interview_read(snapshot)
+
+
+@router.get("/{interview_id}/report")
+async def read_interview_report(
+    interview_id: UUID,
+    db: DbSession,
+    current_user: CurrentUser,
+) -> InterviewReportRead:
+    """Итоги завершённого интервью: сильные темы и что подтянуть."""
+    try:
+        report = await build_report(db, current_user.id, interview_id)
+    except (InterviewNotFound, InterviewStateError) as exc:
+        _raise(exc)
+        raise
+    return interview_report_read(report)
 
 
 @router.post("/{interview_id}/answers")

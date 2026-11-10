@@ -2,14 +2,8 @@ import { useQueryClient } from '@tanstack/react-query'
 import { useRef, useState, type FormEvent } from 'react'
 
 import { ApiError, createResume, uploadResume } from '@/api/client'
+import { CollapsibleCard } from '@/components/CollapsibleCard'
 import { Button } from '@/components/ui/button'
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
@@ -83,16 +77,12 @@ export function ResumeUploadCard({
   }
 
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle>Загрузить резюме</CardTitle>
-        <CardDescription>
-          Шаг 1. Загрузите файл PDF/DOCX или вставьте текст — AgentHR извлечёт навыки и
-          обновит профиль знаний.
-        </CardDescription>
-      </CardHeader>
-      <CardContent>
-        <form className="flex flex-col gap-4" onSubmit={handleSubmit}>
+    <CollapsibleCard
+      title="Загрузить резюме"
+      description="Шаг 1. Загрузите файл PDF/DOCX или вставьте текст — AgentHR извлечёт навыки и обновит профиль знаний."
+      storageKey="profile-resume"
+    >
+      <form className="flex flex-col gap-4" onSubmit={handleSubmit}>
           <div className="flex flex-wrap gap-2">
             <Button
               type="button"
@@ -160,7 +150,6 @@ export function ResumeUploadCard({
             </Button>
           </div>
         </form>
-      </CardContent>
-    </Card>
+    </CollapsibleCard>
   )
 }

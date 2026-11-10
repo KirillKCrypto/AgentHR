@@ -20,6 +20,7 @@ import {
   CardTitle,
 } from '@/components/ui/card'
 import { Progress } from '@/components/ui/progress'
+import { CollapsibleCard } from '@/components/CollapsibleCard'
 import { CreatePlanButton } from '@/components/CreatePlanButton'
 import { GapMetrics, GapRecommendations, GapTable } from '@/components/Gaps'
 import { PlanSkillTestsCard } from '@/components/PlanSkillTestsCard'
@@ -182,14 +183,12 @@ export default function ProfilePage() {
         </Card>
       ) : (
         <>
-          <Card>
-            <CardHeader>
-              <CardTitle>Темы</CardTitle>
-              <CardDescription>
-                Подтверждённые темы: владение 0–100, источник и уверенность под шкалой.
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="flex flex-col gap-5">
+          <CollapsibleCard
+            title="Темы"
+            description="Подтверждённые темы: владение 0–100, источник и уверенность под шкалой."
+            storageKey="profile-topics"
+          >
+            <div className="flex flex-col gap-5">
               {canonicalTopics.length === 0 ? (
                 <p className="text-sm text-muted-foreground">
                   Подтверждённых тем пока нет — загрузите резюме.
@@ -203,19 +202,16 @@ export default function ProfilePage() {
                   />
                 ))
               )}
-            </CardContent>
-          </Card>
+            </div>
+          </CollapsibleCard>
 
           {provisionalTopics.length > 0 ? (
-            <Card>
-              <CardHeader>
-                <CardTitle>Непроверенные темы</CardTitle>
-                <CardDescription>
-                  Созданы автоматически из новых навыков. Учитываются в покрытии, но не в
-                  подтверждённой готовности до ревью.
-                </CardDescription>
-              </CardHeader>
-              <CardContent className="flex flex-col gap-5">
+            <CollapsibleCard
+              title="Непроверенные темы"
+              description="Созданы автоматически из новых навыков. Учитываются в покрытии, но не в подтверждённой готовности до ревью."
+              storageKey="profile-provisional"
+            >
+              <div className="flex flex-col gap-5">
                 {provisionalTopics.map((topic) => (
                   <TopicRow
                     key={topic.topic_id}
@@ -223,8 +219,8 @@ export default function ProfilePage() {
                     gap={gapByTopic.get(topic.topic_key)}
                   />
                 ))}
-              </CardContent>
-            </Card>
+              </div>
+            </CollapsibleCard>
           ) : null}
 
           <GapsSection
@@ -240,33 +236,29 @@ export default function ProfilePage() {
             onRetry={() => void gapsQuery.refetch()}
           />
 
-          <Card>
-            <CardHeader>
-              <CardTitle>Навыки вне онтологии</CardTitle>
-              <CardDescription>
-                Сохранены из резюме как есть; в готовность к вакансии не входят.
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              {profile.unmatched_skills.length === 0 ? (
-                <p className="text-sm text-muted-foreground">
-                  Все навыки из резюме сопоставлены с темами.
-                </p>
-              ) : (
-                <div className="flex flex-col gap-2">
-                  {profile.unmatched_skills.map((skill) => (
-                    <div
-                      key={`${skill.raw_name}-${skill.level}`}
-                      className="flex items-center justify-between gap-3 text-sm"
-                    >
-                      <span>{skill.raw_name}</span>
-                      <span className="text-muted-foreground">уровень {skill.level}</span>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </CardContent>
-          </Card>
+          <CollapsibleCard
+            title="Навыки вне онтологии"
+            description="Сохранены из резюме как есть; в готовность к вакансии не входят."
+            storageKey="profile-unmatched"
+          >
+            {profile.unmatched_skills.length === 0 ? (
+              <p className="text-sm text-muted-foreground">
+                Все навыки из резюме сопоставлены с темами.
+              </p>
+            ) : (
+              <div className="flex flex-col gap-2">
+                {profile.unmatched_skills.map((skill) => (
+                  <div
+                    key={`${skill.raw_name}-${skill.level}`}
+                    className="flex items-center justify-between gap-3 text-sm"
+                  >
+                    <span>{skill.raw_name}</span>
+                    <span className="text-muted-foreground">уровень {skill.level}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </CollapsibleCard>
         </>
       )}
     </div>
@@ -329,14 +321,12 @@ function GapsSection({
   onRetry: () => void
 }) {
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle>Разрывы по вакансии</CardTitle>
-        <CardDescription>
-          Выберите вакансию — темы с пробелами подсветятся выше.
-        </CardDescription>
-      </CardHeader>
-      <CardContent className="flex flex-col gap-4">
+    <CollapsibleCard
+      title="Разрывы по вакансии"
+      description="Выберите вакансию — темы с пробелами подсветятся выше."
+      storageKey="profile-gaps"
+    >
+      <div className="flex flex-col gap-4">
         {vacanciesPending ? (
           <p className="text-sm text-muted-foreground">Загружаем вакансии…</p>
         ) : vacanciesError ? (
@@ -390,8 +380,8 @@ function GapsSection({
             ) : null}
           </>
         )}
-      </CardContent>
-    </Card>
+      </div>
+    </CollapsibleCard>
   )
 }
 

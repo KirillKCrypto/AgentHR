@@ -61,6 +61,7 @@ class VacancyRead(BaseModel):
     user_id: UUID
     title: str | None = None
     company: str | None = None
+    level: str | None = None
     raw_text: str
     created_at: datetime
     skills: list[SkillRead] = []
@@ -72,6 +73,7 @@ class VacancySummary(BaseModel):
     id: UUID
     title: str | None = None
     company: str | None = None
+    level: str | None = None
     created_at: datetime
 
     model_config = ConfigDict(from_attributes=True)

@@ -156,9 +156,10 @@ openai, Deep Agents (LangGraph + LangChain core); образ — `python:3.13-sl
 уверенностью, подсветкой пробелов по выбранной вакансии; `/vacancies/new` с загрузкой
 только вакансии и оценкой по готовому профилю (коэффициент, разрыв, достаточно/нет);
 `/plans/:id` с темами плана и тестом из 10 вопросов; `/interviews/:id` с карточками
-«Вопрос / Ответ / Анализ / Упущено», SSE-фидбеком, итогом и запуском новой сессии;
-кнопка интервью на карточке вакансии; состояния loading/error/empty/ready;
-зафиксированные версии зависимостей; линтер oxlint.
+«Вопрос / Ответ / Анализ / Упущено», SSE-фидбеком, итоговым отчётом и запуском новой сессии;
+кнопка интервью на карточке вакансии; сворачиваемые разделы профиля с запоминанием состояния;
+навигация с отдельной вкладкой «Дашборд» и подсветкой активного пункта; состояния
+loading/error/empty/ready; зафиксированные версии зависимостей; линтер oxlint.
 
 **Ответственность по плану:** отчёт по сессии (`/reports/:id`) — M5
 ([`ROADMAP.md`](ROADMAP.md)).
@@ -267,7 +268,11 @@ JWT-токенов в SPA; дашборд → `GET /me` с access-токеном
 - `POST /interviews` — сценарий интервью из плана или требований вакансии
   (`plan_id` или `vacancy_id`, ровно один) и первый вопрос; темы вакансии берутся
   только из `vacancy_skills`, требование сохраняется в `interview_turns.context`;
+  сложность подстраивается под уровень вакансии: junior/middle — 1–3, senior/lead — 1–5
+  с упором на 3–5;
 - `GET /interviews`, `GET /interviews/{id}` — история и карточка интервью;
+- `GET /interviews/{id}/report` — итоги завершённого интервью: сильные темы, что подтянуть
+  и незатронутые темы вакансии; до финиша — 409;
 - `POST /interviews/{id}/answers` — REST-ответ; `POST /interviews/{id}/answers/stream` — ответ с SSE-фидбеком;
 - `POST /analysis` — документы, профиль и разрывы одним ответом; LLM не вызывается.
 
@@ -327,7 +332,8 @@ JWT-токенов в SPA; дашборд → `GET /me` с access-токеном
   - `topic_candidates` — навык вне онтологии: уникальный `normalized_name`, `occurrences`,
     `sources` (JSONB), `status` (new/approved/rejected/merged);
   - `vacancies` / `vacancy_skills` — вакансия пользователя и её навыки (`required_level` 0–100,
-    `weight`, `confidence`, `match_method`; `topic_id` — NULL, если навык не сопоставлен);
+    `weight`, `confidence`, `match_method`; `topic_id` — NULL, если навык не сопоставлен;
+    `vacancies.level` — извлечённый уровень позиции);
   - `resumes` / `resume_skills` — резюме пользователя и его навыки (`proficiency` 0–100,
     `confidence`, `evidence`, `match_method`);
   - `user_skill_states` — срез профиля: уникальная пара `(user_id, topic_id)`, `proficiency` 0–100,
@@ -387,6 +393,9 @@ JWT-токенов в SPA; дашборд → `GET /me` с access-токеном
 - Миграция `b2c3d4e5f6a7` — интервью по вакансии:
   - `interview_sessions.vacancy_id` — источник тем, `SET NULL` при удалении вакансии;
   - `interview_turns.context` — исходное требование вакансии для LLM-оценки.
+- Миграция `c3d4e5f6a7b8` — уровень вакансии:
+  - `vacancies.level` — junior/middle/senior/lead из извлечения; используется для выбора
+    сложности вопросов интервью.
 - Подключение: `DATABASE_URL` из `backend/.env` (локальный дефолт в `app/core/config.py`);
   движок и сессии — `backend/app/db/session.py` (asyncpg, `pool_pre_ping`).
 - Миграции: Alembic (async-шаблон), URL берётся в `alembic/env.py` из настроек;
@@ -571,7 +580,8 @@ Frontend: `ApiError` со статусом; на `/login` показываютс
   разрывы → `/analysis` → новая вакансия с переиспользованием профиля;
 - `test_plans.py` — план из тем профиля и повторный `POST /plans` без изменений профиля;
 - `test_interviews.py` — интервью по плану и по вакансии, SSE-фидбек, повторные ответы,
-  сохранение результата в профиль;
+  сохранение результата в профиль, сложность по уровню вакансии и итоговый отчёт;
+- `test_gaps_text.py` — читаемость текста рекомендаций (защита от двойной кодировки);
 - `test_analysis_retry.py` — повтор извлечения вакансии после таймаута, без повтора
   на нетранзиентной ошибке;
 - `test_analysis.py`, `test_normalization.py`, `test_extraction_golden.py`, `test_embeddings*.py` —

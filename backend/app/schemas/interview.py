@@ -73,6 +73,27 @@ class InterviewSummaryRead(BaseModel):
     created_at: datetime
 
 
+class InterviewReportTopicRead(BaseModel):
+    """Тема в итоговом отчёте интервью."""
+
+    topic_key: str
+    topic_name: str
+    score: float | None = None
+    missed_points: list[str] = []
+
+
+class InterviewReportRead(BaseModel):
+    """Итоги завершённого интервью."""
+
+    interview_id: UUID
+    status: str
+    score: float | None = None
+    level: int | None = None
+    strengths: list[InterviewReportTopicRead] = []
+    improvements: list[InterviewReportTopicRead] = []
+    untouched: list[InterviewReportTopicRead] = []
+
+
 class InterviewAnswerRequest(BaseModel):
     """Ответ на текущий вопрос."""
 

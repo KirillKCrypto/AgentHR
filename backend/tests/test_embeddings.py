@@ -1,4 +1,4 @@
-"""РўРµСЃС‚С‹ СЃР»РѕСЏ СЌРјР±РµРґРґРёРЅРіРѕРІ (Р±РµР· СЃРµС‚Рё Рё Р±РµР· РјРѕРґРµР»РµР№)."""
+"""Тесты слоя эмбеддингов (без сети и без моделей)."""
 
 import math
 
@@ -16,24 +16,24 @@ from app.embeddings import (
 
 
 def test_cosine_similarity_of_equal_vectors() -> None:
-    """РћРґРёРЅР°РєРѕРІС‹Рµ РІРµРєС‚РѕСЂС‹ РґР°СЋС‚ Р±Р»РёР·РѕСЃС‚СЊ 1."""
+    """Одинаковые векторы дают близость 1."""
     assert cosine_similarity([1.0, 2.0, 3.0], [1.0, 2.0, 3.0]) == pytest.approx(1.0)
 
 
 def test_cosine_similarity_of_orthogonal_vectors() -> None:
-    """РџРµСЂРїРµРЅРґРёРєСѓР»СЏСЂРЅС‹Рµ РІРµРєС‚РѕСЂС‹ РґР°СЋС‚ Р±Р»РёР·РѕСЃС‚СЊ 0."""
+    """Перпендикулярные векторы дают близость 0."""
     assert cosine_similarity([1.0, 0.0], [0.0, 1.0]) == pytest.approx(0.0)
 
 
 def test_cosine_similarity_handles_degenerate_input() -> None:
-    """РќСѓР»РµРІС‹Рµ РІРµРєС‚РѕСЂС‹ Рё СЂР°Р·РЅР°СЏ РґР»РёРЅР° РґР°СЋС‚ 0, Р° РЅРµ РёСЃРєР»СЋС‡РµРЅРёРµ."""
+    """Нулевые векторы и разная длина дают 0, а не исключение."""
     assert cosine_similarity([0.0, 0.0], [0.0, 0.0]) == 0.0
     assert cosine_similarity([1.0], [1.0, 2.0]) == 0.0
     assert cosine_similarity([], []) == 0.0
 
 
 async def test_mock_provider_is_deterministic() -> None:
-    """РњРѕРє-РїСЂРѕРІР°Р№РґРµСЂ РѕС‚РґР°С‘С‚ РѕРґРёРЅР°РєРѕРІС‹Р№ РІРµРєС‚РѕСЂ РґР»СЏ РѕРґРёРЅР°РєРѕРІРѕРіРѕ С‚РµРєСЃС‚Р°."""
+    """Мок-провайдер отдаёт одинаковый вектор для одинакового текста."""
     provider = MockEmbeddingProvider()
     first = await provider.embed(["PostgreSQL"])
     second = await provider.embed(["PostgreSQL"])
@@ -43,10 +43,10 @@ async def test_mock_provider_is_deterministic() -> None:
 
 
 async def test_mock_provider_similarity_follows_shared_words() -> None:
-    """РўРµРєСЃС‚С‹ СЃ РѕР±С‰РёРјРё СЃР»РѕРІР°РјРё РґР°СЋС‚ Р±РѕР»РµРµ Р±Р»РёР·РєРёРµ РІРµРєС‚РѕСЂС‹."""
+    """Тексты с общими словами дают более близкие векторы."""
     provider = MockEmbeddingProvider()
     vectors = await provider.embed(
-        ["select join Р·Р°РїСЂРѕСЃС‹", "select join РёРЅРґРµРєСЃС‹", "РєРѕС‚РёРєРё Рё СЃРѕР±Р°С‡РєРё"]
+        ["select join запросы", "select join индексы", "котики и собачки"]
     )
     close = cosine_similarity(vectors[0], vectors[1])
     far = cosine_similarity(vectors[0], vectors[2])
@@ -54,32 +54,32 @@ async def test_mock_provider_similarity_follows_shared_words() -> None:
 
 
 async def test_null_provider_is_unavailable() -> None:
-    """Р—Р°РіР»СѓС€РєР° СЃРѕРѕР±С‰Р°РµС‚, С‡С‚Рѕ СЌРјР±РµРґРґРёРЅРіРѕРІ РЅРµС‚, Рё РЅРµ РїР°РґР°РµС‚."""
+    """Заглушка сообщает, что эмбеддингов нет, и не падает."""
     provider = NullEmbeddingProvider()
     assert provider.available is False
-    assert await provider.embed(["С‡С‚Рѕ СѓРіРѕРґРЅРѕ"]) == []
+    assert await provider.embed(["что угодно"]) == []
 
 
 def test_factory_returns_null_by_default() -> None:
-    """РџРѕ СѓРјРѕР»С‡Р°РЅРёСЋ СЌРјР±РµРґРґРµСЂС‹ РІС‹РєР»СЋС‡РµРЅС‹."""
+    """По умолчанию эмбеддеры выключены."""
     provider = create_embedding_provider(Settings(embedding_provider="none"))
     assert isinstance(provider, NullEmbeddingProvider)
 
 
 def test_factory_returns_mock() -> None:
-    """Р”Р»СЏ С‚РµСЃС‚РѕРІ РґРѕСЃС‚СѓРїРµРЅ РјРѕРє-РїСЂРѕРІР°Р№РґРµСЂ."""
+    """Для тестов доступен мок-провайдер."""
     provider = create_embedding_provider(Settings(embedding_provider="mock"))
     assert isinstance(provider, MockEmbeddingProvider)
 
 
 def test_factory_rejects_unknown_provider() -> None:
-    """РќРµРёР·РІРµСЃС‚РЅС‹Р№ РїСЂРѕРІР°Р№РґРµСЂ вЂ” РїРѕРЅСЏС‚РЅР°СЏ РѕС€РёР±РєР° РєРѕРЅС„РёРіСѓСЂР°С†РёРё."""
+    """Неизвестный провайдер — понятная ошибка конфигурации."""
     with pytest.raises(EmbeddingConfigurationError):
         create_embedding_provider(Settings(embedding_provider="unknown"))
 
 
 def test_local_provider_is_unavailable_without_fastembed(monkeypatch) -> None:
-    """Р‘РµР· СѓСЃС‚Р°РЅРѕРІР»РµРЅРЅРѕРіРѕ fastembed Р»РѕРєР°Р»СЊРЅС‹Р№ РїСЂРѕРІР°Р№РґРµСЂ РЅРµРґРѕСЃС‚СѓРїРµРЅ, РЅРѕ РЅРµ РїР°РґР°РµС‚."""
+    """Без установленного fastembed локальный провайдер недоступен, но не падает."""
     import sys
 
     # РРјРёС‚РёСЂСѓРµРј РѕС‚СЃСѓС‚СЃС‚РІРёРµ РїР°РєРµС‚Р°: РёРјРїРѕСЂС‚ fastembed Р·Р°РІРµСЂС€Р°РµС‚СЃСЏ ImportError
@@ -93,10 +93,10 @@ def test_local_provider_is_unavailable_without_fastembed(monkeypatch) -> None:
 
 
 def test_mock_provider_vector_is_normalized() -> None:
-    """Р’РµРєС‚РѕСЂС‹ РјРѕРєР° РЅРѕСЂРјРёСЂРѕРІР°РЅС‹ вЂ” РєРѕСЃРёРЅСѓСЃ РєРѕСЂСЂРµРєС‚РµРЅ."""
+    """Векторы мока нормированы — косинус корректен."""
     import asyncio
 
-    vector = asyncio.run(MockEmbeddingProvider().embed(["РЅРѕСЂРјР°Р»РёР·Р°С†РёСЏ РІРµРєС‚РѕСЂР°"]))[0]
+    vector = asyncio.run(MockEmbeddingProvider().embed(["нормализация вектора"]))[0]
     norm = math.sqrt(sum(value * value for value in vector))
     assert norm == pytest.approx(1.0)
 

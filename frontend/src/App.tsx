@@ -1,6 +1,6 @@
 import { useQuery } from '@tanstack/react-query'
 import { useEffect, useState } from 'react'
-import { Link, Route, Routes, useNavigate } from 'react-router'
+import { Link, NavLink, Route, Routes, useNavigate } from 'react-router'
 
 import { ApiError, fetchMe } from '@/api/client'
 import DashboardPage from '@/pages/DashboardPage'
@@ -13,6 +13,12 @@ import VacancyPage from '@/pages/VacancyPage'
 import VacancyUploadPage from '@/pages/VacancyUploadPage'
 import { clearTokens, getAccessToken, subscribeAuth } from '@/lib/tokens'
 
+function navLinkClass({ isActive }: { isActive: boolean }): string {
+  return isActive
+    ? 'font-medium text-foreground'
+    : 'text-muted-foreground transition-colors hover:text-foreground'
+}
+
 function App() {
   return (
     <div className="min-h-svh bg-background text-foreground">
@@ -21,18 +27,15 @@ function App() {
           <Link to="/" className="font-medium">
             AgentHR
           </Link>
-          <Link
-            to="/profile"
-            className="text-muted-foreground transition-colors hover:text-foreground"
-          >
+          <NavLink to="/" end className={navLinkClass}>
+            Дашборд
+          </NavLink>
+          <NavLink to="/profile" className={navLinkClass}>
             Профиль знаний
-          </Link>
-          <Link
-            to="/vacancies/new"
-            className="text-muted-foreground transition-colors hover:text-foreground"
-          >
+          </NavLink>
+          <NavLink to="/vacancies/new" className={navLinkClass}>
             Проверить вакансию
-          </Link>
+          </NavLink>
           <div className="ml-auto">
             <UserBadge />
           </div>

@@ -28,6 +28,8 @@ export type InterviewRead = components['schemas']['InterviewRead']
 export type InterviewTurnRead = components['schemas']['InterviewTurnRead']
 export type InterviewSummary = components['schemas']['InterviewSummaryRead']
 export type InterviewAnswerRead = components['schemas']['InterviewAnswerRead']
+export type InterviewReportRead = components['schemas']['InterviewReportRead']
+export type InterviewReportTopicRead = components['schemas']['InterviewReportTopicRead']
 
 export class ApiError extends Error {
   readonly status: number
@@ -200,6 +202,13 @@ export function createInterview(
 
 export function fetchInterview(interviewId: string, token: string): Promise<InterviewRead> {
   return apiFetch(`/interviews/${encodeURIComponent(interviewId)}`, { token })
+}
+
+export function fetchInterviewReport(
+  interviewId: string,
+  token: string,
+): Promise<InterviewReportRead> {
+  return apiFetch(`/interviews/${encodeURIComponent(interviewId)}/report`, { token })
 }
 
 export function listInterviews(token: string): Promise<InterviewSummary[]> {

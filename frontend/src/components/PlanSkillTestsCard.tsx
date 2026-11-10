@@ -3,15 +3,9 @@ import { useEffect } from 'react'
 import { Link } from 'react-router'
 
 import { ApiError, fetchPlan, listPlans, type PlanRead } from '@/api/client'
+import { CollapsibleCard } from '@/components/CollapsibleCard'
 import { TopicTest } from '@/components/TopicTest'
 import { buttonVariants } from '@/components/ui/button'
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from '@/components/ui/card'
 import { errorMessage } from '@/lib/errors'
 
 /**
@@ -51,15 +45,13 @@ export function PlanSkillTestsCard({
   }
 
   return (
-    <Card id="skill-assessment">
-      <CardHeader>
-        <CardTitle>Проверка навыков из резюме</CardTitle>
-        <CardDescription>
-          Тесты по темам вашего плана подготовки: 10 вопросов разной сложности, без выбора
-          сложности. Сначала постройте план по профилю.
-        </CardDescription>
-      </CardHeader>
-      <CardContent className="flex flex-col gap-4">
+    <CollapsibleCard
+      id="skill-assessment"
+      title="Проверка навыков из резюме"
+      description="Тесты по темам вашего плана подготовки: 10 вопросов разной сложности, без выбора сложности. Сначала постройте план по профилю."
+      storageKey="profile-tests"
+    >
+      <div className="flex flex-col gap-4">
         {plansQuery.isPending ? (
           <p className="text-sm text-muted-foreground">Загружаем план…</p>
         ) : plansQuery.isError ? (
@@ -96,7 +88,7 @@ export function PlanSkillTestsCard({
             </div>
           </>
         )}
-      </CardContent>
-    </Card>
+      </div>
+    </CollapsibleCard>
   )
 }

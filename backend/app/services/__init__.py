@@ -1,4 +1,4 @@
-"""РЎРµСЂРІРёСЃРЅС‹Р№ СЃР»РѕР№ AgentHR: Р°РЅР°Р»РёР· РґРѕРєСѓРјРµРЅС‚РѕРІ, РїСЂРѕС„РёР»СЊ Р·РЅР°РЅРёР№, РЅРѕСЂРјР°Р»РёР·Р°С†РёСЏ."""
+"""Сервисный слой AgentHR: анализ документов, профиль знаний, нормализация."""
 
 from app.services.errors import NotFoundError
 from app.services.evaluation import precision_recall

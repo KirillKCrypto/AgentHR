@@ -188,6 +188,7 @@ async def save_vacancy_analysis(
         user_id=user_id,
         title=_clean(title) or requirements.title,
         company=_clean(company) or requirements.company,
+        level=_clean(requirements.level),
         raw_text=raw_text,
     )
     session.add(vacancy)

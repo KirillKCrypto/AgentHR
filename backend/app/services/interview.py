@@ -148,6 +148,29 @@ class InterviewSummary:
     created_at: datetime
 
 
+@dataclass(frozen=True)
+class ReportTopic:
+    """Тема в итоговом отчёте интервью."""
+
+    topic_key: str
+    topic_name: str
+    score: float | None = None
+    missed_points: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True)
+class InterviewReport:
+    """Итоги завершённого интервью."""
+
+    interview_id: uuid.UUID
+    status: str
+    score: float | None
+    level: int | None
+    strengths: tuple[ReportTopic, ...]
+    improvements: tuple[ReportTopic, ...]
+    untouched: tuple[ReportTopic, ...]
+
+
 async def create_interview(
     session: AsyncSession,
     user_id: uuid.UUID,
@@ -167,6 +190,7 @@ async def create_interview(
     plan: LearningPlan | None = None
     vacancy: Vacancy | None = None
     rows: list[tuple[Topic, int, int, str | None]] = []
+    level_band: str | None = None
 
     if plan_id is not None:
         plan = await session.get(LearningPlan, plan_id)
@@ -187,6 +211,10 @@ async def create_interview(
         source_title = plan.title
         if not rows:
             raise InterviewError("В плане нет тем")
+        if plan.vacancy_id is not None:
+            plan_vacancy = await session.get(Vacancy, plan.vacancy_id)
+            if plan_vacancy is not None:
+                level_band = await _vacancy_level_band(session, plan_vacancy)
     else:
         vacancy = await session.get(Vacancy, vacancy_id)
         if vacancy is None or vacancy.user_id != user_id:
@@ -227,12 +255,17 @@ async def create_interview(
         source_title = vacancy.title or "Интервью по вакансии"
         if not rows:
             raise InterviewError("В вакансии нет тем для интервью")
+        level_band = _vacancy_level_band_from_skills(vacancy, skill_rows)
 
+    difficulties = _difficulties_for_level(level_band)
     selected: list[tuple[Topic, str | None, Question]] = []
-    for topic, current, target, context in rows:
+    for position, (topic, current, target, context) in enumerate(rows):
         if len(selected) >= MAX_INTERVIEW_QUESTIONS:
             break
-        difficulty = _difficulty_for(current, target)
+        if difficulties is not None:
+            difficulty = difficulties[len(selected) % len(difficulties)]
+        else:
+            difficulty = _difficulty_for(current, target)
         question = await _pick_or_generate_question(
             session, topic, difficulty, provider
         )
@@ -296,6 +329,74 @@ async def get_interview(
         vacancy = await session.get(Vacancy, interview.vacancy_id)
         vacancy_title = vacancy.title if vacancy is not None else None
     return _snapshot(interview, turns, vacancy_title)
+
+
+async def build_report(
+    session: AsyncSession,
+    user_id: uuid.UUID,
+    interview_id: uuid.UUID,
+) -> InterviewReport:
+    """Собирает итоги завершённого интервью без вызова LLM."""
+    interview = await session.get(InterviewSession, interview_id)
+    if interview is None or interview.user_id != user_id:
+        raise InterviewNotFound("Интервью не найдено")
+    if interview.status != "completed":
+        raise InterviewStateError("Интервью ещё не завершено")
+
+    rows = (
+        await session.execute(
+            select(InterviewTurn, Topic)
+            .join(Topic, Topic.id == InterviewTurn.topic_id)
+            .where(InterviewTurn.session_id == interview.id)
+            .order_by(InterviewTurn.position)
+        )
+    ).all()
+
+    strengths: list[ReportTopic] = []
+    improvements: list[ReportTopic] = []
+    for turn, topic in rows:
+        if turn.status != "answered" or turn.score is None:
+            continue
+        entry = ReportTopic(
+            topic_key=topic.key,
+            topic_name=topic.name,
+            score=float(turn.score),
+            missed_points=tuple(_clean_points(turn.missed_points)),
+        )
+        if turn.score >= 70:
+            strengths.append(entry)
+        else:
+            improvements.append(entry)
+    strengths.sort(key=lambda item: item.score or 0, reverse=True)
+    improvements.sort(key=lambda item: item.score or 0)
+
+    untouched: list[ReportTopic] = []
+    if interview.vacancy_id is not None:
+        asked = {turn.topic_id for turn, _ in rows}
+        seen: set[uuid.UUID] = set()
+        skill_rows = (
+            await session.execute(
+                select(VacancySkill, Topic)
+                .join(Topic, Topic.id == VacancySkill.topic_id)
+                .where(VacancySkill.vacancy_id == interview.vacancy_id)
+                .order_by(VacancySkill.weight.desc(), VacancySkill.raw_name)
+            )
+        ).all()
+        for _, topic in skill_rows:
+            if topic.id in asked or topic.id in seen:
+                continue
+            seen.add(topic.id)
+            untouched.append(ReportTopic(topic_key=topic.key, topic_name=topic.name))
+
+    return InterviewReport(
+        interview_id=interview.id,
+        status=interview.status,
+        score=interview.score,
+        level=interview.level,
+        strengths=tuple(strengths),
+        improvements=tuple(improvements),
+        untouched=tuple(untouched),
+    )
 
 
 async def list_interviews(
@@ -602,6 +703,64 @@ async def _pick_or_generate_question(
     if not questions:
         return None
     return await session.get(Question, questions[0].id)
+
+
+def _vacancy_level_band_from_skills(
+    vacancy: Vacancy, skill_rows: Sequence[tuple[VacancySkill, Topic]]
+) -> str | None:
+    """Определяет уровень вакансии по полю или медиане требований."""
+    return _level_band(vacancy.level, [skill.required_level for skill, _ in skill_rows])
+
+
+async def _vacancy_level_band(
+    session: AsyncSession, vacancy: Vacancy
+) -> str | None:
+    """Определяет уровень вакансии, подгружая требования к навыкам."""
+    levels = list(
+        await session.scalars(
+            select(VacancySkill.required_level).where(
+                VacancySkill.vacancy_id == vacancy.id
+            )
+        )
+    )
+    return _level_band(vacancy.level, levels)
+
+
+def _level_band(level: str | None, required_levels: Sequence[int]) -> str | None:
+    """Нормализует уровень; без него оценивает по медиане требований."""
+    normalized = _normalize_level(level)
+    if normalized is not None:
+        return normalized
+    if not required_levels:
+        return None
+    ordered = sorted(required_levels)
+    median = ordered[len(ordered) // 2]
+    return "junior_middle" if median < 70 else "senior_lead"
+
+
+def _normalize_level(value: str | None) -> str | None:
+    """Приводит свободный уровень вакансии к двум диапазонам сложности."""
+    text = (value or "").strip().lower()
+    if not text:
+        return None
+    if any(token in text for token in ("senior", "lead", "principal", "staff")):
+        return "senior_lead"
+    if any(token in text for token in ("junior", "middle", "mid", "intern", "trainee")):
+        return "junior_middle"
+    return None
+
+
+def _difficulties_for_level(level_band: str | None) -> tuple[int, ...] | None:
+    """Набор сложностей: junior/middle до 3, senior/lead с упором на 3–5.
+
+    Банк вопросов посеян на сложностях 1, 3 и 5, поэтому новые сложности
+    не генерируются только ради формального диапазона.
+    """
+    if level_band == "junior_middle":
+        return (1, 3)
+    if level_band == "senior_lead":
+        return (1, 3, 5, 5, 3, 5, 5, 3)
+    return None
 
 
 def _difficulty_for(current: int, target: int) -> int:

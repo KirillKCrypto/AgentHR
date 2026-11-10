@@ -6,8 +6,11 @@ import {
   ApiError,
   answerInterview,
   fetchInterview,
+  fetchInterviewReport,
   streamInterviewAnswer,
   type InterviewRead,
+  type InterviewReportRead,
+  type InterviewReportTopicRead,
   type InterviewTurnRead,
 } from '@/api/client'
 import { Badge } from '@/components/ui/badge'
@@ -41,6 +44,15 @@ export default function InterviewPage() {
     retry: false,
   })
 
+  const completed = session?.status === 'completed'
+
+  const reportQuery = useQuery<InterviewReportRead>({
+    queryKey: ['interview-report', interviewId, token],
+    queryFn: () => fetchInterviewReport(interviewId as string, token as string),
+    enabled: token !== null && Boolean(interviewId) && completed,
+    retry: false,
+  })
+
   useEffect(() => {
     if (interviewQuery.error instanceof ApiError && interviewQuery.error.status === 401) {
       expire()
@@ -62,7 +74,6 @@ export default function InterviewPage() {
   }, [interviewId])
 
   const currentTurn = session?.turns.find((turn) => turn.status === 'pending') ?? null
-  const completed = session?.status === 'completed'
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
@@ -220,6 +231,47 @@ export default function InterviewPage() {
       {completed ? (
         <Card>
           <CardHeader>
+            <CardTitle>Итоги интервью</CardTitle>
+            <CardDescription>
+              Сильные темы, что подтянуть и какие темы вакансии остались незатронутыми.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="flex flex-col gap-4">
+            {reportQuery.isPending ? (
+              <p className="text-sm text-muted-foreground">Собираем итоги…</p>
+            ) : reportQuery.isError || !reportQuery.data ? (
+              <p className="text-sm text-destructive">
+                {errorMessage(reportQuery.error)}
+              </p>
+            ) : (
+              <>
+                <ReportBlock
+                  title="Сильные темы"
+                  items={reportQuery.data.strengths}
+                  empty="Пока нет тем с оценкой 70 и выше."
+                />
+                <ReportBlock
+                  title="Что подтянуть"
+                  items={reportQuery.data.improvements}
+                  empty="Слабых тем нет."
+                  showMissed
+                />
+                {session.vacancy_id ? (
+                  <ReportBlock
+                    title="Не затронуто в этом интервью"
+                    items={reportQuery.data.untouched}
+                    empty="Все темы вакансии были затронуты."
+                  />
+                ) : null}
+              </>
+            )}
+          </CardContent>
+        </Card>
+      ) : null}
+
+      {completed ? (
+        <Card>
+          <CardHeader>
             <CardTitle>Интервью завершено</CardTitle>
             <CardDescription>
               Результат сохранён в профиле. Слабые темы подсвечены в разборе.
@@ -289,6 +341,49 @@ export default function InterviewPage() {
           </CardContent>
         </Card>
       ) : null}
+    </div>
+  )
+}
+
+function ReportBlock({
+  title,
+  items,
+  empty,
+  showMissed = false,
+}: {
+  title: string
+  items: InterviewReportTopicRead[]
+  empty: string
+  showMissed?: boolean
+}) {
+  return (
+    <div className="flex flex-col gap-2">
+      <span className="text-sm font-medium">{title}</span>
+      {items.length === 0 ? (
+        <span className="text-sm text-muted-foreground">{empty}</span>
+      ) : (
+        <div className="flex flex-col gap-2">
+          {items.map((item) => (
+            <div key={item.topic_key} className="flex flex-col gap-1">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <span className="text-sm">{item.topic_name}</span>
+                {typeof item.score === 'number' ? (
+                  <Badge variant={item.score >= 70 ? 'default' : 'destructive'}>
+                    {Math.round(item.score)}/100
+                  </Badge>
+                ) : (
+                  <Badge variant="outline">не затронуто</Badge>
+                )}
+              </div>
+              {showMissed && item.missed_points.length > 0 ? (
+                <span className="text-xs text-muted-foreground">
+                  Упущено: {item.missed_points.join('; ')}
+                </span>
+              ) : null}
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   )
 }

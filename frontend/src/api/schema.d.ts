@@ -323,6 +323,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/interviews/{interview_id}/report": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Read Interview Report
+         * @description Итоги завершённого интервью: сильные темы и что подтянуть.
+         */
+        get: operations["read_interview_report_interviews__interview_id__report_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/interviews/{interview_id}/answers": {
         parameters: {
             query?: never;
@@ -807,6 +827,55 @@ export interface components {
              * @default []
              */
             turns: components["schemas"]["InterviewTurnRead"][];
+        };
+        /**
+         * InterviewReportRead
+         * @description Итоги завершённого интервью.
+         */
+        InterviewReportRead: {
+            /**
+             * Interview Id
+             * Format: uuid
+             */
+            interview_id: string;
+            /** Status */
+            status: string;
+            /** Score */
+            score?: number | null;
+            /** Level */
+            level?: number | null;
+            /**
+             * Strengths
+             * @default []
+             */
+            strengths: components["schemas"]["InterviewReportTopicRead"][];
+            /**
+             * Improvements
+             * @default []
+             */
+            improvements: components["schemas"]["InterviewReportTopicRead"][];
+            /**
+             * Untouched
+             * @default []
+             */
+            untouched: components["schemas"]["InterviewReportTopicRead"][];
+        };
+        /**
+         * InterviewReportTopicRead
+         * @description Тема в итоговом отчёте интервью.
+         */
+        InterviewReportTopicRead: {
+            /** Topic Key */
+            topic_key: string;
+            /** Topic Name */
+            topic_name: string;
+            /** Score */
+            score?: number | null;
+            /**
+             * Missed Points
+             * @default []
+             */
+            missed_points: string[];
         };
         /**
          * InterviewSummaryRead
@@ -1426,6 +1495,8 @@ export interface components {
             title?: string | null;
             /** Company */
             company?: string | null;
+            /** Level */
+            level?: string | null;
             /** Raw Text */
             raw_text: string;
             /**
@@ -1453,6 +1524,8 @@ export interface components {
             title?: string | null;
             /** Company */
             company?: string | null;
+            /** Level */
+            level?: string | null;
             /**
              * Created At
              * Format: date-time
@@ -2007,6 +2080,37 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["InterviewRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    read_interview_report_interviews__interview_id__report_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                interview_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["InterviewReportRead"];
                 };
             };
             /** @description Validation Error */
