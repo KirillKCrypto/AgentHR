@@ -394,8 +394,8 @@ JWT-токенов в SPA; дашборд → `GET /me` с access-токеном
   - `interview_sessions.vacancy_id` — источник тем, `SET NULL` при удалении вакансии;
   - `interview_turns.context` — исходное требование вакансии для LLM-оценки.
 - Миграция `c3d4e5f6a7b8` — уровень вакансии:
-  - `vacancies.level` — junior/middle/senior/lead из извлечения; используется для выбора
-    сложности вопросов интервью.
+  - `vacancies.level` — junior/middle/senior/lead из извлечения; при сохранении заголовок
+    вакансии приоритетнее ответа модели; уровень задаёт сложность вопросов интервью.
 - Подключение: `DATABASE_URL` из `backend/.env` (локальный дефолт в `app/core/config.py`);
   движок и сессии — `backend/app/db/session.py` (asyncpg, `pool_pre_ping`).
 - Миграции: Alembic (async-шаблон), URL берётся в `alembic/env.py` из настроек;

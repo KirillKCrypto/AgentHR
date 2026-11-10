@@ -19,7 +19,6 @@ import {
   CardTitle,
 } from '@/components/ui/card'
 import { VacancyAssessment } from '@/components/VacancyAssessment'
-import { StartInterviewButton } from '@/components/StartInterviewButton'
 import { errorMessage } from '@/lib/errors'
 import { formatDate } from '@/lib/labels'
 import { useAuthToken } from '@/lib/useAuthToken'
@@ -127,7 +126,6 @@ export default function VacancyPage() {
             >
               Профиль и разрывы
             </Link>
-            <StartInterviewButton vacancyId={vacancy.id} />
             <Link to="/vacancies/new" className={buttonVariants({ variant: 'ghost' })}>
               Проверить другую вакансию
             </Link>

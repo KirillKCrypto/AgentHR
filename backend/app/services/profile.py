@@ -46,6 +46,7 @@ from app.services.topics import (
     load_topic_index,
     resolve_or_create_topics,
 )
+from app.services.vacancy_level import resolve_vacancy_level
 
 # Вес источника оценки: чем надёжнее источник, тем сильнее он влияет на профиль.
 # Резюме — самый слабый источник: кандидат описывает себя сам.
@@ -184,11 +185,12 @@ async def save_vacancy_analysis(
     embedder: EmbeddingProvider | None = None,
 ) -> Vacancy:
     """Сохраняет вакансию вместе с уже извлечёнными требованиями."""
+    resolved_title = _clean(title) or requirements.title
     vacancy = Vacancy(
         user_id=user_id,
-        title=_clean(title) or requirements.title,
+        title=resolved_title,
         company=_clean(company) or requirements.company,
-        level=_clean(requirements.level),
+        level=resolve_vacancy_level(requirements.level, resolved_title, raw_text),
         raw_text=raw_text,
     )
     session.add(vacancy)

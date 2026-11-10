@@ -24,6 +24,7 @@ from app.models import (
 from app.questions.generator import generate_questions
 from app.services.profile import weighted_estimate
 from app.services.questions import add_questions, pick_questions
+from app.services.vacancy_level import level_band, resolve_vacancy_level
 
 MAX_INTERVIEW_QUESTIONS = 8
 EVALUATION_SCHEMA_NAME = "interview_evaluation"
@@ -680,26 +681,30 @@ async def _pick_or_generate_question(
     difficulty: int,
     provider: LLMProvider | None,
 ) -> Question | None:
-    """Берёт вопрос из банка или генерирует его для темы плана."""
+    """Берёт вопрос нужной сложности или генерирует его для темы.
+
+    Если в банке есть вопросы только других сложностей, сначала добирается
+    нужная сложность. Иначе senior-интервью молча получало бы вопросы 1 и 3.
+    """
     questions = await pick_questions(session, topic.id, difficulty=difficulty, limit=1)
-    if not questions:
-        questions = await pick_questions(session, topic.id, difficulty=None, limit=1)
     if questions:
         return await session.get(Question, questions[0].id)
 
-    if provider is None:
-        return None
-    try:
-        generated = await generate_questions(provider, topic, difficulty, 3)
-    except LLMError:
-        return None
-    if not generated:
-        return None
-    await add_questions(session, topic.id, difficulty, generated)
-    await session.flush()
-    questions = await pick_questions(session, topic.id, difficulty=difficulty, limit=1)
-    if not questions:
-        questions = await pick_questions(session, topic.id, difficulty=None, limit=1)
+    if provider is not None:
+        try:
+            generated = await generate_questions(provider, topic, difficulty, 3)
+        except LLMError:
+            generated = []
+        if generated:
+            await add_questions(session, topic.id, difficulty, generated)
+            await session.flush()
+            questions = await pick_questions(
+                session, topic.id, difficulty=difficulty, limit=1
+            )
+            if questions:
+                return await session.get(Question, questions[0].id)
+
+    questions = await pick_questions(session, topic.id, difficulty=None, limit=1)
     if not questions:
         return None
     return await session.get(Question, questions[0].id)
@@ -708,8 +713,9 @@ async def _pick_or_generate_question(
 def _vacancy_level_band_from_skills(
     vacancy: Vacancy, skill_rows: Sequence[tuple[VacancySkill, Topic]]
 ) -> str | None:
-    """Определяет уровень вакансии по полю или медиане требований."""
-    return _level_band(vacancy.level, [skill.required_level for skill, _ in skill_rows])
+    """Определяет уровень вакансии по заголовку, полю или медиане требований."""
+    resolved = resolve_vacancy_level(vacancy.level, vacancy.title, vacancy.raw_text)
+    return level_band(resolved, [skill.required_level for skill, _ in skill_rows])
 
 
 async def _vacancy_level_band(
@@ -723,31 +729,8 @@ async def _vacancy_level_band(
             )
         )
     )
-    return _level_band(vacancy.level, levels)
-
-
-def _level_band(level: str | None, required_levels: Sequence[int]) -> str | None:
-    """Нормализует уровень; без него оценивает по медиане требований."""
-    normalized = _normalize_level(level)
-    if normalized is not None:
-        return normalized
-    if not required_levels:
-        return None
-    ordered = sorted(required_levels)
-    median = ordered[len(ordered) // 2]
-    return "junior_middle" if median < 70 else "senior_lead"
-
-
-def _normalize_level(value: str | None) -> str | None:
-    """Приводит свободный уровень вакансии к двум диапазонам сложности."""
-    text = (value or "").strip().lower()
-    if not text:
-        return None
-    if any(token in text for token in ("senior", "lead", "principal", "staff")):
-        return "senior_lead"
-    if any(token in text for token in ("junior", "middle", "mid", "intern", "trainee")):
-        return "junior_middle"
-    return None
+    resolved = resolve_vacancy_level(vacancy.level, vacancy.title, vacancy.raw_text)
+    return level_band(resolved, levels)
 
 
 def _difficulties_for_level(level_band: str | None) -> tuple[int, ...] | None:

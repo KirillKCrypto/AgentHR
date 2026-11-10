@@ -1,10 +1,7 @@
 """Интервью: сценарий из плана, ответы, SSE и обновление профиля."""
 
-from app.services.interview import (
-    _difficulties_for_level,
-    _normalize_level,
-    _verdict_for,
-)
+from app.services.interview import _difficulties_for_level, _verdict_for
+from app.services.vacancy_level import normalize_level
 from tests.conftest import ApiUser
 
 
@@ -17,11 +14,11 @@ def test_verdict_consistency() -> None:
 
 def test_difficulty_sequences_follow_vacancy_level() -> None:
     """Junior/middle не выше 3, senior/lead с упором на 3–5."""
-    assert _normalize_level("Senior Python") == "senior_lead"
-    assert _normalize_level("Junior") == "junior_middle"
-    assert _normalize_level("middle") == "junior_middle"
-    assert _normalize_level("Lead") == "senior_lead"
-    assert _normalize_level(None) is None
+    assert normalize_level("Senior Python") == "senior"
+    assert normalize_level("Junior") == "junior"
+    assert normalize_level("middle") == "middle"
+    assert normalize_level("Lead") == "lead"
+    assert normalize_level(None) is None
 
     junior = _difficulties_for_level("junior_middle")
     assert junior is not None
@@ -170,6 +167,44 @@ async def test_vacancy_interview_uses_vacancy_topics(api_user: ApiUser) -> None:
     assert all(turn["context"] for turn in body["turns"])
     assert vacancy.json()["level"] == "middle"
     assert all(turn["difficulty"] <= 3 for turn in body["turns"])
+
+
+async def test_senior_title_overrides_wrong_llm_level(api_user: ApiUser) -> None:
+    """Заголовок Senior важнее ошибочного middle от модели."""
+    api_user.provider.responses["vacancy_requirements"] = {
+        "title": "Backend",
+        "company": "Acme",
+        "level": "middle",
+        "skills": [
+            {
+                "name": name,
+                "required_level": 80,
+                "weight": 1.0,
+                "evidence": f"{name} в проде",
+                "confidence": 0.9,
+            }
+            for name in ("Python", "SQL", "Docker")
+        ],
+    }
+    vacancy = await api_user.client.post(
+        "/vacancies",
+        json={
+            "title": "Senior Python разработчик",
+            "raw_text": "Требования: 6+ лет Python, SQL, Docker.",
+        },
+        headers=api_user.headers,
+    )
+    assert vacancy.status_code == 201, vacancy.text
+    assert vacancy.json()["level"] == "senior"
+
+    interview = await api_user.client.post(
+        "/interviews",
+        json={"vacancy_id": vacancy.json()["id"]},
+        headers=api_user.headers,
+    )
+    assert interview.status_code == 201, interview.text
+    difficulties = [turn["difficulty"] for turn in interview.json()["turns"]]
+    assert 5 in difficulties, difficulties
 
 
 async def test_interview_report_marks_strengths_and_untouched(

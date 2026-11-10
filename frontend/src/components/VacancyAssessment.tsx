@@ -3,6 +3,7 @@ import { Link } from 'react-router'
 import type { GapAnalysisRead, VacancyRead } from '@/api/client'
 import { CreatePlanButton } from '@/components/CreatePlanButton'
 import { GapMetrics, GapRecommendations, GapTable } from '@/components/Gaps'
+import { StartInterviewButton } from '@/components/StartInterviewButton'
 import { buttonVariants } from '@/components/ui/button'
 import {
   Card,
@@ -55,6 +56,7 @@ export function VacancyAssessment({
               Открыть профиль знаний
             </Link>
             <CreatePlanButton vacancyId={vacancy.id} />
+            <StartInterviewButton vacancyId={vacancy.id} />
           </div>
         </CardContent>
       </Card>
