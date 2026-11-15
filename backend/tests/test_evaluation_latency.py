@@ -5,6 +5,7 @@ from typing import Any
 
 from app.llm.base import (
     ChatMessage,
+    LLMError,
     LLMResponse,
     StructuredResult,
     ToolSpec,
@@ -86,3 +87,35 @@ async def test_uncertain_evaluation_is_repeated() -> None:
     await _evaluate_answer(provider, _turn(), "Ответ по существу.")
 
     assert provider.calls == 2
+
+
+class EmptyOnceProvider(CountingProvider):
+    """Первый ответ пустой, второй — корректный."""
+
+    def __init__(self) -> None:
+        super().__init__(confidence=0.9)
+
+    async def generate_structured(
+        self,
+        messages: Sequence[ChatMessage],
+        schema: dict[str, Any],
+        *,
+        schema_name: str = "result",
+        max_tokens: int | None = None,
+    ) -> StructuredResult:
+        """Имитирует пустой ответ модели."""
+        self.calls += 1
+        if self.calls == 1:
+            raise LLMError("LLM: ответ не является JSON: ''")
+        return StructuredResult(data={**BASE_DATA, "confidence": self.confidence})
+
+
+async def test_empty_response_is_retried() -> None:
+    """Пустой ответ не превращается в 502 с первого раза."""
+    provider = EmptyOnceProvider()
+
+    result = await _evaluate_answer(provider, _turn(), "Ответ по существу.")
+
+    assert provider.calls == 2
+    assert result["score"] > 0
+

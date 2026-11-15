@@ -1,5 +1,6 @@
 """Тренировочное интервью: сценарий из плана, ответы и разбор."""
 
+import logging
 import uuid
 from collections.abc import AsyncIterator, Sequence
 from dataclasses import dataclass, replace
@@ -25,6 +26,8 @@ from app.services.learning_topics import NON_LEARNING_TOPIC_KEYS
 from app.services.profile import weighted_estimate
 from app.services.questions import add_questions, pick_questions
 from app.services.vacancy_level import level_band, resolve_vacancy_level
+
+logger = logging.getLogger(__name__)
 
 MAX_INTERVIEW_QUESTIONS = 8
 EVALUATION_SCHEMA_NAME = "interview_evaluation"
@@ -637,7 +640,18 @@ async def _evaluate_answer(
 ) -> dict[str, Any]:
     """Оценивает ответ; второй вызов — только при неуверенности."""
     started = perf_counter()
-    evaluation = await _evaluate_once(provider, turn, answer_text)
+    evaluation: dict[str, Any] | None = None
+    for attempt in range(2):
+        try:
+            evaluation = await _evaluate_once(provider, turn, answer_text)
+            break
+        except LLMError as exc:
+            if attempt == 0:
+                logger.warning("Оценка ответа не удалась, повтор: %s", exc)
+                continue
+            raise
+    if evaluation is None:
+        raise LLMError("Не удалось получить оценку ответа")
     if _needs_second_pass(evaluation):
         try:
             second = await _evaluate_once(provider, turn, answer_text)
@@ -689,7 +703,6 @@ async def _evaluate_once(
         messages,
         EVALUATION_SCHEMA,
         schema_name=EVALUATION_SCHEMA_NAME,
-        max_tokens=700,
     )
     return _score_from_evaluation(result.data, turn.expected_points or ())
 
