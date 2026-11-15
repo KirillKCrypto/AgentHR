@@ -117,6 +117,7 @@ class OpenAIProvider:
         schema: dict[str, Any],
         *,
         schema_name: str = "result",
+        max_tokens: int | None = None,
     ) -> StructuredResult:
         """Возвращает JSON-ответ, соответствующий переданной JSON Schema.
 
@@ -129,10 +130,10 @@ class OpenAIProvider:
         """
         if self._structured_mode == "json_schema":
             try:
-                completion = await self._client.chat.completions.create(
-                    model=self._model,
-                    messages=_to_openai_messages(messages),
-                    response_format={
+                request: dict[str, Any] = {
+                    "model": self._model,
+                    "messages": _to_openai_messages(messages),
+                    "response_format": {
                         "type": "json_schema",
                         "json_schema": {
                             "name": schema_name,
@@ -140,18 +141,28 @@ class OpenAIProvider:
                             "strict": True,
                         },
                     },
-                )
+                }
+                if max_tokens is not None:
+                    request["max_tokens"] = max_tokens
+                completion = await self._client.chat.completions.create(**request)
             except OpenAIError as exc:
                 logger.warning(
                     "Запрос со строгой JSON Schema не прошёл (%s), повторяю без неё", exc
                 )
-                completion = await self._generate_prompt_json(messages, schema)
+                completion = await self._generate_prompt_json(
+                    messages, schema, max_tokens=max_tokens
+                )
         elif self._structured_mode == "json_object":
             completion = await self._generate_prompt_json(
-                messages, schema, response_format={"type": "json_object"}
+                messages,
+                schema,
+                response_format={"type": "json_object"},
+                max_tokens=max_tokens,
             )
         else:
-            completion = await self._generate_prompt_json(messages, schema)
+            completion = await self._generate_prompt_json(
+                messages, schema, max_tokens=max_tokens
+            )
 
         content = completion.choices[0].message.content
         if content is None:
@@ -181,6 +192,7 @@ class OpenAIProvider:
         schema: dict[str, Any],
         *,
         response_format: dict[str, str] | None = None,
+        max_tokens: int | None = None,
     ) -> Any:
         """Запрос со схемой в системном сообщении (режимы json_object и prompt)."""
         instruction = ChatMessage(
@@ -195,6 +207,8 @@ class OpenAIProvider:
         }
         if response_format is not None:
             request["response_format"] = response_format
+        if max_tokens is not None:
+            request["max_tokens"] = max_tokens
         try:
             return await self._client.chat.completions.create(**request)
         except OpenAIError as exc:

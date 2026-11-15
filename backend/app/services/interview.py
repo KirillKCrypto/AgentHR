@@ -40,9 +40,6 @@ EVALUATION_SCHEMA: dict[str, Any] = {
         "point_assessments",
         "critical_errors",
         "confidence",
-        "covered_points",
-        "missed_points",
-        "feedback_brief",
     ],
     "properties": {
         "correctness": {"type": "number", "minimum": 0, "maximum": 50},
@@ -54,11 +51,9 @@ EVALUATION_SCHEMA: dict[str, Any] = {
             "items": {
                 "type": "object",
                 "additionalProperties": False,
-                "required": ["point", "status", "evidence", "importance"],
+                "required": ["status", "importance"],
                 "properties": {
-                    "point": {"type": "string"},
                     "status": {"type": "string", "enum": ["covered", "partial", "missed"]},
-                    "evidence": {"type": "string"},
                     "importance": {
                         "type": "string",
                         "enum": ["essential", "supporting"],
@@ -68,9 +63,6 @@ EVALUATION_SCHEMA: dict[str, Any] = {
         },
         "critical_errors": {"type": "array", "items": {"type": "string"}},
         "confidence": {"type": "number", "minimum": 0, "maximum": 1},
-        "covered_points": {"type": "array", "items": {"type": "string"}},
-        "missed_points": {"type": "array", "items": {"type": "string"}},
-        "feedback_brief": {"type": "string"},
     },
 }
 
@@ -96,11 +88,10 @@ EVALUATION_SYSTEM_PROMPT = (
     "(неверный факт, перепутанный механизм, опасная рекомендация).\n"
     "- confidence 0–1: насколько ты уверен в разборе. Ставь ниже 0.6, если ответ "
     "двусмысленный и его стоит проверить повторно.\n"
-    "- point_assessments: по каждому эталонному пункту status covered/partial/missed, "
-    "importance essential/supporting и короткая цитата или пометка evidence. "
-    "Если пункт не упомянут — missed.\n"
-    "- covered_points и missed_points: только существенные пункты, без дублей.\n"
-    "- feedback_brief: 2–4 предложения, что верно и что подтянуть.\n"
+    "- point_assessments: массив строго в порядке эталонных пунктов; для каждого "
+    "status covered/partial/missed и importance essential/supporting. "
+    "Не копируй текст пункта.\n"
+    "- Не добавляй общий score и длинный разбор: только поля схемы.\n"
     "- Не придумывай факты, которых нет в ответе."
 )
 
@@ -695,12 +686,18 @@ async def _evaluate_once(
         ),
     ]
     result = await provider.generate_structured(
-        messages, EVALUATION_SCHEMA, schema_name=EVALUATION_SCHEMA_NAME
+        messages,
+        EVALUATION_SCHEMA,
+        schema_name=EVALUATION_SCHEMA_NAME,
+        max_tokens=700,
     )
-    return _score_from_evaluation(result.data)
+    return _score_from_evaluation(result.data, turn.expected_points or ())
 
 
-def _score_from_evaluation(data: dict[str, Any]) -> dict[str, Any]:
+def _score_from_evaluation(
+    data: dict[str, Any],
+    expected_points: Sequence[Any] = (),
+) -> dict[str, Any]:
     """Считает итоговую оценку по рубрике и применяет ограничения."""
     if "correctness" not in data and "score" in data:
         score = _clamp_score(data.get("score"))
@@ -724,10 +721,12 @@ def _score_from_evaluation(data: dict[str, Any]) -> dict[str, Any]:
     if assessments:
         earned = 0.0
         total_weight = 0.0
-        for item in assessments:
+        for index, item in enumerate(assessments):
             if not isinstance(item, dict):
                 continue
             point = str(item.get("point") or "").strip()
+            if not point and index < len(expected_points):
+                point = str(expected_points[index]).strip()
             status = str(item.get("status") or "missed")
             importance = str(item.get("importance") or "essential")
             weight = 0.4 if importance == "supporting" else 1.0
@@ -765,12 +764,20 @@ def _score_from_evaluation(data: dict[str, Any]) -> dict[str, Any]:
         raw = min(raw, 45.0)
 
     score = round(max(0.0, min(100.0, raw)), 1)
+    feedback = _clean_text(data.get("feedback_brief"), 1000)
+    if not feedback:
+        parts: list[str] = []
+        if covered:
+            parts.append(f"Верно: {'; '.join(covered[:3])}.")
+        if missed:
+            parts.append(f"Упущено: {'; '.join(missed[:3])}.")
+        feedback = " ".join(parts) or "Оценка сохранена."
     return {
         "score": score,
         "verdict": _verdict_for(score),
         "covered_points": covered[:8],
         "missed_points": missed[:8],
-        "feedback_brief": _clean_text(data.get("feedback_brief"), 1000),
+        "feedback_brief": feedback,
         "breakdown": {
             "score": score,
             "correctness": round(correctness, 1),

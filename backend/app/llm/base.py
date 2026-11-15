@@ -89,6 +89,7 @@ class LLMProvider(Protocol):
         schema: dict[str, Any],
         *,
         schema_name: str = "result",
+        max_tokens: int | None = None,
     ) -> StructuredResult:
         """Возвращает JSON-ответ, соответствующий переданной JSON Schema."""
         ...

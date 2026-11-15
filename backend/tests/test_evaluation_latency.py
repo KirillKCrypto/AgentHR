@@ -44,6 +44,7 @@ class CountingProvider:
         schema: dict[str, Any],
         *,
         schema_name: str = "result",
+        max_tokens: int | None = None,
     ) -> StructuredResult:
         """Возвращает один и тот же разбор."""
         self.calls += 1

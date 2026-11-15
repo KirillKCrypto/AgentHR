@@ -107,6 +107,7 @@ class SchemaStubProvider:
         schema: dict[str, Any],
         *,
         schema_name: str = "result",
+        max_tokens: int | None = None,
     ) -> StructuredResult:
         """Возвращает ответ, привязанный к имени схемы."""
         self.calls.append(schema_name)
