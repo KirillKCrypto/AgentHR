@@ -4,14 +4,25 @@ import hashlib
 import uuid
 from dataclasses import dataclass, replace
 
-from sqlalchemy import func, select
+from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models import LearningPlan, PlanItem, Topic, UserSkillState, Vacancy, VacancySkill
+from app.models import (
+    InterviewSession,
+    InterviewTurn,
+    LearningPlan,
+    PlanItem,
+    Topic,
+    UserSkillState,
+    Vacancy,
+    VacancySkill,
+)
 from app.services.questions import count_by_topic
 
 MIN_TOPICS = 5
 MAX_TOPICS = 12
+# Версия алгоритма плана: старые отпечатки не переиспользуются после смены логики.
+PLAN_VERSION = "2"
 
 
 class PlanError(ValueError):
@@ -63,50 +74,68 @@ class PlanSummary:
     topic_count: int
 
 
+@dataclass
+class PlanCandidate:
+    """Тема-кандидат с накопленным приоритетом слабости."""
+
+    topic: Topic
+    current_level: int
+    confidence: float
+    target_level: int
+    priority: float
+    reasons: list[str]
+
+    def add_reason(self, reason: str) -> None:
+        """Добавляет причину без повторов."""
+        if reason not in self.reasons:
+            self.reasons.append(reason)
+
+
 async def create_plan(
     session: AsyncSession,
     user_id: uuid.UUID,
     *,
     vacancy_id: uuid.UUID | None = None,
 ) -> PlanSnapshot:
-    """Строит план из самых сильных тем резюме пользователя."""
-    vacancy = None
-    required_by_topic: dict[uuid.UUID, int] = {}
+    """Строит план из слабых и незатронутых тем, а не из сильных навыков."""
+    vacancy: Vacancy | None = None
+    vacancy_rows: list[tuple[VacancySkill, Topic]] = []
     if vacancy_id is not None:
         vacancy = await session.get(Vacancy, vacancy_id)
         if vacancy is None or vacancy.user_id != user_id:
             raise PlanNotFoundError("Вакансия не найдена")
-        rows = (
+        vacancy_rows = list(
+            (
+                await session.execute(
+                    select(VacancySkill, Topic)
+                    .join(Topic, Topic.id == VacancySkill.topic_id)
+                    .where(
+                        VacancySkill.vacancy_id == vacancy.id,
+                        Topic.status == "canonical",
+                    )
+                )
+            ).all()
+        )
+
+    profile_rows = list(
+        (
             await session.execute(
-                select(VacancySkill.topic_id, VacancySkill.required_level).where(
-                    VacancySkill.vacancy_id == vacancy.id
+                select(UserSkillState, Topic)
+                .join(Topic, Topic.id == UserSkillState.topic_id)
+                .where(
+                    UserSkillState.user_id == user_id,
+                    Topic.status == "canonical",
+                    UserSkillState.proficiency > 0,
                 )
             )
         ).all()
-        for topic_id, required_level in rows:
-            if topic_id is not None:
-                required_by_topic[topic_id] = max(
-                    required_by_topic.get(topic_id, 0), required_level
-                )
-
-    rows = (
-        await session.execute(
-            select(UserSkillState, Topic)
-            .join(Topic, Topic.id == UserSkillState.topic_id)
-            .where(
-                UserSkillState.user_id == user_id,
-                Topic.status == "canonical",
-                UserSkillState.proficiency > 0,
-            )
-        )
-    ).all()
-    if not rows:
+    )
+    if not profile_rows and not vacancy_rows:
         raise PlanError("Профиль пуст: сначала загрузите резюме")
 
-    fingerprint = await _profile_fingerprint(session, user_id)
+    fingerprint = await _plan_fingerprint(session, user_id, vacancy)
     latest = await session.scalar(
-        select(LearningPlan)
-        .where(LearningPlan.user_id == user_id, LearningPlan.status == "active")
+        _active_plan_query(user_id, vacancy_id)
         .order_by(LearningPlan.created_at.desc())
         .limit(1)
     )
@@ -118,13 +147,30 @@ async def create_plan(
         if latest.profile_fingerprint == fingerprint:
             return replace(await get_plan(session, user_id, latest.id), reused=True)
 
-    candidates: list[tuple[float, UserSkillState, Topic]] = []
-    for state, topic in rows:
-        score = state.proficiency * (0.6 + 0.4 * state.confidence)
-        candidates.append((round(score, 3), state, topic))
+    candidates = await _build_candidates(
+        session,
+        user_id,
+        vacancy,
+        vacancy_rows,
+        profile_rows,
+    )
+    selected = _select_candidates(candidates)
+    if not selected:
+        raise PlanError("Нет тем для плана: сначала загрузите резюме или вакансию")
 
-    candidates.sort(key=lambda pair: (pair[0], pair[1].proficiency, pair[2].name), reverse=True)
-    selected = candidates[:MAX_TOPICS]
+    await session.execute(
+        update(LearningPlan)
+        .where(
+            LearningPlan.user_id == user_id,
+            LearningPlan.status == "active",
+            (
+                LearningPlan.vacancy_id.is_(None)
+                if vacancy is None
+                else LearningPlan.vacancy_id == vacancy.id
+            ),
+        )
+        .values(status="archived")
+    )
 
     plan = LearningPlan(
         user_id=user_id,
@@ -140,40 +186,36 @@ async def create_plan(
     session.add(plan)
     await session.flush()
 
-    question_counts = await count_by_topic(session, [topic.id for _, _, topic in selected])
+    question_counts = await count_by_topic(session, [item.topic.id for item in selected])
     items: list[PlanTopic] = []
-    for position, (score, state, topic) in enumerate(selected, start=1):
-        target = required_by_topic.get(topic.id, 100)
-        reason_parts = [
-            f"Ключевой навык резюме: {state.proficiency}%",
-            f"уверенность {round(state.confidence * 100)}%",
-        ]
-        if topic.id in required_by_topic:
-            reason_parts.append(f"в вакансии требуется {target}%")
+    for position, candidate in enumerate(selected, start=1):
+        reason = "; ".join(candidate.reasons) or (
+            f"низкий уровень в профиле: {candidate.current_level}%"
+        )
         session.add(
             PlanItem(
                 plan_id=plan.id,
-                topic_id=topic.id,
+                topic_id=candidate.topic.id,
                 position=position,
-                current_level=state.proficiency,
-                target_level=target,
-                confidence=state.confidence,
-                priority=score,
-                reason="; ".join(reason_parts),
+                current_level=candidate.current_level,
+                target_level=candidate.target_level,
+                confidence=candidate.confidence,
+                priority=round(candidate.priority, 3),
+                reason=reason,
             )
         )
         items.append(
             PlanTopic(
-                topic_id=topic.id,
-                topic_key=topic.key,
-                topic_name=topic.name,
-                category=topic.category,
-                current_level=state.proficiency,
-                confidence=state.confidence,
-                target_level=target,
-                priority=score,
-                reason="; ".join(reason_parts),
-                question_count=question_counts.get(topic.id, 0),
+                topic_id=candidate.topic.id,
+                topic_key=candidate.topic.key,
+                topic_name=candidate.topic.name,
+                category=candidate.topic.category,
+                current_level=candidate.current_level,
+                confidence=candidate.confidence,
+                target_level=candidate.target_level,
+                priority=round(candidate.priority, 3),
+                reason=reason,
+                question_count=question_counts.get(candidate.topic.id, 0),
             )
         )
     await session.commit()
@@ -185,6 +227,156 @@ async def create_plan(
         title=plan.title,
         status=plan.status,
         items=tuple(items),
+    )
+
+
+def _active_plan_query(user_id: uuid.UUID, vacancy_id: uuid.UUID | None):
+    """Активный план для того же источника: вакансия или профиль."""
+    vacancy_filter = (
+        LearningPlan.vacancy_id.is_(None)
+        if vacancy_id is None
+        else LearningPlan.vacancy_id == vacancy_id
+    )
+    return select(LearningPlan).where(
+        LearningPlan.user_id == user_id,
+        LearningPlan.status == "active",
+        vacancy_filter,
+    )
+
+
+async def _build_candidates(
+    session: AsyncSession,
+    user_id: uuid.UUID,
+    vacancy: Vacancy | None,
+    vacancy_rows: list[tuple[VacancySkill, Topic]],
+    profile_rows: list[tuple[UserSkillState, Topic]],
+) -> list[PlanCandidate]:
+    """Собирает темы по слабости: разрывы, интервью и уверенность."""
+    states = {state.topic_id: state for state, _ in profile_rows}
+    candidates: dict[uuid.UUID, PlanCandidate] = {}
+
+    def candidate_for(topic: Topic, target: int = 100) -> PlanCandidate:
+        existing = candidates.get(topic.id)
+        if existing is not None:
+            existing.target_level = max(existing.target_level, target)
+            return existing
+        state = states.get(topic.id)
+        current = state.proficiency if state is not None else 0
+        confidence = state.confidence if state is not None else 0.0
+        created = PlanCandidate(
+            topic=topic,
+            current_level=current,
+            confidence=confidence,
+            target_level=target,
+            priority=0.0,
+            reasons=[],
+        )
+        candidates[topic.id] = created
+        return created
+
+    # 1. Разрывы вакансии: главный источник слабых тем.
+    vacancy_targets: dict[uuid.UUID, int] = {}
+    for skill, topic in vacancy_rows:
+        candidate = candidate_for(topic, max(skill.required_level, 1))
+        target = candidate.target_level
+        vacancy_targets[topic.id] = target
+        gap = max(0, target - candidate.current_level)
+        if gap <= 0:
+            continue
+        factor = 1.6 if skill.criticality == "must_have" else 0.7
+        priority = (gap / max(target, 1)) * 100 * skill.weight * factor
+        if candidate.current_level == 0:
+            priority += 20
+            candidate.add_reason(
+                f"тема вакансии не подтверждена в профиле (требуется {target}%)"
+            )
+        else:
+            candidate.add_reason(
+                f"разрыв {gap}: требуется {target}%, в профиле {candidate.current_level}%"
+            )
+        candidate.priority += priority
+
+    # 2. Слабые ответы и незатронутые темы последнего интервью.
+    interview = await _latest_interview(session, user_id, vacancy)
+    if interview is not None:
+        turn_rows = list(
+            (
+                await session.execute(
+                    select(InterviewTurn, Topic)
+                    .join(Topic, Topic.id == InterviewTurn.topic_id)
+                    .where(InterviewTurn.session_id == interview.id)
+                )
+            ).all()
+        )
+        asked = {turn.topic_id for turn, _ in turn_rows}
+        for turn, topic in turn_rows:
+            if turn.score is None or turn.score >= 70:
+                continue
+            candidate = candidate_for(topic, vacancy_targets.get(topic.id, 100))
+            candidate.priority += (70 - turn.score) * 1.2 + 10
+            candidate.add_reason(f"слабый ответ в интервью: {round(turn.score)}/100")
+        if vacancy is not None:
+            for skill, topic in vacancy_rows:
+                if topic.id in asked:
+                    continue
+                candidate = candidate_for(topic, vacancy_targets.get(topic.id, 100))
+                factor = 1.4 if skill.criticality == "must_have" else 0.8
+                candidate.priority += 60 * skill.weight * factor
+                candidate.add_reason("не затронуто в интервью по вакансии")
+
+    # 3. Слабые темы профиля: основа плана без вакансии и добор до минимума.
+    for state, topic in profile_rows:
+        if topic.id in vacancy_targets:
+            continue
+        candidate = candidate_for(topic, 100)
+        confidence_factor = 1 - 0.35 * candidate.confidence
+        weakness = (100 - candidate.current_level) * confidence_factor
+        scale = 0.6 if vacancy is not None else 1.0
+        candidate.priority += weakness * scale
+        candidate.add_reason(f"низкий уровень в профиле: {candidate.current_level}%")
+        if candidate.confidence < 0.5:
+            candidate.add_reason(
+                f"низкая уверенность {round(candidate.confidence * 100)}%"
+            )
+
+    return list(candidates.values())
+
+
+def _select_candidates(candidates: list[PlanCandidate]) -> list[PlanCandidate]:
+    """Сначала самые слабые и важные, затем добор до MIN_TOPICS."""
+    weak = [candidate for candidate in candidates if candidate.priority > 0]
+    weak.sort(
+        key=lambda item: (-item.priority, item.current_level, item.topic.name)
+    )
+    selected = weak[:MAX_TOPICS]
+    if len(selected) < MIN_TOPICS:
+        chosen = {item.topic.id for item in selected}
+        rest = [
+            candidate
+            for candidate in candidates
+            if candidate.topic.id not in chosen
+        ]
+        rest.sort(
+            key=lambda item: (item.current_level, item.confidence, item.topic.name)
+        )
+        selected.extend(rest[: MIN_TOPICS - len(selected)])
+    return selected[:MAX_TOPICS]
+
+
+async def _latest_interview(
+    session: AsyncSession,
+    user_id: uuid.UUID,
+    vacancy: Vacancy | None,
+) -> InterviewSession | None:
+    """Последнее завершённое интервью: по вакансии или любое."""
+    query = select(InterviewSession).where(
+        InterviewSession.user_id == user_id,
+        InterviewSession.status == "completed",
+    )
+    if vacancy is not None:
+        query = query.where(InterviewSession.vacancy_id == vacancy.id)
+    return await session.scalar(
+        query.order_by(InterviewSession.finished_at.desc()).limit(1)
     )
 
 
@@ -262,8 +454,12 @@ async def list_plans(session: AsyncSession, user_id: uuid.UUID) -> list[PlanSumm
     return result
 
 
-async def _profile_fingerprint(session: AsyncSession, user_id: uuid.UUID) -> str:
-    """Стабильный отпечаток текущего профиля знаний."""
+async def _plan_fingerprint(
+    session: AsyncSession,
+    user_id: uuid.UUID,
+    vacancy: Vacancy | None,
+) -> str:
+    """Отпечаток источника плана: профиль, вакансия и последнее интервью."""
     states = (
         await session.scalars(
             select(UserSkillState)
@@ -272,15 +468,53 @@ async def _profile_fingerprint(session: AsyncSession, user_id: uuid.UUID) -> str
         )
     ).all()
     parts = [
-        ":".join(
-            [
-                str(state.topic_id),
-                str(state.proficiency),
-                str(state.confidence),
-                state.source,
-                state.last_assessed.isoformat() if state.last_assessed else "",
-            ]
-        )
-        for state in states
+        f"plan:{PLAN_VERSION}",
+        *[
+            ":".join(
+                [
+                    str(state.topic_id),
+                    str(state.proficiency),
+                    str(state.confidence),
+                    state.source,
+                    state.last_assessed.isoformat() if state.last_assessed else "",
+                ]
+            )
+            for state in states
+        ],
     ]
+
+    if vacancy is None:
+        parts.append("vacancy:none")
+    else:
+        parts.append(f"vacancy:{vacancy.id}")
+        requirement_rows = (
+            await session.execute(
+                select(
+                    VacancySkill.topic_id,
+                    VacancySkill.required_level,
+                    VacancySkill.weight,
+                    VacancySkill.criticality,
+                )
+                .where(VacancySkill.vacancy_id == vacancy.id)
+                .order_by(VacancySkill.topic_id)
+            )
+        ).all()
+        parts.extend(
+            ":".join(
+                [
+                    str(topic_id),
+                    str(required_level),
+                    str(weight),
+                    criticality,
+                ]
+            )
+            for topic_id, required_level, weight, criticality in requirement_rows
+        )
+
+    interview = await _latest_interview(session, user_id, vacancy)
+    parts.append(
+        "interview:none"
+        if interview is None
+        else f"interview:{interview.id}:{interview.finished_at}"
+    )
     return hashlib.sha256("|".join(parts).encode("utf-8")).hexdigest()

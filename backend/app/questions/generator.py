@@ -64,10 +64,17 @@ async def generate_questions(
     topic: Topic,
     difficulty: int,
     count: int,
+    *,
+    focus: str | None = None,
 ) -> list[dict[str, Any]]:
     """Возвращает вопросы по теме или пустой список при сбое LLM."""
     label = DIFFICULTY_LABELS.get(difficulty, DIFFICULTY_LABELS[3])
     aliases = ", ".join(topic.aliases or ())
+    focus_line = (
+        f"Сделай вопросы уточняющими: кандидат упустил пункты: {focus}\n"
+        if focus
+        else ""
+    )
     prompt = (
         f"Тема: {topic.name}\n"
         f"Ключ: {topic.key}\n"
@@ -75,6 +82,7 @@ async def generate_questions(
         f"Описание: {topic.description or '—'}\n"
         f"Синонимы: {aliases or '—'}\n"
         f"Сложность: {difficulty}/5 — {label}\n"
+        f"{focus_line}"
         f"Составь {max(1, count)} вопрос(ов) этого уровня."
     )
     try:

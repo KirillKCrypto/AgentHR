@@ -179,8 +179,9 @@ export default function InterviewPage() {
   }
 
   const answered = session.turns.filter((turn) => turn.status === 'answered')
-  const progress = session.question_count
-    ? Math.round((answered.length / session.question_count) * 100)
+  const totalQuestions = session.max_questions || session.question_count
+  const progress = totalQuestions
+    ? Math.round((answered.length / totalQuestions) * 100)
     : 0
 
   return (
@@ -189,7 +190,7 @@ export default function InterviewPage() {
         <CardHeader>
           <CardTitle>{session.title || 'Тренировочное интервью'}</CardTitle>
           <CardDescription>
-            Отвечено {answered.length} из {session.question_count}. Интервью можно проходить
+            Отвечено {answered.length} из {totalQuestions}. Интервью можно проходить
             повторно.
           </CardDescription>
         </CardHeader>
@@ -296,6 +297,11 @@ export default function InterviewPage() {
           <CardHeader>
             <CardTitle>
               Вопрос {currentTurn.position}: {currentTurn.topic_name}
+              {currentTurn.kind === 'follow_up' ? (
+                <Badge variant="secondary" className="ml-2">
+                  уточнение
+                </Badge>
+              ) : null}
             </CardTitle>
             <CardDescription>
               Сложность {currentTurn.difficulty}/5. Ответьте текстом, интервьюер оценит

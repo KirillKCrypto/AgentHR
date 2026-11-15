@@ -94,6 +94,8 @@ class InterviewTurnData:
     question_id: uuid.UUID | None
     question_text: str
     context: str | None
+    kind: str
+    parent_turn_id: uuid.UUID | None
     difficulty: int
     status: str
     answer_text: str | None
@@ -119,6 +121,7 @@ class InterviewSnapshot:
     score: float | None
     level: int | None
     question_count: int
+    max_questions: int
     answered_count: int
     created_at: datetime
     started_at: datetime | None
@@ -259,22 +262,24 @@ async def create_interview(
         level_band = _vacancy_level_band_from_skills(vacancy, skill_rows)
 
     difficulties = _difficulties_for_level(level_band)
-    selected: list[tuple[Topic, str | None, Question]] = []
-    for position, (topic, current, target, context) in enumerate(rows):
-        if len(selected) >= MAX_INTERVIEW_QUESTIONS:
-            break
-        if difficulties is not None:
-            difficulty = difficulties[len(selected) % len(difficulties)]
-        else:
-            difficulty = _difficulty_for(current, target)
-        question = await _pick_or_generate_question(
-            session, topic, difficulty, provider
+    topic_plan: list[dict[str, Any]] = []
+    for index, (topic, current, target, context) in enumerate(
+        rows[:MAX_INTERVIEW_QUESTIONS]
+    ):
+        difficulty = (
+            difficulties[index % len(difficulties)]
+            if difficulties is not None
+            else _difficulty_for(current, target)
         )
-        if question is not None:
-            selected.append((topic, context, question))
-
-    if not selected:
-        raise InterviewError("В банке нет вопросов для выбранных тем")
+        topic_plan.append(
+            {
+                "topic_id": str(topic.id),
+                "current": current,
+                "target": target,
+                "context": context,
+                "difficulty": difficulty,
+            }
+        )
 
     interview = InterviewSession(
         user_id=user_id,
@@ -282,26 +287,17 @@ async def create_interview(
         vacancy_id=vacancy.id if vacancy is not None else None,
         title=source_title,
         status="in_progress",
-        question_count=len(selected),
+        question_count=0,
+        max_questions=MAX_INTERVIEW_QUESTIONS,
+        topic_plan=topic_plan,
         started_at=datetime.now(UTC),
     )
     session.add(interview)
     await session.flush()
 
-    for position, (topic, context, question) in enumerate(selected, start=1):
-        session.add(
-            InterviewTurn(
-                session_id=interview.id,
-                topic_id=question.topic_id,
-                question_id=question.id,
-                position=position,
-                question_text=question.text,
-                context=context,
-                expected_points=list(question.expected_points or []),
-                difficulty=question.difficulty,
-                status="pending",
-            )
-        )
+    first_turn = await _add_base_turn(session, interview, provider)
+    if first_turn is None:
+        raise InterviewError("В банке нет вопросов для выбранных тем")
     await session.commit()
     return await get_interview(session, user_id, interview.id)
 
@@ -483,15 +479,20 @@ async def answer_turn(
     turn.answered_at = datetime.now(UTC)
     await session.flush()
 
-    next_turn = await session.scalar(
-        select(InterviewTurn)
-        .where(
-            InterviewTurn.session_id == interview.id,
-            InterviewTurn.status == "pending",
-        )
-        .order_by(InterviewTurn.position)
-        .limit(1)
-    )
+    next_turn: InterviewTurn | None = None
+    if interview.question_count < interview.max_questions:
+        if _needs_follow_up(turn, evaluation["score"]):
+            next_turn = await _add_follow_up_turn(
+                session, interview, turn, provider
+            )
+        if next_turn is None:
+            delta = _difficulty_delta(evaluation["score"])
+            next_turn = await _add_base_turn(
+                session,
+                interview,
+                provider,
+                difficulty_delta=delta,
+            )
     finished = next_turn is None
     if finished:
         await _finish(session, interview)
@@ -636,6 +637,7 @@ def _snapshot(
         score=interview.score,
         level=interview.level,
         question_count=interview.question_count,
+        max_questions=interview.max_questions,
         answered_count=sum(1 for turn in turns if turn.status == "answered"),
         created_at=interview.created_at,
         started_at=interview.started_at,
@@ -655,6 +657,8 @@ def _turn_data(turn: InterviewTurn, topic: Topic) -> InterviewTurnData:
         question_id=turn.question_id,
         question_text=turn.question_text,
         context=turn.context,
+        kind=turn.kind,
+        parent_turn_id=turn.parent_turn_id,
         difficulty=turn.difficulty,
         status=turn.status,
         answer_text=turn.answer_text,
@@ -675,36 +679,203 @@ def _find_turn(snapshot: InterviewSnapshot, turn_id: uuid.UUID) -> InterviewTurn
     raise InterviewNotFound("Вопрос интервью не найден")
 
 
+async def _add_base_turn(
+    session: AsyncSession,
+    interview: InterviewSession,
+    provider: LLMProvider | None,
+    *,
+    difficulty_delta: int = 0,
+) -> InterviewTurn | None:
+    """Добавляет вопрос по следующей незатронутой теме плана."""
+    if interview.question_count >= interview.max_questions:
+        return None
+    asked_topics = set(
+        await session.scalars(
+            select(InterviewTurn.topic_id).where(
+                InterviewTurn.session_id == interview.id
+            )
+        )
+    )
+    for entry in interview.topic_plan or []:
+        topic_id = uuid.UUID(str(entry.get("topic_id")))
+        if topic_id in asked_topics:
+            continue
+        topic = await session.get(Topic, topic_id)
+        if topic is None:
+            continue
+        difficulty = int(entry.get("difficulty", 3)) + difficulty_delta
+        low, high = _difficulty_bounds(interview)
+        difficulty = max(low, min(high, difficulty))
+        question = await _pick_or_generate_question(
+            session, topic, difficulty, provider
+        )
+        if question is None:
+            continue
+        return await _append_turn(
+            session,
+            interview,
+            question,
+            context=entry.get("context"),
+            kind="base",
+        )
+    return None
+
+
+async def _add_follow_up_turn(
+    session: AsyncSession,
+    interview: InterviewSession,
+    parent: InterviewTurn,
+    provider: LLMProvider | None,
+) -> InterviewTurn | None:
+    """Добавляет уточняющий вопрос по упущенным пунктам."""
+    if interview.question_count >= interview.max_questions:
+        return None
+    turns = (
+        await session.scalars(
+            select(InterviewTurn).where(
+                InterviewTurn.session_id == interview.id
+            )
+        )
+    ).all()
+    follow_ups = [turn for turn in turns if turn.kind == "follow_up"]
+    if len(follow_ups) >= 2:
+        return None
+    if any(turn.topic_id == parent.topic_id for turn in follow_ups):
+        return None
+
+    topic = await session.get(Topic, parent.topic_id)
+    if topic is None:
+        return None
+    asked_questions = {turn.question_id for turn in turns if turn.question_id}
+    focus = "; ".join(str(item) for item in parent.missed_points or [])
+    question = await _pick_or_generate_question(
+        session,
+        topic,
+        parent.difficulty,
+        provider,
+        exclude_ids=asked_questions,
+        focus=focus,
+    )
+    if question is None:
+        return None
+    return await _append_turn(
+        session,
+        interview,
+        question,
+        context=parent.context,
+        kind="follow_up",
+        parent_turn_id=parent.id,
+    )
+
+
+async def _append_turn(
+    session: AsyncSession,
+    interview: InterviewSession,
+    question: Question,
+    *,
+    context: str | None,
+    kind: str,
+    parent_turn_id: uuid.UUID | None = None,
+) -> InterviewTurn:
+    """Создаёт ход интервью и увеличивает счётчик вопросов."""
+    position = interview.question_count + 1
+    turn = InterviewTurn(
+        session_id=interview.id,
+        topic_id=question.topic_id,
+        question_id=question.id,
+        position=position,
+        question_text=question.text,
+        context=context,
+        kind=kind,
+        parent_turn_id=parent_turn_id,
+        expected_points=list(question.expected_points or []),
+        difficulty=question.difficulty,
+        status="pending",
+    )
+    session.add(turn)
+    interview.question_count = position
+    await session.flush()
+    return turn
+
+
+def _needs_follow_up(turn: InterviewTurn, score: float) -> bool:
+    """Уточнение нужно только по базовому вопросу с упущенными пунктами."""
+    return (
+        turn.kind == "base"
+        and score < 70
+        and bool(turn.missed_points)
+    )
+
+
+def _difficulty_delta(score: float) -> int:
+    """Шаг адаптации: сильный ответ сложнее, слабый проще."""
+    if score >= 85:
+        return 1
+    if score < 50:
+        return -1
+    return 0
+
+
+def _difficulty_bounds(interview: InterviewSession) -> tuple[int, int]:
+    """Диапазон сложности из плана тем: junior/middle не выше 3."""
+    values = [
+        int(entry.get("difficulty", 3))
+        for entry in interview.topic_plan or []
+    ] or [3]
+    return 1, 3 if max(values) <= 3 else 5
+
+
 async def _pick_or_generate_question(
     session: AsyncSession,
     topic: Topic,
     difficulty: int,
     provider: LLMProvider | None,
+    *,
+    exclude_ids: set[uuid.UUID] | None = None,
+    focus: str | None = None,
 ) -> Question | None:
     """Берёт вопрос нужной сложности или генерирует его для темы.
 
     Если в банке есть вопросы только других сложностей, сначала добирается
     нужная сложность. Иначе senior-интервью молча получало бы вопросы 1 и 3.
     """
-    questions = await pick_questions(session, topic.id, difficulty=difficulty, limit=1)
+    questions = await pick_questions(
+        session,
+        topic.id,
+        difficulty=difficulty,
+        limit=1,
+        exclude_ids=exclude_ids,
+    )
     if questions:
         return await session.get(Question, questions[0].id)
 
     if provider is not None:
         try:
-            generated = await generate_questions(provider, topic, difficulty, 3)
+            generated = await generate_questions(
+                provider, topic, difficulty, 3, focus=focus
+            )
         except LLMError:
             generated = []
         if generated:
             await add_questions(session, topic.id, difficulty, generated)
             await session.flush()
             questions = await pick_questions(
-                session, topic.id, difficulty=difficulty, limit=1
+                session,
+                topic.id,
+                difficulty=difficulty,
+                limit=1,
+                exclude_ids=exclude_ids,
             )
             if questions:
                 return await session.get(Question, questions[0].id)
 
-    questions = await pick_questions(session, topic.id, difficulty=None, limit=1)
+    questions = await pick_questions(
+        session,
+        topic.id,
+        difficulty=None,
+        limit=1,
+        exclude_ids=exclude_ids,
+    )
     if not questions:
         return None
     return await session.get(Question, questions[0].id)

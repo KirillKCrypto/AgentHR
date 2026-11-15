@@ -59,6 +59,43 @@ async def _create_plan(api_user: ApiUser) -> str:
     return plan.json()["id"]
 
 
+def _set_evaluation(
+    api_user: ApiUser,
+    score: float,
+    *,
+    missed_points: list[str] | None = None,
+) -> None:
+    """Задаёт ответ LLM на оценку следующего ответа."""
+    api_user.provider.responses["interview_evaluation"] = {
+        "score": score,
+        "verdict": "strong" if score >= 80 else "weak",
+        "covered_points": ["основная мысль"],
+        "missed_points": missed_points if missed_points is not None else ["деталь"],
+        "feedback_brief": "Ответ оценён.",
+    }
+
+
+async def _drive_interview(api_user: ApiUser, session: dict) -> dict:
+    """Отвечает на все вопросы, пока интервью не завершится."""
+    for _ in range(16):
+        if session["status"] == "completed":
+            break
+        turn = next(
+            (item for item in session["turns"] if item["status"] == "pending"),
+            None,
+        )
+        if turn is None:
+            break
+        response = await api_user.client.post(
+            f"/interviews/{session['id']}/answers",
+            json={"turn_id": turn["id"], "answer_text": "Ответ по существу вопроса."},
+            headers=api_user.headers,
+        )
+        assert response.status_code == 200, response.text
+        session = response.json()["session"]
+    return session
+
+
 async def test_interview_flow_updates_profile(api_user: ApiUser) -> None:
     """Интервью проходит вопросы и обновляет профиль после последнего ответа."""
     plan_id = await _create_plan(api_user)
@@ -78,8 +115,9 @@ async def test_interview_flow_updates_profile(api_user: ApiUser) -> None:
     assert created.status_code == 201, created.text
     interview = created.json()
     assert interview["status"] == "in_progress"
-    assert 1 <= interview["question_count"] <= 8
-    assert len(interview["turns"]) == interview["question_count"]
+    assert interview["question_count"] == 1
+    assert len(interview["turns"]) == 1
+    assert interview["max_questions"] == 8
 
     first = interview["turns"][0]
     answered = await api_user.client.post(
@@ -91,6 +129,7 @@ async def test_interview_flow_updates_profile(api_user: ApiUser) -> None:
     outcome = answered.json()
     assert outcome["turn"]["score"] == 80
     assert outcome["turn"]["status"] == "answered"
+    assert outcome["next_turn"] is not None
 
     repeated = await api_user.client.post(
         f"/interviews/{interview['id']}/answers",
@@ -99,15 +138,7 @@ async def test_interview_flow_updates_profile(api_user: ApiUser) -> None:
     )
     assert repeated.status_code == 409
 
-    current = interview
-    for turn in current["turns"][1:]:
-        response = await api_user.client.post(
-            f"/interviews/{current['id']}/answers",
-            json={"turn_id": turn["id"], "answer_text": "Ответ по существу вопроса."},
-            headers=api_user.headers,
-        )
-        assert response.status_code == 200, response.text
-        current = response.json()["session"]
+    current = await _drive_interview(api_user, outcome["session"])
 
     final = await api_user.client.get(
         f"/interviews/{interview['id']}",
@@ -117,6 +148,7 @@ async def test_interview_flow_updates_profile(api_user: ApiUser) -> None:
     body = final.json()
     assert body["status"] == "completed"
     assert body["level"] == 80
+    assert current["status"] == "completed"
 
     profile = await api_user.client.get("/profile", headers=api_user.headers)
     topics = {topic["topic_key"]: topic for topic in profile.json()["topics"]}
@@ -162,11 +194,16 @@ async def test_vacancy_interview_uses_vacancy_topics(api_user: ApiUser) -> None:
     assert interview.status_code == 201, interview.text
     body = interview.json()
     assert body["vacancy_id"] == vacancy.json()["id"]
-    assert body["question_count"] >= 1
-    assert {turn["topic_key"] for turn in body["turns"]} == {"python", "sql"}
-    assert all(turn["context"] for turn in body["turns"])
+    assert body["question_count"] == 1
+    assert body["turns"][0]["topic_key"] in {"python", "sql"}
+    assert body["turns"][0]["context"]
     assert vacancy.json()["level"] == "middle"
-    assert all(turn["difficulty"] <= 3 for turn in body["turns"])
+
+    _set_evaluation(api_user, 80)
+    final = await _drive_interview(api_user, body)
+    assert {turn["topic_key"] for turn in final["turns"]} == {"python", "sql"}
+    assert all(turn["context"] for turn in final["turns"])
+    assert all(turn["difficulty"] <= 3 for turn in final["turns"])
 
 
 async def test_senior_title_overrides_wrong_llm_level(api_user: ApiUser) -> None:
@@ -203,7 +240,9 @@ async def test_senior_title_overrides_wrong_llm_level(api_user: ApiUser) -> None
         headers=api_user.headers,
     )
     assert interview.status_code == 201, interview.text
-    difficulties = [turn["difficulty"] for turn in interview.json()["turns"]]
+    _set_evaluation(api_user, 80)
+    final = await _drive_interview(api_user, interview.json())
+    difficulties = [turn["difficulty"] for turn in final["turns"]]
     assert 5 in difficulties, difficulties
 
 
@@ -266,13 +305,21 @@ async def test_interview_report_marks_strengths_and_untouched(
     )
     assert early.status_code == 409
 
-    for turn in interview["turns"]:
+    for _ in range(16):
         response = await api_user.client.post(
             f"/interviews/{interview['id']}/answers",
-            json={"turn_id": turn["id"], "answer_text": "Ответ по существу вопроса."},
+            json={
+                "turn_id": interview["turns"][-1]["id"],
+                "answer_text": "Ответ по существу вопроса.",
+            },
             headers=api_user.headers,
         )
-        assert response.status_code == 200, response.text
+        assert response.status_code in (200, 409), response.text
+        if response.status_code == 409:
+            break
+        interview = response.json()["session"]
+        if interview["status"] == "completed":
+            break
 
     report = await api_user.client.get(
         f"/interviews/{interview['id']}/report",
@@ -324,16 +371,10 @@ async def test_interview_report_marks_weak_topics(api_user: ApiUser) -> None:
         headers=api_user.headers,
     )
     interview = created.json()
-    for turn in interview["turns"]:
-        response = await api_user.client.post(
-            f"/interviews/{interview['id']}/answers",
-            json={"turn_id": turn["id"], "answer_text": "Короткий ответ."},
-            headers=api_user.headers,
-        )
-        assert response.status_code == 200, response.text
+    final = await _drive_interview(api_user, interview)
 
     report = await api_user.client.get(
-        f"/interviews/{interview['id']}/report",
+        f"/interviews/{final['id']}/report",
         headers=api_user.headers,
     )
     body = report.json()
@@ -376,3 +417,126 @@ async def test_interview_stream_returns_events(api_user: ApiUser) -> None:
     assert "event: token" in response.text
     assert "event: done" in response.text
     assert "Хороший ответ" in response.text
+
+
+async def test_strong_answer_increases_difficulty(api_user: ApiUser) -> None:
+    """Сильный ответ повышает сложность следующего вопроса на шаг."""
+    api_user.provider.responses["vacancy_requirements"] = {
+        "title": "Backend",
+        "company": "Acme",
+        "level": "senior",
+        "skills": [
+            {
+                "name": name,
+                "required_level": 70,
+                "weight": 1.0,
+                "evidence": name,
+                "confidence": 0.9,
+            }
+            for name in ("Python", "SQL", "Docker")
+        ],
+    }
+    vacancy = await api_user.client.post(
+        "/vacancies",
+        json={"title": "Senior Backend", "raw_text": "Python SQL Docker"},
+        headers=api_user.headers,
+    )
+    assert vacancy.status_code == 201, vacancy.text
+    api_user.provider.responses["interview_questions"] = {
+        "questions": [
+            {
+                "text": "Как устроена изоляция транзакций в PostgreSQL?",
+                "expected_points": ["уровни изоляции", "MVCC", "аномалии"],
+            }
+        ]
+    }
+    _set_evaluation(api_user, 90, missed_points=[])
+
+    created = await api_user.client.post(
+        "/interviews",
+        json={"vacancy_id": vacancy.json()["id"]},
+        headers=api_user.headers,
+    )
+    interview = created.json()
+    assert interview["turns"][0]["difficulty"] == 1
+
+    final = await _drive_interview(api_user, interview)
+    difficulties = [turn["difficulty"] for turn in final["turns"]]
+    assert difficulties[1] == 4, difficulties
+    assert max(difficulties) <= 5, difficulties
+
+
+async def test_weak_answer_adds_follow_up(api_user: ApiUser) -> None:
+    """Слабый ответ создаёт уточняющий вопрос по той же теме."""
+    api_user.provider.responses["vacancy_requirements"] = {
+        "title": "Backend",
+        "company": "Acme",
+        "level": "middle",
+        "skills": [
+            {
+                "name": "Python",
+                "required_level": 70,
+                "weight": 1.0,
+                "evidence": "Python",
+                "confidence": 0.9,
+            }
+        ],
+    }
+    vacancy = await api_user.client.post(
+        "/vacancies",
+        json={"title": "Backend", "raw_text": "Python"},
+        headers=api_user.headers,
+    )
+    assert vacancy.status_code == 201, vacancy.text
+    _set_evaluation(api_user, 40, missed_points=["индексы", "план запроса"])
+
+    created = await api_user.client.post(
+        "/interviews",
+        json={"vacancy_id": vacancy.json()["id"]},
+        headers=api_user.headers,
+    )
+    interview = created.json()
+    final = await _drive_interview(api_user, interview)
+
+    follow_ups = [turn for turn in final["turns"] if turn["kind"] == "follow_up"]
+    assert len(follow_ups) == 1
+    assert follow_ups[0]["parent_turn_id"] == final["turns"][0]["id"]
+    assert follow_ups[0]["topic_key"] == final["turns"][0]["topic_key"]
+
+
+async def test_follow_up_limit_is_enforced(api_user: ApiUser) -> None:
+    """Не больше двух уточнений за сессию и одного на тему."""
+    api_user.provider.responses["vacancy_requirements"] = {
+        "title": "Backend",
+        "company": "Acme",
+        "level": "middle",
+        "skills": [
+            {
+                "name": name,
+                "required_level": 70,
+                "weight": 1.0,
+                "evidence": name,
+                "confidence": 0.9,
+            }
+            for name in ("Python", "SQL", "Docker")
+        ],
+    }
+    vacancy = await api_user.client.post(
+        "/vacancies",
+        json={"title": "Backend", "raw_text": "Python SQL Docker"},
+        headers=api_user.headers,
+    )
+    assert vacancy.status_code == 201, vacancy.text
+    _set_evaluation(api_user, 40, missed_points=["деталь"])
+
+    created = await api_user.client.post(
+        "/interviews",
+        json={"vacancy_id": vacancy.json()["id"]},
+        headers=api_user.headers,
+    )
+    final = await _drive_interview(api_user, created.json())
+
+    follow_ups = [turn for turn in final["turns"] if turn["kind"] == "follow_up"]
+    assert len(follow_ups) <= 2
+    topics = [turn["topic_id"] for turn in follow_ups]
+    assert len(topics) == len(set(topics))

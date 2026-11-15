@@ -51,6 +51,12 @@ class InterviewSession(Base):
     score: Mapped[float | None] = mapped_column(Float, nullable=True)
     level: Mapped[int | None] = mapped_column(Integer, nullable=True)
     question_count: Mapped[int] = mapped_column(Integer, default=0)
+    # Бюджет вопросов: база + follow-up.
+    max_questions: Mapped[int] = mapped_column(Integer, default=8, server_default=text("8"))
+    # Очередь тем: [{topic_id, current, target, context}, ...]
+    topic_plan: Mapped[list[Any]] = mapped_column(
+        JSONB, default=list, server_default=text("'[]'::jsonb")
+    )
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
@@ -90,6 +96,15 @@ class InterviewTurn(Base):
     question_text: Mapped[str] = mapped_column(Text)
     # Контекст из вакансии: исходное требование и evidence.
     context: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # base | follow_up
+    kind: Mapped[str] = mapped_column(
+        String(20), default="base", server_default=text("'base'")
+    )
+    parent_turn_id: Mapped[uuid.UUID | None] = mapped_column(
+        Uuid,
+        ForeignKey("interview_turns.id", ondelete="SET NULL"),
+        nullable=True,
+    )
     expected_points: Mapped[list[Any]] = mapped_column(
         JSONB, default=list, server_default=text("'[]'::jsonb")
     )

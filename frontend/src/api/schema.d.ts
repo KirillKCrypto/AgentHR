@@ -816,6 +816,11 @@ export interface components {
             level?: number | null;
             /** Question Count */
             question_count: number;
+            /**
+             * Max Questions
+             * @default 8
+             */
+            max_questions: number;
             /** Answered Count */
             answered_count: number;
             /**
@@ -933,6 +938,13 @@ export interface components {
             question_text: string;
             /** Context */
             context?: string | null;
+            /**
+             * Kind
+             * @default base
+             */
+            kind: string;
+            /** Parent Turn Id */
+            parent_turn_id?: string | null;
             /** Difficulty */
             difficulty: number;
             /** Status */

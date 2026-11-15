@@ -30,6 +30,8 @@ class InterviewTurnRead(BaseModel):
     topic_name: str
     question_text: str
     context: str | None = None
+    kind: str = "base"
+    parent_turn_id: UUID | None = None
     difficulty: int
     status: str
     answer_text: str | None = None
@@ -54,6 +56,7 @@ class InterviewRead(BaseModel):
     score: float | None = None
     level: int | None = None
     question_count: int
+    max_questions: int = 8
     answered_count: int
     created_at: datetime
     started_at: datetime | None = None

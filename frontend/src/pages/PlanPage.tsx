@@ -86,7 +86,8 @@ export default function PlanPage() {
         <CardHeader>
           <CardTitle>{plan.title}</CardTitle>
           <CardDescription>
-            {plan.items.length} тем из вашего резюме. Сначала самые сильные навыки.
+            {plan.items.length} тем: сначала разрывы вакансии, слабые ответы и
+            незатронутые темы.
           </CardDescription>
         </CardHeader>
         <CardContent className="flex flex-wrap gap-2">
