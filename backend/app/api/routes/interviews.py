@@ -2,6 +2,7 @@
 
 import json
 from collections.abc import AsyncIterator
+from time import perf_counter
 from uuid import UUID
 
 from fastapi import APIRouter, HTTPException, Request, Response, status
@@ -171,10 +172,12 @@ async def answer_stream(
             "evaluation",
             {
                 "turn": interview_turn_read(outcome.turn).model_dump(mode="json"),
+                "session": interview_read(outcome.session).model_dump(mode="json"),
                 "finished": outcome.finished,
             },
         )
         chunks: list[str] = []
+        started = perf_counter()
         try:
             async for chunk in stream_feedback(provider, outcome.turn, payload.answer_text):
                 if await request.is_disconnected():
@@ -186,6 +189,11 @@ async def answer_stream(
                 turn = await db.get(InterviewTurn, outcome.turn.id)
                 if turn is not None:
                     turn.feedback = "".join(chunks)
+                    breakdown = dict(turn.score_breakdown or {})
+                    breakdown["feedback_ms"] = round(
+                        (perf_counter() - started) * 1000
+                    )
+                    turn.score_breakdown = breakdown
                     await db.commit()
         yield _sse(
             "done",

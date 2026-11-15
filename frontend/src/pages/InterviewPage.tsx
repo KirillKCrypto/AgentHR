@@ -111,6 +111,14 @@ export default function InterviewPage() {
         (name, data) => {
           if (name === 'evaluation') {
             evaluated = true
+            const updated = data.session as InterviewRead | undefined
+            if (updated) {
+              setSession(updated)
+              setAnswer('')
+              if (draftKey) {
+                window.localStorage.removeItem(draftKey)
+              }
+            }
             setStreamedFeedback('')
           } else if (name === 'token') {
             const chunk = typeof data.text === 'string' ? data.text : ''

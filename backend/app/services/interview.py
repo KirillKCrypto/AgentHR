@@ -4,6 +4,7 @@ import uuid
 from collections.abc import AsyncIterator, Sequence
 from dataclasses import dataclass, replace
 from datetime import UTC, datetime
+from time import perf_counter
 from typing import Any
 
 from sqlalchemy import func, select
@@ -38,6 +39,7 @@ EVALUATION_SCHEMA: dict[str, Any] = {
         "relevance",
         "point_assessments",
         "critical_errors",
+        "confidence",
         "covered_points",
         "missed_points",
         "feedback_brief",
@@ -65,6 +67,7 @@ EVALUATION_SCHEMA: dict[str, Any] = {
             },
         },
         "critical_errors": {"type": "array", "items": {"type": "string"}},
+        "confidence": {"type": "number", "minimum": 0, "maximum": 1},
         "covered_points": {"type": "array", "items": {"type": "string"}},
         "missed_points": {"type": "array", "items": {"type": "string"}},
         "feedback_brief": {"type": "string"},
@@ -91,6 +94,8 @@ EVALUATION_SYSTEM_PROMPT = (
     "off_topic — не отвечает на вопрос.\n"
     "- critical_errors: только ошибки, которые меняют правильный ответ "
     "(неверный факт, перепутанный механизм, опасная рекомендация).\n"
+    "- confidence 0–1: насколько ты уверен в разборе. Ставь ниже 0.6, если ответ "
+    "двусмысленный и его стоит проверить повторно.\n"
     "- point_assessments: по каждому эталонному пункту status covered/partial/missed, "
     "importance essential/supporting и короткая цитата или пометка evidence. "
     "Если пункт не упомянут — missed.\n"
@@ -639,9 +644,10 @@ async def _evaluate_answer(
     turn: InterviewTurn,
     answer_text: str,
 ) -> dict[str, Any]:
-    """Оценивает ответ; пограничные оценки перепроверяет вторым вызовом."""
+    """Оценивает ответ; второй вызов — только при неуверенности."""
+    started = perf_counter()
     evaluation = await _evaluate_once(provider, turn, answer_text)
-    if 40 <= evaluation["score"] < 85:
+    if _needs_second_pass(evaluation):
         try:
             second = await _evaluate_once(provider, turn, answer_text)
         except LLMError:
@@ -653,6 +659,24 @@ async def _evaluate_answer(
             evaluation["verdict"] = _verdict_for(evaluation["score"])
             evaluation["breakdown"]["second_pass_score"] = second["score"]
             evaluation["breakdown"]["score"] = evaluation["score"]
+    evaluation["breakdown"]["evaluation_ms"] = round(
+        (perf_counter() - started) * 1000
+    )
+    return evaluation
+
+
+def _needs_second_pass(evaluation: dict[str, Any]) -> bool:
+    """Повторяем оценку только у неуверенных или пограничных ответов."""
+    breakdown = evaluation.get("breakdown") or {}
+    if "legacy_score" in breakdown:
+        return 40 <= evaluation["score"] < 85
+    confidence = float(breakdown.get("confidence", 1.0))
+    score = evaluation["score"]
+    return (
+        confidence < 0.6
+        or 65 <= score <= 75
+        or bool(breakdown.get("critical_errors"))
+    )
     return evaluation
 
 
@@ -732,6 +756,11 @@ def _score_from_evaluation(data: dict[str, Any]) -> dict[str, Any]:
 
     relevance = str(data.get("relevance") or "on_topic")
     critical_errors = _clean_points(data.get("critical_errors"))
+    confidence = (
+        1.0
+        if data.get("confidence") is None
+        else _bounded_number(data.get("confidence"), 0.0, 1.0)
+    )
     raw = correctness + coverage_score + depth
     if relevance == "partial":
         raw = min(raw, 70.0)
@@ -754,6 +783,7 @@ def _score_from_evaluation(data: dict[str, Any]) -> dict[str, Any]:
             "depth": round(depth, 1),
             "relevance": relevance,
             "critical_errors": critical_errors,
+            "confidence": round(confidence, 2),
         },
     }
 

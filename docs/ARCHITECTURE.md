@@ -284,8 +284,9 @@ JWT-токенов в SPA; дашборд → `GET /me` с access-токеном
 - `POST /interviews/{id}/answers` — REST-ответ; после оценки выбирается следующий вопрос:
   сложность меняется на шаг по ответу, при слабом ответе добавляется follow-up;
   оценка считается по рубрике (`correctness`, `coverage`, `depth`, `relevance`,
-  `point_assessments` с `importance`, `critical_errors`) с caps, разбор хранится в
-  `interview_turns.score_breakdown`; `POST /interviews/{id}/answers/stream` — то же с SSE;
+  `point_assessments` с `importance`, `critical_errors`, `confidence`) с caps, разбор
+  хранится в `interview_turns.score_breakdown`; второй вызов — только при неуверенности;
+  SSE-событие `evaluation` сразу отдаёт score и сессию, не дожидаясь потока;
 - `POST /analysis` — документы, профиль и разрывы одним ответом; LLM не вызывается.
 
 Доменные эндпоинты защищены `get_current_user` и изолированы по владельцу: обращение к чужому
