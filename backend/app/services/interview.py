@@ -666,17 +666,12 @@ async def _evaluate_answer(
 
 
 def _needs_second_pass(evaluation: dict[str, Any]) -> bool:
-    """Повторяем оценку только у неуверенных или пограничных ответов."""
+    """Второй вызов только при явной неуверенности модели."""
     breakdown = evaluation.get("breakdown") or {}
     if "legacy_score" in breakdown:
-        return 40 <= evaluation["score"] < 85
+        return False
     confidence = float(breakdown.get("confidence", 1.0))
-    score = evaluation["score"]
-    return (
-        confidence < 0.6
-        or 65 <= score <= 75
-        or bool(breakdown.get("critical_errors"))
-    )
+    return confidence < 0.45
     return evaluation
 
 

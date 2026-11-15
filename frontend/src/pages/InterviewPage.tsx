@@ -34,6 +34,7 @@ export default function InterviewPage() {
   const [session, setSession] = useState<InterviewRead | null>(null)
   const [answer, setAnswer] = useState('')
   const [streamedFeedback, setStreamedFeedback] = useState('')
+  const [streamedTurnId, setStreamedTurnId] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -70,6 +71,7 @@ export default function InterviewPage() {
     setSession(null)
     setAnswer('')
     setStreamedFeedback('')
+    setStreamedTurnId(null)
     setError(null)
   }, [interviewId])
 
@@ -120,6 +122,9 @@ export default function InterviewPage() {
               }
             }
             setStreamedFeedback('')
+            setStreamedTurnId(typeof data.turn === 'object' && data.turn !== null && 'id' in data.turn
+              ? String(data.turn.id)
+              : null)
           } else if (name === 'token') {
             const chunk = typeof data.text === 'string' ? data.text : ''
             setStreamedFeedback((current) => current + chunk)
@@ -132,6 +137,7 @@ export default function InterviewPage() {
             }
             // Фидбек уже перенесён в разбор предыдущего вопроса.
             setStreamedFeedback('')
+            setStreamedTurnId(null)
           }
         },
       )
@@ -145,6 +151,7 @@ export default function InterviewPage() {
           const fallback = await answerInterview(session.id, currentTurn.id, text, token)
           setSession(fallback.session)
           setStreamedFeedback(fallback.turn.feedback ?? '')
+          setStreamedTurnId(fallback.turn.id)
           setAnswer('')
           if (draftKey) {
             window.localStorage.removeItem(draftKey)
@@ -248,7 +255,13 @@ export default function InterviewPage() {
           </CardHeader>
           <CardContent className="flex flex-col gap-4">
             {answered.map((turn) => (
-              <AnsweredTurn key={turn.id} turn={turn} />
+              <AnsweredTurn
+                key={turn.id}
+                turn={turn}
+                streamingFeedback={
+                  turn.id === streamedTurnId ? streamedFeedback : null
+                }
+              />
             ))}
           </CardContent>
         </Card>
@@ -359,19 +372,14 @@ export default function InterviewPage() {
                   placeholder="Определения, примеры, trade-offs."
                 />
               </div>
-              {streamedFeedback ? (
-                <div className="flex flex-col gap-1 rounded-md border bg-muted/40 p-3 text-sm">
-                  <span className="font-medium">Анализ</span>
-                  <span>
-                    {streamedFeedback}
-                    {busy ? <span className="animate-pulse">▍</span> : null}
-                  </span>
-                </div>
-              ) : null}
               {error ? <p className="text-sm text-destructive">{error}</p> : null}
               <div>
                 <Button type="submit" disabled={busy}>
-                  {busy ? 'Интервьюер оценивает…' : 'Ответить'}
+                  {busy
+                    ? streamedTurnId
+                      ? 'Готовим анализ…'
+                      : 'Интервьюер оценивает…'
+                    : 'Ответить'}
                 </Button>
               </div>
             </form>
@@ -425,7 +433,13 @@ function ReportBlock({
   )
 }
 
-function AnsweredTurn({ turn }: { turn: InterviewTurnRead }) {
+function AnsweredTurn({
+  turn,
+  streamingFeedback = null,
+}: {
+  turn: InterviewTurnRead
+  streamingFeedback?: string | null
+}) {
   return (
     <div className="flex flex-col gap-2 border-b pb-4 last:border-b-0 last:pb-0">
       <div className="flex flex-wrap items-center justify-between gap-2">
@@ -446,7 +460,16 @@ function AnsweredTurn({ turn }: { turn: InterviewTurnRead }) {
       </div>
       <div className="flex flex-col gap-1">
         <span className="text-sm font-medium">Анализ</span>
-        <span className="text-sm">{turn.feedback ?? '—'}</span>
+        <span className="text-sm">
+          {streamingFeedback !== null ? (
+            <>
+              {streamingFeedback}
+              <span className="animate-pulse">▍</span>
+            </>
+          ) : (
+            turn.feedback ?? '—'
+          )}
+        </span>
         {typeof turn.score_breakdown?.correctness === 'number' ? (
           <span className="text-xs text-muted-foreground">
             верность {Number(turn.score_breakdown.correctness)}/50 · покрытие{' '}
