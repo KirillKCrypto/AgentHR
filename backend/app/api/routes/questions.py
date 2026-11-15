@@ -18,6 +18,7 @@ from app.schemas.quiz import (
 )
 from app.services.questions import (
     TestAlreadyCompleted,
+    ensure_question_bank,
     get_test_result,
     pick_questions,
     pick_test_questions,
@@ -50,10 +51,19 @@ async def start_quiz(
             detail="Тест по этой теме уже пройден",
         )
     picked = await pick_test_questions(db, topic.id, count=payload.count)
+    if len(picked) < payload.count:
+        await ensure_question_bank(
+            db,
+            topic,
+            count=payload.count,
+            provider=provider,
+        )
+        await db.flush()
+        picked = await pick_test_questions(db, topic.id, count=payload.count)
     if not picked:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
-            detail="Для темы пока нет вопросов",
+            detail="Не удалось подготовить вопросы для темы",
         )
 
     ids = [item.id for item in picked]

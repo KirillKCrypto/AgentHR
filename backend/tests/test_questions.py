@@ -218,3 +218,56 @@ async def test_quiz_api_returns_options_and_grades(api_user: ApiUser) -> None:
             .values(options=[], correct_option=None, explanation=None)
         )
         await session.commit()
+
+
+async def test_quiz_generates_missing_questions(api_user: ApiUser) -> None:
+    """Тест по теме без банка лениво генерирует вопросы, а не падает."""
+    api_user.provider.responses["vacancy_requirements"] = {
+        "title": "Backend",
+        "company": "Acme",
+        "level": "middle",
+        "skills": [
+            {
+                "name": "CustomFramework",
+                "required_level": 70,
+                "weight": 1.0,
+                "evidence": "CustomFramework",
+                "confidence": 0.9,
+            }
+        ],
+    }
+    vacancy = await api_user.client.post(
+        "/vacancies",
+        json={"title": "Backend", "raw_text": "CustomFramework"},
+        headers=api_user.headers,
+    )
+    assert vacancy.status_code == 201, vacancy.text
+    topic_key = vacancy.json()["skills"][0]["topic"]["key"]
+
+    api_user.provider.responses["interview_questions"] = {
+        "questions": [
+            {
+                "text": "Как устроен жизненный цикл CustomFramework?",
+                "expected_points": ["инициализация", "обновление", "завершение"],
+            }
+        ]
+    }
+    api_user.provider.responses["quiz_options"] = {
+        "items": [
+            {
+                "number": number,
+                "options": ["Вариант A", "Вариант B", "Вариант C", "Вариант D"],
+                "correct_index": 0,
+                "explanation": "A — правильный ответ",
+            }
+            for number in range(1, 11)
+        ]
+    }
+
+    started = await api_user.client.post(
+        "/questions/quiz",
+        json={"topic_key": topic_key, "count": 10},
+        headers=api_user.headers,
+    )
+    assert started.status_code == 201, started.text
+    assert 5 <= len(started.json()["questions"]) <= 10

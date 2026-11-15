@@ -58,6 +58,7 @@ npm run generate:api # обновить src/api/schema.d.ts из OpenAPI (нуж
   оно привязано только к вакансии.
 - Вопросы: `POST /questions/quiz` → ответы → `POST /questions/quiz/grade`; результат
   сохраняется, тест по теме проходится один раз, `GET .../result` показывает сохранённый разбор.
+  Если в банке темы нет вопросов, backend генерирует их перед стартом теста.
 - Интервью: `/plans/:id` или `/vacancies/:id` → `POST /interviews` с `plan_id` или `vacancy_id` →
   `/interviews/:id`; ответы уходят в `POST /interviews/{id}/answers/stream`, SSE-кадры
   `evaluation` / `token` / `done` обновляют карточки «Вопрос / Ответ / Анализ / Упущено».

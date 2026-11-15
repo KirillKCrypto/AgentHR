@@ -11,7 +11,9 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.llm.base import LLMProvider
 from app.models import Question, Topic, TopicTestResult, UserSkillState
+from app.questions.generator import generate_questions
 from app.services.normalization import normalize_name
 
 
@@ -131,6 +133,36 @@ async def pick_questions(
         )
         for row in rows
     )
+
+
+async def ensure_question_bank(
+    session: AsyncSession,
+    topic: Topic,
+    *,
+    count: int = 10,
+    provider: LLMProvider | None = None,
+) -> int:
+    """Добирает банк темы до нужного числа вопросов через LLM.
+
+    Возвращает число добавленных вопросов. Сбой генерации не роняет тест:
+    маршрут использует то, что уже есть в банке.
+    """
+    if provider is None:
+        return 0
+    base, remainder = divmod(max(1, count), 5)
+    added = 0
+    for difficulty in range(1, 6):
+        wanted = base + (1 if difficulty <= remainder else 0)
+        existing = await count_by_difficulty(session, topic.id, difficulty)
+        missing = max(0, wanted - existing)
+        if missing == 0:
+            continue
+        for _ in range(2):
+            generated = await generate_questions(provider, topic, difficulty, missing)
+            if generated:
+                added += await add_questions(session, topic.id, difficulty, generated)
+                break
+    return added
 
 
 async def pick_test_questions(
