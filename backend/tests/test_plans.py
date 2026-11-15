@@ -275,3 +275,45 @@ async def test_plan_uses_interview_weak_and_untouched_topics(
 
     assert any("слабый ответ в интервью" in reason for reason in reasons)
     assert any("не затронуто в интервью" in reason for reason in reasons)
+
+
+async def test_service_topic_is_excluded_from_plan(api_user: ApiUser) -> None:
+    """Служебная тема авто-ревью не попадает в план подготовки."""
+    import uuid
+
+    from sqlalchemy import select
+
+    from app.db.session import async_session_factory
+    from app.models import Topic, UserSkillState
+
+    await _create_resume(api_user)
+    async with async_session_factory() as session:
+        topic = await session.scalar(
+            select(Topic).where(Topic.key == "other-auto-review")
+        )
+        if topic is None:
+            topic = Topic(
+                key="other-auto-review",
+                name="Прочее (авто-ревью)",
+                description="Служебная тема",
+                category="other",
+                status="canonical",
+                origin="auto",
+            )
+            session.add(topic)
+            await session.flush()
+        session.add(
+            UserSkillState(
+                user_id=uuid.UUID(api_user.user_id),
+                topic_id=topic.id,
+                proficiency=10,
+                confidence=0.5,
+                source="manual",
+            )
+        )
+        await session.commit()
+
+    plan = await api_user.client.post("/plans", json={}, headers=api_user.headers)
+    assert plan.status_code == 201, plan.text
+    keys = [item["topic_key"] for item in plan.json()["items"]]
+    assert "other-auto-review" not in keys

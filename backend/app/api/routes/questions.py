@@ -16,6 +16,7 @@ from app.schemas.quiz import (
     QuizResultRead,
     QuizStartRequest,
 )
+from app.services.learning_topics import NON_LEARNING_TOPIC_KEYS
 from app.services.questions import (
     TestAlreadyCompleted,
     ensure_question_bank,
@@ -31,7 +32,11 @@ router = APIRouter(prefix="/questions", tags=["questions"])
 async def _load_topic(db: AsyncSession, topic_key: str) -> Topic:
     """Тема по ключу или 404."""
     topic = await db.scalar(select(Topic).where(Topic.key == topic_key))
-    if topic is None or topic.status not in ("canonical", "provisional"):
+    if (
+        topic is None
+        or topic.status not in ("canonical", "provisional")
+        or topic.key in NON_LEARNING_TOPIC_KEYS
+    ):
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Тема не найдена")
     return topic
 

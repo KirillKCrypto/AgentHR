@@ -55,6 +55,7 @@ class InterviewRead(BaseModel):
     created_at: datetime
     started_at: datetime | None = None
     finished_at: datetime | None = None
+    reused: bool = False
     turns: list[InterviewTurnRead] = []
 
 

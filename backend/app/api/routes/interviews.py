@@ -4,7 +4,7 @@ import json
 from collections.abc import AsyncIterator
 from uuid import UUID
 
-from fastapi import APIRouter, HTTPException, Request, status
+from fastapi import APIRouter, HTTPException, Request, Response, status
 from fastapi.responses import StreamingResponse
 
 from app.api.deps import CurrentUser, DbSession, LlmProvider
@@ -54,8 +54,9 @@ async def start_interview(
     db: DbSession,
     provider: LlmProvider,
     current_user: CurrentUser,
+    response: Response,
 ) -> InterviewRead:
-    """Создаёт интервью по требованиям вакансии."""
+    """Создаёт интервью по вакансии или возвращает активное."""
     try:
         snapshot = await create_interview(
             db,
@@ -66,6 +67,8 @@ async def start_interview(
     except (InterviewError, InterviewNotFound, InterviewStateError) as exc:
         _raise(exc)
         raise
+    if snapshot.reused:
+        response.status_code = status.HTTP_200_OK
     return interview_read(snapshot)
 
 

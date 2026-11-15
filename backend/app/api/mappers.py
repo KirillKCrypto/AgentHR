@@ -212,6 +212,7 @@ def interview_read(snapshot: InterviewSnapshot) -> InterviewRead:
         created_at=snapshot.created_at,
         started_at=snapshot.started_at,
         finished_at=snapshot.finished_at,
+        reused=snapshot.reused,
         turns=[interview_turn_read(turn) for turn in snapshot.turns],
     )
 

@@ -16,6 +16,7 @@ from app.models import (
     Vacancy,
 )
 from app.schemas.progress import (
+    DashboardActiveInterviewRead,
     DashboardActivityRead,
     DashboardFocusTopicRead,
     DashboardHistoryRead,
@@ -128,10 +129,38 @@ async def build_dashboard(
         )
     ) or 0
 
+    active = await _active_interview(session, user_id, vacancy)
+    active_snapshot = None
+    if active is not None:
+        active_vacancy = (
+            await session.get(Vacancy, active.vacancy_id)
+            if active.vacancy_id is not None
+            else None
+        )
+        active_answered = (
+            await session.scalar(
+                select(func.count())
+                .select_from(InterviewTurn)
+                .where(
+                    InterviewTurn.session_id == active.id,
+                    InterviewTurn.status == "answered",
+                )
+            )
+        ) or 0
+        active_snapshot = DashboardActiveInterviewRead(
+            id=active.id,
+            vacancy_id=active.vacancy_id,
+            vacancy_title=active_vacancy.title if active_vacancy is not None else None,
+            answered_count=active_answered,
+            max_questions=active.max_questions,
+            started_at=active.started_at,
+        )
+
     return DashboardRead(
         profile=profile,
         vacancy=vacancy_snapshot,
         last_interview=last_interview,
+        active_interview=active_snapshot,
         interview_history=[
             DashboardHistoryRead(
                 id=item.id,
@@ -308,6 +337,23 @@ async def _active_plan(
         query = query.where(LearningPlan.vacancy_id == vacancy.id)
     return await session.scalar(
         query.order_by(LearningPlan.created_at.desc()).limit(1)
+    )
+
+
+async def _active_interview(
+    session: AsyncSession,
+    user_id: uuid.UUID,
+    vacancy: Vacancy | None,
+) -> InterviewSession | None:
+    """Последнее незавершённое интервью по вакансии или любое."""
+    query = select(InterviewSession).where(
+        InterviewSession.user_id == user_id,
+        InterviewSession.status == "in_progress",
+    )
+    if vacancy is not None:
+        query = query.where(InterviewSession.vacancy_id == vacancy.id)
+    return await session.scalar(
+        query.order_by(InterviewSession.started_at.desc()).limit(1)
     )
 
 

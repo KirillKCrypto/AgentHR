@@ -17,12 +17,13 @@ from app.models import (
     Vacancy,
     VacancySkill,
 )
+from app.services.learning_topics import NON_LEARNING_TOPIC_KEYS
 from app.services.questions import count_by_topic
 
 MIN_TOPICS = 5
 MAX_TOPICS = 12
 # Версия алгоритма плана: старые отпечатки не переиспользуются после смены логики.
-PLAN_VERSION = "2"
+PLAN_VERSION = "3"
 
 
 class PlanError(ValueError):
@@ -112,6 +113,7 @@ async def create_plan(
                     .where(
                         VacancySkill.vacancy_id == vacancy.id,
                         Topic.status == "canonical",
+                        Topic.key.not_in(NON_LEARNING_TOPIC_KEYS),
                     )
                 )
             ).all()
@@ -125,6 +127,7 @@ async def create_plan(
                 .where(
                     UserSkillState.user_id == user_id,
                     Topic.status == "canonical",
+                    Topic.key.not_in(NON_LEARNING_TOPIC_KEYS),
                     UserSkillState.proficiency > 0,
                 )
             )

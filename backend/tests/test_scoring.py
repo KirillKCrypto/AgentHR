@@ -91,3 +91,35 @@ def test_legacy_score_is_still_supported() -> None:
 
     assert result["score"] == 80
     assert result["breakdown"] == {"legacy_score": 80}
+
+
+def test_supporting_points_weigh_less() -> None:
+    """Второстепенные эталонные пункты не штрафуют так же, как essential."""
+    result = _score_from_evaluation(
+        {
+            "correctness": 48,
+            "depth": 6,
+            "relevance": "on_topic",
+            "point_assessments": [
+                {
+                    "point": "суть",
+                    "status": "covered",
+                    "evidence": "цитата",
+                    "importance": "essential",
+                },
+                {
+                    "point": "functools.wraps",
+                    "status": "missed",
+                    "evidence": "",
+                    "importance": "supporting",
+                },
+            ],
+            "critical_errors": [],
+            "covered_points": [],
+            "missed_points": [],
+            "feedback_brief": "Верно, но без деталей.",
+        }
+    )
+
+    assert result["breakdown"]["coverage"] >= 20
+    assert result["score"] >= 70

@@ -174,6 +174,36 @@ export default function DashboardPage() {
         </CardContent>
       </Card>
 
+      {data.active_interview ? (
+        <Card>
+          <CardHeader>
+            <CardTitle>Незавершённое интервью</CardTitle>
+            <CardDescription>
+              {data.active_interview.vacancy_title ?? 'Интервью по вакансии'} ·
+              отвечено {data.active_interview.answered_count} из{' '}
+              {data.active_interview.max_questions}
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="flex flex-col gap-3">
+            <Progress
+              value={Math.round(
+                (data.active_interview.answered_count /
+                  Math.max(1, data.active_interview.max_questions)) *
+                  100,
+              )}
+            />
+            <div>
+              <Link
+                to={`/interviews/${data.active_interview.id}`}
+                className={buttonVariants()}
+              >
+                Продолжить интервью
+              </Link>
+            </div>
+          </CardContent>
+        </Card>
+      ) : null}
+
       <div className="grid gap-4 md:grid-cols-3">
         <StatCard
           label="Тем в профиле"

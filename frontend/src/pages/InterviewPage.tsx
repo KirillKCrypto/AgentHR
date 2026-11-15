@@ -74,6 +74,17 @@ export default function InterviewPage() {
   }, [interviewId])
 
   const currentTurn = session?.turns.find((turn) => turn.status === 'pending') ?? null
+  const draftKey =
+    session && currentTurn
+      ? `interview-draft:${session.id}:${currentTurn.id}`
+      : null
+
+  useEffect(() => {
+    if (!draftKey) {
+      return
+    }
+    setAnswer(window.localStorage.getItem(draftKey) ?? '')
+  }, [draftKey])
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
@@ -108,6 +119,9 @@ export default function InterviewPage() {
             const updated = data.session as InterviewRead
             setSession(updated)
             setAnswer('')
+            if (draftKey) {
+              window.localStorage.removeItem(draftKey)
+            }
             // Фидбек уже перенесён в разбор предыдущего вопроса.
             setStreamedFeedback('')
           }
@@ -124,6 +138,9 @@ export default function InterviewPage() {
           setSession(fallback.session)
           setStreamedFeedback(fallback.turn.feedback ?? '')
           setAnswer('')
+          if (draftKey) {
+            window.localStorage.removeItem(draftKey)
+          }
         } catch (fallbackError) {
           setError(errorMessage(fallbackError))
         }
@@ -325,7 +342,12 @@ export default function InterviewPage() {
                 <Textarea
                   rows={6}
                   value={answer}
-                  onChange={(event) => setAnswer(event.target.value)}
+                  onChange={(event) => {
+                    setAnswer(event.target.value)
+                    if (draftKey) {
+                      window.localStorage.setItem(draftKey, event.target.value)
+                    }
+                  }}
                   placeholder="Определения, примеры, trade-offs."
                 />
               </div>

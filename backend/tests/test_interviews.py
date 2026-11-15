@@ -610,3 +610,46 @@ async def test_follow_up_limit_is_enforced(api_user: ApiUser) -> None:
     assert len(follow_ups) <= 2
     topics = [turn["topic_id"] for turn in follow_ups]
     assert len(topics) == len(set(topics))
+
+
+async def test_active_interview_is_reused(api_user: ApiUser) -> None:
+    """Повторный запуск возвращает незавершённую сессию, а не создаёт новую."""
+    vacancy_id = await _create_vacancy(api_user)
+    _set_evaluation(api_user, 80)
+
+    created = await api_user.client.post(
+        "/interviews",
+        json={"vacancy_id": vacancy_id},
+        headers=api_user.headers,
+    )
+    assert created.status_code == 201, created.text
+    interview = created.json()
+    turn = interview["turns"][0]
+    answered = await api_user.client.post(
+        f"/interviews/{interview['id']}/answers",
+        json={"turn_id": turn["id"], "answer_text": "Ответ по существу."},
+        headers=api_user.headers,
+    )
+    assert answered.status_code == 200, answered.text
+
+    repeated = await api_user.client.post(
+        "/interviews",
+        json={"vacancy_id": vacancy_id},
+        headers=api_user.headers,
+    )
+    assert repeated.status_code == 200, repeated.text
+    body = repeated.json()
+    assert body["id"] == interview["id"]
+    assert body["answered_count"] == 1
+    assert body["reused"] is True
+
+    final = await _drive_interview(api_user, body)
+    assert final["status"] == "completed"
+
+    fresh = await api_user.client.post(
+        "/interviews",
+        json={"vacancy_id": vacancy_id},
+        headers=api_user.headers,
+    )
+    assert fresh.status_code == 201, fresh.text
+    assert fresh.json()["id"] != interview["id"]

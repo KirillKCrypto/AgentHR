@@ -73,6 +73,17 @@ class DashboardPlanRead(BaseModel):
     remaining_count: int
 
 
+class DashboardActiveInterviewRead(BaseModel):
+    """Незавершённое интервью."""
+
+    id: UUID
+    vacancy_id: UUID | None = None
+    vacancy_title: str | None = None
+    answered_count: int
+    max_questions: int
+    started_at: datetime | None = None
+
+
 class DashboardTestsRead(BaseModel):
     """Сводка тестов по темам."""
 
@@ -94,6 +105,7 @@ class DashboardRead(BaseModel):
     profile: DashboardProfileRead
     vacancy: DashboardVacancyRead | None = None
     last_interview: DashboardInterviewRead | None = None
+    active_interview: DashboardActiveInterviewRead | None = None
     interview_history: list[DashboardHistoryRead] = []
     plan: DashboardPlanRead | None = None
     tests: DashboardTestsRead

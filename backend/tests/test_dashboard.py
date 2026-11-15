@@ -83,6 +83,12 @@ async def test_dashboard_and_plan_progress(api_user: ApiUser) -> None:
     )
     assert interview.status_code == 201, interview.text
     current = interview.json()
+
+    active_dashboard = await api_user.client.get("/dashboard", headers=api_user.headers)
+    active = active_dashboard.json()["active_interview"]
+    assert active["id"] == current["id"]
+    assert active["answered_count"] == 0
+
     for _ in range(16):
         if current["status"] == "completed":
             break

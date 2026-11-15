@@ -334,7 +334,7 @@ export interface paths {
         put?: never;
         /**
          * Start Interview
-         * @description Создаёт интервью по требованиям вакансии.
+         * @description Создаёт интервью по вакансии или возвращает активное.
          */
         post: operations["start_interview_interviews_post"];
         delete?: never;
@@ -625,6 +625,27 @@ export interface components {
             title?: string | null;
         };
         /**
+         * DashboardActiveInterviewRead
+         * @description Незавершённое интервью.
+         */
+        DashboardActiveInterviewRead: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Vacancy Id */
+            vacancy_id?: string | null;
+            /** Vacancy Title */
+            vacancy_title?: string | null;
+            /** Answered Count */
+            answered_count: number;
+            /** Max Questions */
+            max_questions: number;
+            /** Started At */
+            started_at?: string | null;
+        };
+        /**
          * DashboardActivityRead
          * @description Счётчики активности.
          */
@@ -740,6 +761,7 @@ export interface components {
             profile: components["schemas"]["DashboardProfileRead"];
             vacancy?: components["schemas"]["DashboardVacancyRead"] | null;
             last_interview?: components["schemas"]["DashboardInterviewRead"] | null;
+            active_interview?: components["schemas"]["DashboardActiveInterviewRead"] | null;
             /**
              * Interview History
              * @default []
@@ -1040,6 +1062,11 @@ export interface components {
             started_at?: string | null;
             /** Finished At */
             finished_at?: string | null;
+            /**
+             * Reused
+             * @default false
+             */
+            reused: boolean;
             /**
              * Turns
              * @default []
