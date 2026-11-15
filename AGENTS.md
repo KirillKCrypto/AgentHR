@@ -28,10 +28,11 @@ LLM + Agent Harness + Tool Calling + Knowledge Graph + Persistent Memory + Adapt
   тренировочное интервью со свободными ответами и SSE-фидбеком.
 - **M4 закрыт:** адаптивная сложность, follow-up вопросы и план по слабым,
   незатронутым темам и разрывам вакансии.
+- **M5 закрыт:** дашборд прогресса, живой прогресс плана и отдельный отчёт `/reports/:id`.
 - **Онтология:** этапы 1–4 закрыты — 90 canonical-тем, provisional-темы,
   backfill, CLI ревью, автоматическое ревью, `coverage_all` / `confirmed_readiness`,
   группы `AND/OR`, `criticality`.
-- **Следующий этап:** M5 — отдельный отчёт по сессии и прогресс;
+- **Следующий этап:** M6 — демо, E2E и mini-eval;
   онтология — `evidence_type` / `verified_level`.
 
 Подробный статус и план: [`docs/ONTOLOGY.md`](docs/ONTOLOGY.md),

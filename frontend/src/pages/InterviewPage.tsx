@@ -279,7 +279,10 @@ export default function InterviewPage() {
             </CardDescription>
           </CardHeader>
           <CardContent className="flex flex-wrap gap-2">
-            <Link to="/profile" className={buttonVariants()}>
+            <Link to={`/reports/${session.id}`} className={buttonVariants()}>
+              Открыть полный отчёт
+            </Link>
+            <Link to="/profile" className={buttonVariants({ variant: 'outline' })}>
               Открыть профиль
             </Link>
             {session.vacancy_id ? (

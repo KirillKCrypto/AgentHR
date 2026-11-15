@@ -235,6 +235,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/dashboard": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Read Dashboard
+         * @description Готовность, план, последнее интервью и история.
+         */
+        get: operations["read_dashboard_dashboard_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/plans": {
         parameters: {
             query?: never;
@@ -271,6 +291,26 @@ export interface paths {
          * @description План подготовки с темами.
          */
         get: operations["read_plan_plans__plan_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/plans/{plan_id}/progress": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Read Plan Progress
+         * @description Живой прогресс плана по текущему профилю и тестам.
+         */
+        get: operations["read_plan_progress_plans__plan_id__progress_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -585,6 +625,173 @@ export interface components {
             title?: string | null;
         };
         /**
+         * DashboardActivityRead
+         * @description Счётчики активности.
+         */
+        DashboardActivityRead: {
+            /** Interviews Completed */
+            interviews_completed: number;
+            /** Tests Completed */
+            tests_completed: number;
+            /** Active Plans */
+            active_plans: number;
+        };
+        /**
+         * DashboardFocusTopicRead
+         * @description Тема в фокусе развития.
+         */
+        DashboardFocusTopicRead: {
+            /** Topic Key */
+            topic_key?: string | null;
+            /** Topic Name */
+            topic_name?: string | null;
+            /** Skill Name */
+            skill_name: string;
+            /** Current Level */
+            current_level: number;
+            /** Required Level */
+            required_level: number;
+            /** Gap */
+            gap: number;
+            /**
+             * Criticality
+             * @default must_have
+             */
+            criticality: string;
+        };
+        /**
+         * DashboardHistoryRead
+         * @description Короткая история интервью.
+         */
+        DashboardHistoryRead: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Vacancy Title */
+            vacancy_title?: string | null;
+            /** Score */
+            score?: number | null;
+            /** Level */
+            level?: number | null;
+            /** Finished At */
+            finished_at?: string | null;
+        };
+        /**
+         * DashboardInterviewRead
+         * @description Последнее интервью и его динамика.
+         */
+        DashboardInterviewRead: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Vacancy Id */
+            vacancy_id?: string | null;
+            /** Vacancy Title */
+            vacancy_title?: string | null;
+            /** Score */
+            score?: number | null;
+            /** Level */
+            level?: number | null;
+            /** Finished At */
+            finished_at?: string | null;
+            /** Delta */
+            delta?: number | null;
+        };
+        /**
+         * DashboardPlanRead
+         * @description Прогресс активного плана.
+         */
+        DashboardPlanRead: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Title */
+            title: string;
+            /** Topic Count */
+            topic_count: number;
+            /** Progress */
+            progress: number;
+            /** Completed Count */
+            completed_count: number;
+            /** Remaining Count */
+            remaining_count: number;
+        };
+        /**
+         * DashboardProfileRead
+         * @description Сводка профиля знаний.
+         */
+        DashboardProfileRead: {
+            /** Topics Count */
+            topics_count: number;
+            /** Confirmed Count */
+            confirmed_count: number;
+        };
+        /**
+         * DashboardRead
+         * @description Полный снимок дашборда.
+         */
+        DashboardRead: {
+            profile: components["schemas"]["DashboardProfileRead"];
+            vacancy?: components["schemas"]["DashboardVacancyRead"] | null;
+            last_interview?: components["schemas"]["DashboardInterviewRead"] | null;
+            /**
+             * Interview History
+             * @default []
+             */
+            interview_history: components["schemas"]["DashboardHistoryRead"][];
+            plan?: components["schemas"]["DashboardPlanRead"] | null;
+            tests: components["schemas"]["DashboardTestsRead"];
+            activity: components["schemas"]["DashboardActivityRead"];
+        };
+        /**
+         * DashboardTestsRead
+         * @description Сводка тестов по темам.
+         */
+        DashboardTestsRead: {
+            /** Completed Count */
+            completed_count: number;
+            /** Average Level */
+            average_level?: number | null;
+        };
+        /**
+         * DashboardVacancyRead
+         * @description Готовность к выбранной вакансии.
+         */
+        DashboardVacancyRead: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Title */
+            title?: string | null;
+            /** Company */
+            company?: string | null;
+            /** Coverage */
+            coverage: number;
+            /** Critical Readiness */
+            critical_readiness?: number | null;
+            /** Average Gap */
+            average_gap: number;
+            /** Requirements Count */
+            requirements_count: number;
+            /** Satisfied Count */
+            satisfied_count: number;
+            /** Critical Gap Count */
+            critical_gap_count: number;
+            /**
+             * Focus Topics
+             * @default []
+             */
+            focus_topics: components["schemas"]["DashboardFocusTopicRead"][];
+        };
+        /**
          * GapAnalysisRead
          * @description Gap-анализ вакансии относительно профиля.
          */
@@ -855,6 +1062,33 @@ export interface components {
             score?: number | null;
             /** Level */
             level?: number | null;
+            /** Vacancy Id */
+            vacancy_id?: string | null;
+            /** Vacancy Title */
+            vacancy_title?: string | null;
+            /** Finished At */
+            finished_at?: string | null;
+            /**
+             * Question Count
+             * @default 0
+             */
+            question_count: number;
+            /**
+             * Answered Count
+             * @default 0
+             */
+            answered_count: number;
+            /**
+             * Dimensions
+             * @default {}
+             */
+            dimensions: {
+                [key: string]: number;
+            };
+            /** Previous Score */
+            previous_score?: number | null;
+            /** Delta */
+            delta?: number | null;
             /**
              * Strengths
              * @default []
@@ -908,6 +1142,8 @@ export interface components {
             vacancy_id?: string | null;
             /** Vacancy Title */
             vacancy_title?: string | null;
+            /** Score */
+            score?: number | null;
             /** Question Count */
             question_count: number;
             /**
@@ -922,6 +1158,8 @@ export interface components {
              * Format: date-time
              */
             created_at: string;
+            /** Finished At */
+            finished_at?: string | null;
         };
         /**
          * InterviewTurnRead
@@ -1036,6 +1274,57 @@ export interface components {
              * @default 0
              */
             question_count: number;
+        };
+        /**
+         * PlanProgressItemRead
+         * @description Прогресс одной темы плана.
+         */
+        PlanProgressItemRead: {
+            /**
+             * Topic Id
+             * Format: uuid
+             */
+            topic_id: string;
+            /** Topic Key */
+            topic_key: string;
+            /** Topic Name */
+            topic_name: string;
+            /** Current Level */
+            current_level: number;
+            /** Target Level */
+            target_level: number;
+            /** Progress */
+            progress: number;
+            /** Completed */
+            completed: boolean;
+            /** Test Level */
+            test_level?: number | null;
+            /** Interview Score */
+            interview_score?: number | null;
+        };
+        /**
+         * PlanProgressRead
+         * @description Прогресс плана подготовки.
+         */
+        PlanProgressRead: {
+            /**
+             * Plan Id
+             * Format: uuid
+             */
+            plan_id: string;
+            /** Progress */
+            progress: number;
+            /** Topics Total */
+            topics_total: number;
+            /** Completed Count */
+            completed_count: number;
+            /** Remaining Count */
+            remaining_count: number;
+            /**
+             * Items
+             * @default []
+             */
+            items: components["schemas"]["PlanProgressItemRead"][];
         };
         /**
          * PlanRead
@@ -1956,6 +2245,37 @@ export interface operations {
             };
         };
     };
+    read_dashboard_dashboard_get: {
+        parameters: {
+            query?: {
+                vacancy_id?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DashboardRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     read_plans_plans_get: {
         parameters: {
             query?: never;
@@ -2027,6 +2347,37 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["PlanRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    read_plan_progress_plans__plan_id__progress_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                plan_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PlanProgressRead"];
                 };
             };
             /** @description Validation Error */

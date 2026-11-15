@@ -225,10 +225,12 @@ def interview_summary_read(summary: InterviewSummary) -> InterviewSummaryRead:
         level=summary.level,
         vacancy_id=summary.vacancy_id,
         vacancy_title=summary.vacancy_title,
+        score=summary.score,
         question_count=summary.question_count,
         max_questions=summary.max_questions,
         answered_count=summary.answered_count,
         created_at=summary.created_at,
+        finished_at=summary.finished_at,
     )
 
 
@@ -239,6 +241,14 @@ def interview_report_read(report: InterviewReport) -> InterviewReportRead:
         status=report.status,
         score=report.score,
         level=report.level,
+        vacancy_id=report.vacancy_id,
+        vacancy_title=report.vacancy_title,
+        finished_at=report.finished_at,
+        question_count=report.question_count,
+        answered_count=report.answered_count,
+        dimensions=report.dimensions,
+        previous_score=report.previous_score,
+        delta=report.delta,
         strengths=[_report_topic_read(item) for item in report.strengths],
         improvements=[_report_topic_read(item) for item in report.improvements],
         untouched=[_report_topic_read(item) for item in report.untouched],

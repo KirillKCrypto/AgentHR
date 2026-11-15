@@ -30,6 +30,8 @@ export type InterviewSummary = components['schemas']['InterviewSummaryRead']
 export type InterviewAnswerRead = components['schemas']['InterviewAnswerRead']
 export type InterviewReportRead = components['schemas']['InterviewReportRead']
 export type InterviewReportTopicRead = components['schemas']['InterviewReportTopicRead']
+export type DashboardRead = components['schemas']['DashboardRead']
+export type PlanProgressRead = components['schemas']['PlanProgressRead']
 
 export class ApiError extends Error {
   readonly status: number
@@ -137,6 +139,21 @@ export function createPlan(payload: PlanCreate, token: string): Promise<PlanRead
 
 export function fetchPlan(planId: string, token: string): Promise<PlanRead> {
   return apiFetch(`/plans/${encodeURIComponent(planId)}`, { token })
+}
+
+export function fetchPlanProgress(
+  planId: string,
+  token: string,
+): Promise<PlanProgressRead> {
+  return apiFetch(`/plans/${encodeURIComponent(planId)}/progress`, { token })
+}
+
+export function fetchDashboard(
+  token: string,
+  vacancyId?: string | null,
+): Promise<DashboardRead> {
+  const query = vacancyId ? `?vacancy_id=${encodeURIComponent(vacancyId)}` : ''
+  return apiFetch(`/dashboard${query}`, { token })
 }
 
 export function listPlans(token: string): Promise<PlanSummary[]> {

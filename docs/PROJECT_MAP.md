@@ -58,6 +58,7 @@ backend/
 | Автоматическое ревью | `app/services/ontology_auto_review.py` |
 | Профиль и gap-анализ | `app/services/profile.py`, `gaps.py` |
 | План подготовки | `app/services/plans.py`, `app/api/routes/plans.py` — reuse по `profile_fingerprint` |
+| Дашборд и прогресс | `app/services/progress.py`, `app/api/routes/dashboard.py` |
 | Банк вопросов и тесты | `app/services/questions.py`, `app/questions/` |
 | Интервью | `app/services/interview.py`, `app/api/routes/interviews.py` — план/вакансия, SSE |
 | REST API | `app/api/routes/` |

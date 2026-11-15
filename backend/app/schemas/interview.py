@@ -67,10 +67,12 @@ class InterviewSummaryRead(BaseModel):
     level: int | None = None
     vacancy_id: UUID | None = None
     vacancy_title: str | None = None
+    score: float | None = None
     question_count: int
     max_questions: int = 8
     answered_count: int
     created_at: datetime
+    finished_at: datetime | None = None
 
 
 class InterviewReportTopicRead(BaseModel):
@@ -89,6 +91,14 @@ class InterviewReportRead(BaseModel):
     status: str
     score: float | None = None
     level: int | None = None
+    vacancy_id: UUID | None = None
+    vacancy_title: str | None = None
+    finished_at: datetime | None = None
+    question_count: int = 0
+    answered_count: int = 0
+    dimensions: dict[str, float] = {}
+    previous_score: float | None = None
+    delta: float | None = None
     strengths: list[InterviewReportTopicRead] = []
     improvements: list[InterviewReportTopicRead] = []
     untouched: list[InterviewReportTopicRead] = []

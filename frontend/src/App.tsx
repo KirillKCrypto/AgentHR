@@ -9,6 +9,7 @@ import LoginPage from '@/pages/LoginPage'
 import NotFoundPage from '@/pages/NotFoundPage'
 import PlanPage from '@/pages/PlanPage'
 import ProfilePage from '@/pages/ProfilePage'
+import ReportPage from '@/pages/ReportPage'
 import VacancyPage from '@/pages/VacancyPage'
 import VacancyUploadPage from '@/pages/VacancyUploadPage'
 import { clearTokens, getAccessToken, subscribeAuth } from '@/lib/tokens'
@@ -49,6 +50,7 @@ function App() {
           <Route path="/vacancies/:vacancyId" element={<VacancyPage />} />
           <Route path="/plans/:planId" element={<PlanPage />} />
           <Route path="/interviews/:interviewId" element={<InterviewPage />} />
+          <Route path="/reports/:reportId" element={<ReportPage />} />
           <Route path="/profile" element={<ProfilePage />} />
           <Route path="*" element={<NotFoundPage />} />
         </Routes>

@@ -178,10 +178,12 @@ class InterviewSummary:
     level: int | None
     vacancy_id: uuid.UUID | None
     vacancy_title: str | None
+    score: float | None
     question_count: int
     max_questions: int
     answered_count: int
     created_at: datetime
+    finished_at: datetime | None
 
 
 @dataclass(frozen=True)
@@ -202,6 +204,14 @@ class InterviewReport:
     status: str
     score: float | None
     level: int | None
+    vacancy_id: uuid.UUID | None
+    vacancy_title: str | None
+    finished_at: datetime | None
+    question_count: int
+    answered_count: int
+    dimensions: dict[str, float]
+    previous_score: float | None
+    delta: float | None
     strengths: tuple[ReportTopic, ...]
     improvements: tuple[ReportTopic, ...]
     untouched: tuple[ReportTopic, ...]
@@ -385,15 +395,70 @@ async def build_report(
             seen.add(topic.id)
             untouched.append(ReportTopic(topic_key=topic.key, topic_name=topic.name))
 
+    vacancy = (
+        await session.get(Vacancy, interview.vacancy_id)
+        if interview.vacancy_id is not None
+        else None
+    )
+    vacancy_title = vacancy.title if vacancy is not None else None
+    previous_query = select(InterviewSession).where(
+        InterviewSession.user_id == user_id,
+        InterviewSession.status == "completed",
+        InterviewSession.id != interview.id,
+    )
+    if interview.vacancy_id is not None:
+        previous_query = previous_query.where(
+            InterviewSession.vacancy_id == interview.vacancy_id
+        )
+    previous = await session.scalar(
+        previous_query.order_by(InterviewSession.finished_at.desc()).limit(1)
+    )
+    previous_score = previous.score if previous is not None else None
+
     return InterviewReport(
         interview_id=interview.id,
         status=interview.status,
         score=interview.score,
         level=interview.level,
+        vacancy_id=interview.vacancy_id,
+        vacancy_title=vacancy_title,
+        finished_at=interview.finished_at,
+        question_count=interview.question_count,
+        answered_count=sum(1 for turn, _ in rows if turn.status == "answered"),
+        dimensions=_dimension_averages(rows),
+        previous_score=previous_score,
+        delta=(
+            round(interview.score - previous_score, 1)
+            if interview.score is not None and previous_score is not None
+            else None
+        ),
         strengths=tuple(strengths),
         improvements=tuple(improvements),
         untouched=tuple(untouched),
     )
+
+
+def _dimension_averages(
+    rows: Sequence[tuple[InterviewTurn, Topic]],
+) -> dict[str, float]:
+    """Средние значения рубрики по отвеченным вопросам."""
+    totals: dict[str, list[float]] = {
+        "correctness": [],
+        "coverage": [],
+        "depth": [],
+    }
+    for turn, _ in rows:
+        if turn.status != "answered" or not turn.score_breakdown:
+            continue
+        for key, values in totals.items():
+            value = turn.score_breakdown.get(key)
+            if isinstance(value, (int, float)):
+                values.append(float(value))
+    return {
+        key: round(sum(values) / len(values), 1)
+        for key, values in totals.items()
+        if values
+    }
 
 
 async def list_interviews(
@@ -436,10 +501,12 @@ async def list_interviews(
                 level=interview.level,
                 vacancy_id=interview.vacancy_id,
                 vacancy_title=vacancy.title if vacancy is not None else None,
+                score=interview.score,
                 question_count=interview.question_count,
                 max_questions=interview.max_questions,
                 answered_count=answered,
                 created_at=interview.created_at,
+                finished_at=interview.finished_at,
             )
         )
     return result

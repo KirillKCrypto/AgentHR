@@ -7,6 +7,7 @@ from fastapi import APIRouter, HTTPException, Response, status
 from app.api.deps import CurrentUser, DbSession
 from app.api.mappers import plan_read, plan_summary_read
 from app.schemas.plan import PlanCreate, PlanRead, PlanSummaryRead
+from app.schemas.progress import PlanProgressRead
 from app.services.plans import (
     PlanError,
     PlanNotFoundError,
@@ -14,6 +15,7 @@ from app.services.plans import (
     get_plan,
     list_plans,
 )
+from app.services.progress import build_plan_progress
 
 router = APIRouter(prefix="/plans", tags=["plans"])
 
@@ -57,3 +59,16 @@ async def read_plan(
     except PlanNotFoundError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
     return plan_read(plan)
+
+
+@router.get("/{plan_id}/progress")
+async def read_plan_progress(
+    plan_id: UUID,
+    db: DbSession,
+    current_user: CurrentUser,
+) -> PlanProgressRead:
+    """Живой прогресс плана по текущему профилю и тестам."""
+    try:
+        return await build_plan_progress(db, current_user.id, plan_id)
+    except PlanNotFoundError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc

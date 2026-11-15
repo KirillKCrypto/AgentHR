@@ -2,7 +2,7 @@ import { useQuery } from '@tanstack/react-query'
 import { useEffect } from 'react'
 import { Link, useParams } from 'react-router'
 
-import { ApiError, fetchPlan, type PlanRead } from '@/api/client'
+import { ApiError, fetchPlan, fetchPlanProgress, type PlanRead } from '@/api/client'
 import { TopicTest } from '@/components/TopicTest'
 import { Badge } from '@/components/ui/badge'
 import { buttonVariants } from '@/components/ui/button'
@@ -24,6 +24,13 @@ export default function PlanPage() {
   const planQuery = useQuery<PlanRead>({
     queryKey: ['plan', planId, token],
     queryFn: () => fetchPlan(planId as string, token as string),
+    enabled: token !== null && Boolean(planId),
+    retry: false,
+  })
+
+  const progressQuery = useQuery({
+    queryKey: ['plan-progress', planId, token],
+    queryFn: () => fetchPlanProgress(planId as string, token as string),
     enabled: token !== null && Boolean(planId),
     retry: false,
   })
@@ -90,6 +97,16 @@ export default function PlanPage() {
           </CardDescription>
         </CardHeader>
         <CardContent className="flex flex-wrap gap-2">
+          {progressQuery.data ? (
+            <div className="flex w-full flex-col gap-1">
+              <span className="text-sm text-muted-foreground">
+                Прогресс плана: {Math.round(progressQuery.data.progress * 100)}% ·
+                закрыто {progressQuery.data.completed_count} из{' '}
+                {progressQuery.data.topics_total}
+              </span>
+              <Progress value={Math.round(progressQuery.data.progress * 100)} />
+            </div>
+          ) : null}
           {plan.vacancy_id ? (
             <Link
               to={`/vacancies/${plan.vacancy_id}`}
