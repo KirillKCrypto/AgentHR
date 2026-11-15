@@ -179,7 +179,7 @@ export default function DashboardPage() {
             <p className="text-sm text-muted-foreground">Не удалось загрузить интервью.</p>
           ) : (interviewsQuery.data ?? []).length === 0 ? (
             <p className="text-sm text-muted-foreground">
-              Интервью пока нет — начните с плана подготовки.
+              Интервью пока нет — загрузите вакансию и пройдите тренировочное интервью.
             </p>
           ) : (
             <div className="flex flex-col gap-1">
@@ -190,9 +190,11 @@ export default function DashboardPage() {
                   className="h-auto justify-between gap-3 py-2"
                   onClick={() => navigate(`/interviews/${interview.id}`)}
                 >
-                  <span className="font-medium">{interview.title || 'Интервью'}</span>
+                  <span className="font-medium">
+                    {interview.vacancy_title ?? interview.title ?? 'Интервью'}
+                  </span>
                   <span className="text-xs text-muted-foreground">
-                    {interview.answered_count}/{interview.question_count} ·{' '}
+                    {interview.answered_count}/{interview.max_questions} ·{' '}
                     {interview.level === null ? interview.status : `${interview.level}/100`}
                   </span>
                 </Button>

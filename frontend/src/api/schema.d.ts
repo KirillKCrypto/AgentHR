@@ -294,7 +294,7 @@ export interface paths {
         put?: never;
         /**
          * Start Interview
-         * @description Создаёт интервью из последнего плана подготовки.
+         * @description Создаёт интервью по требованиям вакансии.
          */
         post: operations["start_interview_interviews_post"];
         delete?: never;
@@ -777,13 +777,14 @@ export interface components {
         };
         /**
          * InterviewCreate
-         * @description Запрос на создание интервью.
+         * @description Запрос на создание интервью по конкретной вакансии.
          */
         InterviewCreate: {
-            /** Plan Id */
-            plan_id?: string | null;
-            /** Vacancy Id */
-            vacancy_id?: string | null;
+            /**
+             * Vacancy Id
+             * Format: uuid
+             */
+            vacancy_id: string;
         };
         /**
          * InterviewRead
@@ -903,8 +904,17 @@ export interface components {
             status: string;
             /** Level */
             level?: number | null;
+            /** Vacancy Id */
+            vacancy_id?: string | null;
+            /** Vacancy Title */
+            vacancy_title?: string | null;
             /** Question Count */
             question_count: number;
+            /**
+             * Max Questions
+             * @default 8
+             */
+            max_questions: number;
             /** Answered Count */
             answered_count: number;
             /**
@@ -967,6 +977,10 @@ export interface components {
              * @default []
              */
             missed_points: string[];
+            /** Score Breakdown */
+            score_breakdown?: {
+                [key: string]: unknown;
+            } | null;
             /** Answered At */
             answered_at?: string | null;
         };

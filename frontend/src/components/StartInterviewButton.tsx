@@ -7,11 +7,9 @@ import { errorMessage } from '@/lib/errors'
 import { useAuthToken } from '@/lib/useAuthToken'
 
 export function StartInterviewButton({
-  planId,
   vacancyId,
 }: {
-  planId?: string
-  vacancyId?: string
+  vacancyId: string
 }) {
   const navigate = useNavigate()
   const { token, expire } = useAuthToken()
@@ -26,10 +24,7 @@ export function StartInterviewButton({
     setBusy(true)
     setError(null)
     try {
-      const interview = await createInterview(
-        vacancyId ? { vacancy_id: vacancyId } : { plan_id: planId },
-        token,
-      )
+      const interview = await createInterview({ vacancy_id: vacancyId }, token)
       navigate(`/interviews/${interview.id}`)
     } catch (value) {
       if (value instanceof ApiError && value.status === 401) {

@@ -265,17 +265,19 @@ JWT-токенов в SPA; дашборд → `GET /me` с access-токеном
 - `POST /questions/quiz` — тест из 10 вопросов с вариантами ответа;
 - `POST /questions/quiz/grade` — проверка ответов и разбор;
 - `GET /questions/quiz/{topic_key}/result` — сохранённый результат; повторный тест запрещён;
-- `POST /interviews` — сценарий интервью из плана или требований вакансии
-  (`plan_id` или `vacancy_id`, ровно один) и **первый** вопрос; очередь тем хранится
-  в `interview_sessions.topic_plan`, темы вакансии берутся только из `vacancy_skills`,
-  требование сохраняется в `interview_turns.context`; сложность подстраивается под
-  уровень вакансии: junior/middle — 1–3, senior/lead — 1–5 с упором на 3–5;
+- `POST /interviews` — интервью по требованиям конкретной вакансии (`vacancy_id`) и **первый**
+  вопрос; очередь тем хранится в `interview_sessions.topic_plan`, темы берутся только из
+  `vacancy_skills`, требование сохраняется в `interview_turns.context`; интервью по плану
+  больше не создаётся, старые plan-сессии не попадают в список; сложность подстраивается
+  под уровень вакансии: junior/middle — 1–3, senior/lead — 1–5 с упором на 3–5;
 - `GET /interviews`, `GET /interviews/{id}` — история и карточка интервью;
 - `GET /interviews/{id}/report` — итоги завершённого интервью: сильные темы, что подтянуть
   и незатронутые темы вакансии; до финиша — 409;
 - `POST /interviews/{id}/answers` — REST-ответ; после оценки выбирается следующий вопрос:
   сложность меняется на шаг по ответу, при слабом ответе добавляется follow-up;
-  `POST /interviews/{id}/answers/stream` — то же с SSE-фидбеком;
+  оценка считается по рубрике (`correctness`, `coverage`, `depth`, `relevance`,
+  `point_assessments`, `critical_errors`) с caps, разбор хранится в
+  `interview_turns.score_breakdown`; `POST /interviews/{id}/answers/stream` — то же с SSE;
 - `POST /analysis` — документы, профиль и разрывы одним ответом; LLM не вызывается.
 
 Доменные эндпоинты защищены `get_current_user` и изолированы по владельцу: обращение к чужому
@@ -401,6 +403,9 @@ JWT-токенов в SPA; дашборд → `GET /me` с access-токеном
 - Миграция `d4e5f6a7b8c9` — адаптивное интервью:
   - `interview_sessions.max_questions`, `topic_plan` (JSONB) — бюджет и очередь тем;
   - `interview_turns.kind` (`base`/`follow_up`), `parent_turn_id` — уточняющие вопросы.
+- Миграция `e5f6a7b8c9d0` — разбор оценки ответа:
+  - `interview_turns.score_breakdown` (JSONB) — верность, покрытие, глубина, relevance,
+    критические ошибки.
 - Подключение: `DATABASE_URL` из `backend/.env` (локальный дефолт в `app/core/config.py`);
   движок и сессии — `backend/app/db/session.py` (asyncpg, `pool_pre_ping`).
 - Миграции: Alembic (async-шаблон), URL берётся в `alembic/env.py` из настроек;
@@ -588,6 +593,7 @@ Frontend: `ApiError` со статусом; на `/login` показываютс
 - `test_interviews.py` — адаптивное интервью: план и вакансия, сложность по ответу,
   follow-up, SSE-фидбек, сохранение результата и итоговый отчёт;
 - `test_gaps_text.py` — читаемость текста рекомендаций (защита от двойной кодировки);
+- `test_scoring.py` — детерминированный расчёт оценки по рубрике и caps;
 - `test_analysis_retry.py` — повтор извлечения вакансии после таймаута, без повтора
   на нетранзиентной ошибке;
 - `test_analysis.py`, `test_normalization.py`, `test_extraction_golden.py`, `test_embeddings*.py` —

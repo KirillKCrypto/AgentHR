@@ -189,6 +189,7 @@ def interview_turn_read(turn: InterviewTurnData) -> InterviewTurnRead:
         feedback=turn.feedback,
         covered_points=list(turn.covered_points),
         missed_points=list(turn.missed_points),
+        score_breakdown=turn.score_breakdown,
         answered_at=turn.answered_at,
     )
 
@@ -222,7 +223,10 @@ def interview_summary_read(summary: InterviewSummary) -> InterviewSummaryRead:
         title=summary.title,
         status=summary.status,
         level=summary.level,
+        vacancy_id=summary.vacancy_id,
+        vacancy_title=summary.vacancy_title,
         question_count=summary.question_count,
+        max_questions=summary.max_questions,
         answered_count=summary.answered_count,
         created_at=summary.created_at,
     )

@@ -282,9 +282,7 @@ export default function InterviewPage() {
             <Link to="/profile" className={buttonVariants()}>
               Открыть профиль
             </Link>
-            {session.plan_id ? (
-              <StartInterviewButton planId={session.plan_id} />
-            ) : session.vacancy_id ? (
+            {session.vacancy_id ? (
               <StartInterviewButton vacancyId={session.vacancy_id} />
             ) : null}
             <Link to="/" className={buttonVariants({ variant: 'outline' })}>
@@ -416,6 +414,13 @@ function AnsweredTurn({ turn }: { turn: InterviewTurnRead }) {
       <div className="flex flex-col gap-1">
         <span className="text-sm font-medium">Анализ</span>
         <span className="text-sm">{turn.feedback ?? '—'}</span>
+        {typeof turn.score_breakdown?.correctness === 'number' ? (
+          <span className="text-xs text-muted-foreground">
+            верность {Number(turn.score_breakdown.correctness)}/50 · покрытие{' '}
+            {Number(turn.score_breakdown.coverage ?? 0)}/30 · глубина{' '}
+            {Number(turn.score_breakdown.depth ?? 0)}/20
+          </span>
+        ) : null}
       </div>
       {turn.missed_points.length > 0 ? (
         <div className="flex flex-col gap-1">

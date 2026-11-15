@@ -190,7 +190,7 @@ export function fetchQuizResult(topicKey: string, token: string): Promise<QuizRe
 }
 
 export function createInterview(
-  payload: { plan_id?: string; vacancy_id?: string },
+  payload: { vacancy_id: string },
   token: string,
 ): Promise<InterviewRead> {
   return apiFetch('/interviews', {

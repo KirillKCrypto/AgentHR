@@ -45,18 +45,30 @@ RESUME_DATA = {
 }
 
 
-async def _create_plan(api_user: ApiUser) -> str:
-    """Создаёт резюме и план, возвращает id плана."""
-    api_user.provider.responses["resume_skills"] = RESUME_DATA
-    resume = await api_user.client.post(
-        "/resumes",
-        json={"title": "Резюме", "raw_text": "Python SQL Docker FastAPI Redis Kafka"},
+async def _create_vacancy(api_user: ApiUser) -> str:
+    """Создаёт вакансию с темами для интервью."""
+    api_user.provider.responses["vacancy_requirements"] = {
+        "title": "Backend",
+        "company": "Acme",
+        "level": "middle",
+        "skills": [
+            {
+                "name": name,
+                "required_level": 70,
+                "weight": 1.0,
+                "evidence": name,
+                "confidence": 0.9,
+            }
+            for name in ("Python", "SQL", "Docker", "FastAPI", "Redis", "Kafka")
+        ],
+    }
+    vacancy = await api_user.client.post(
+        "/vacancies",
+        json={"title": "Backend", "raw_text": "Python SQL Docker FastAPI Redis Kafka"},
         headers=api_user.headers,
     )
-    assert resume.status_code == 201, resume.text
-    plan = await api_user.client.post("/plans", json={}, headers=api_user.headers)
-    assert plan.status_code == 201, plan.text
-    return plan.json()["id"]
+    assert vacancy.status_code == 201, vacancy.text
+    return vacancy.json()["id"]
 
 
 def _set_evaluation(
@@ -96,9 +108,60 @@ async def _drive_interview(api_user: ApiUser, session: dict) -> dict:
     return session
 
 
+async def test_interview_generates_missing_question(api_user: ApiUser) -> None:
+    """Тема без вопросов в банке получает лениво сгенерированный вопрос."""
+    api_user.provider.responses["vacancy_requirements"] = {
+        "title": "Backend",
+        "company": "Acme",
+        "level": "middle",
+        "skills": [
+            {
+                "name": "CustomFramework",
+                "required_level": 70,
+                "weight": 1.0,
+                "evidence": "CustomFramework в проде",
+                "confidence": 0.9,
+            }
+        ],
+    }
+    vacancy = await api_user.client.post(
+        "/vacancies",
+        json={"title": "Backend", "raw_text": "CustomFramework"},
+        headers=api_user.headers,
+    )
+    assert vacancy.status_code == 201, vacancy.text
+    api_user.provider.responses["interview_questions"] = {
+        "questions": [
+            {
+                "text": "Как устроен жизненный цикл CustomFramework?",
+                "expected_points": ["инициализация", "обновление", "завершение"],
+            }
+        ]
+    }
+
+    created = await api_user.client.post(
+        "/interviews",
+        json={"vacancy_id": vacancy.json()["id"]},
+        headers=api_user.headers,
+    )
+    assert created.status_code == 201, created.text
+    assert created.json()["question_count"] == 1
+
+
+async def test_interview_requires_vacancy(api_user: ApiUser) -> None:
+    """Интервью по плану больше не создаётся: нужен vacancy_id."""
+    response = await api_user.client.post(
+        "/interviews",
+        json={"plan_id": "00000000-0000-0000-0000-000000000001"},
+        headers=api_user.headers,
+    )
+
+    assert response.status_code == 422
+
+
 async def test_interview_flow_updates_profile(api_user: ApiUser) -> None:
     """Интервью проходит вопросы и обновляет профиль после последнего ответа."""
-    plan_id = await _create_plan(api_user)
+    vacancy_id = await _create_vacancy(api_user)
     api_user.provider.responses["interview_evaluation"] = {
         "score": 80,
         "verdict": "strong",
@@ -109,7 +172,7 @@ async def test_interview_flow_updates_profile(api_user: ApiUser) -> None:
 
     created = await api_user.client.post(
         "/interviews",
-        json={"plan_id": plan_id},
+        json={"vacancy_id": vacancy_id},
         headers=api_user.headers,
     )
     assert created.status_code == 201, created.text
@@ -118,6 +181,13 @@ async def test_interview_flow_updates_profile(api_user: ApiUser) -> None:
     assert interview["question_count"] == 1
     assert len(interview["turns"]) == 1
     assert interview["max_questions"] == 8
+
+    listing = await api_user.client.get("/interviews", headers=api_user.headers)
+    assert listing.status_code == 200
+    summary = listing.json()[0]
+    assert summary["vacancy_id"] == vacancy_id
+    assert summary["max_questions"] == 8
+    assert summary["answered_count"] == 0
 
     first = interview["turns"][0]
     answered = await api_user.client.post(
@@ -386,7 +456,7 @@ async def test_interview_report_marks_weak_topics(api_user: ApiUser) -> None:
 
 async def test_interview_stream_returns_events(api_user: ApiUser) -> None:
     """SSE-эндпоинт отдаёт оценку, токены фидбека и завершение."""
-    plan_id = await _create_plan(api_user)
+    vacancy_id = await _create_vacancy(api_user)
     api_user.provider.responses["interview_evaluation"] = {
         "score": 70,
         "verdict": "partial",
@@ -398,7 +468,7 @@ async def test_interview_stream_returns_events(api_user: ApiUser) -> None:
 
     created = await api_user.client.post(
         "/interviews",
-        json={"plan_id": plan_id},
+        json={"vacancy_id": vacancy_id},
         headers=api_user.headers,
     )
     assert created.status_code == 201, created.text

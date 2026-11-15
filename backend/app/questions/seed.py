@@ -3,7 +3,7 @@
 Примеры:
     uv run python -m app.questions.seed --dry-run
     uv run python -m app.questions.seed --all
-    uv run python -m app.questions.seed --topics oop,algorithms --difficulties 1,3,5
+    uv run python -m app.questions.seed --topics oop,algorithms --difficulties 1,2,3,4,5
 
 Генерация идемпотентна: повторный запуск добирает только недостающие вопросы.
 """
@@ -41,8 +41,8 @@ def _parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--difficulties",
-        default="1,3,5",
-        help="сложности через запятую (1–5), по умолчанию 1,3,5",
+        default="1,2,3,4,5",
+        help="сложности через запятую (1–5), по умолчанию 1,2,3,4,5",
     )
     parser.add_argument("--per-topic", type=int, default=5, help="вопросов на тему и сложность")
     parser.add_argument("--limit", type=int, default=None, help="максимум LLM-вызовов за прогон")

@@ -55,12 +55,11 @@ async def start_interview(
     provider: LlmProvider,
     current_user: CurrentUser,
 ) -> InterviewRead:
-    """Создаёт интервью из последнего плана подготовки."""
+    """Создаёт интервью по требованиям вакансии."""
     try:
         snapshot = await create_interview(
             db,
             current_user.id,
-            plan_id=payload.plan_id,
             vacancy_id=payload.vacancy_id,
             provider=provider,
         )

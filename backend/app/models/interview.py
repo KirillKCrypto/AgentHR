@@ -123,6 +123,10 @@ class InterviewTurn(Base):
     missed_points: Mapped[list[Any]] = mapped_column(
         JSONB, default=list, server_default=text("'[]'::jsonb")
     )
+    # Разбор по рубрике: верность, покрытие, глубина, критические ошибки.
+    score_breakdown: Mapped[dict[str, Any]] = mapped_column(
+        JSONB, default=dict, server_default=text("'{}'::jsonb")
+    )
     answered_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     def __repr__(self) -> str:

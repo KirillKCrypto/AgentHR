@@ -1,23 +1,16 @@
 """Pydantic-схемы интервью."""
 
 from datetime import datetime
+from typing import Any
 from uuid import UUID
 
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, Field
 
 
 class InterviewCreate(BaseModel):
-    """Запрос на создание интервью."""
+    """Запрос на создание интервью по конкретной вакансии."""
 
-    plan_id: UUID | None = None
-    vacancy_id: UUID | None = None
-
-    @model_validator(mode="after")
-    def exactly_one_source(self) -> "InterviewCreate":
-        """Нужен ровно один источник: план или вакансия."""
-        if (self.plan_id is None) == (self.vacancy_id is None):
-            raise ValueError("Укажите ровно один источник: plan_id или vacancy_id")
-        return self
+    vacancy_id: UUID
 
 
 class InterviewTurnRead(BaseModel):
@@ -40,6 +33,7 @@ class InterviewTurnRead(BaseModel):
     feedback: str | None = None
     covered_points: list[str] = []
     missed_points: list[str] = []
+    score_breakdown: dict[str, Any] | None = None
     answered_at: datetime | None = None
 
 
@@ -71,7 +65,10 @@ class InterviewSummaryRead(BaseModel):
     title: str
     status: str
     level: int | None = None
+    vacancy_id: UUID | None = None
+    vacancy_title: str | None = None
     question_count: int
+    max_questions: int = 8
     answered_count: int
     created_at: datetime
 
