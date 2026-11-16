@@ -89,8 +89,12 @@ services:
     restart: unless-stopped
     environment:
       GIGAAM_MODEL: ${GIGAAM_MODEL:-v3_e2e_ctc}
+      HF_HOME: /models
+      TORCH_HOME: /models/torch
     ports:
       - "${STT_PORT:-9000}:9000"
+    volumes:
+      - stt_models:/models
     healthcheck:
       test:
         [
@@ -107,3 +111,4 @@ services:
 volumes:
   postgres_data:
   fastembed_cache:
+  stt_models:
