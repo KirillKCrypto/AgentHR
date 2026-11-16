@@ -59,6 +59,7 @@ backend/
 | Профиль и gap-анализ | `app/services/profile.py`, `gaps.py` |
 | План подготовки | `app/services/plans.py`, `app/api/routes/plans.py` — reuse по `profile_fingerprint` |
 | Дашборд и прогресс | `app/services/progress.py`, `app/api/routes/dashboard.py` |
+| Голосовой ввод | `app/api/routes/transcriptions.py`, `stt/` (GigaAM) |
 | Банк вопросов и тесты | `app/services/questions.py`, `app/questions/` |
 | Интервью | `app/services/interview.py`, `app/api/routes/interviews.py` — план/вакансия, SSE |
 | REST API | `app/api/routes/` |
@@ -125,6 +126,7 @@ infra/
 21. `c3d4e5f6a7b8` — уровень вакансии
 22. `d4e5f6a7b8c9` — адаптивное интервью: очередь тем и follow-up
 23. `e5f6a7b8c9d0` — разбор оценки ответа по рубрике
+24. `f6a7b8c9d0e1` — таймер ответа и режим ввода
 
 Новое состояние — только через новую миграцию.
 

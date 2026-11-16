@@ -53,6 +53,8 @@ class InterviewSession(Base):
     question_count: Mapped[int] = mapped_column(Integer, default=0)
     # Бюджет вопросов: база + follow-up.
     max_questions: Mapped[int] = mapped_column(Integer, default=8, server_default=text("8"))
+    # Время на один вопрос, секунды.
+    answer_seconds: Mapped[int] = mapped_column(Integer, default=300, server_default=text("300"))
     # Очередь тем: [{topic_id, current, target, context}, ...]
     topic_plan: Mapped[list[Any]] = mapped_column(
         JSONB, default=list, server_default=text("'[]'::jsonb")
@@ -104,6 +106,14 @@ class InterviewTurn(Base):
         Uuid,
         ForeignKey("interview_turns.id", ondelete="SET NULL"),
         nullable=True,
+    )
+    # Дедлайн ответа; старые сессии без него не ограничены по времени.
+    deadline_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    # text | voice
+    answer_mode: Mapped[str] = mapped_column(
+        String(20), default="text", server_default=text("'text'")
     )
     expected_points: Mapped[list[Any]] = mapped_column(
         JSONB, default=list, server_default=text("'[]'::jsonb")

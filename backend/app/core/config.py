@@ -79,6 +79,12 @@ class Settings(BaseSettings):
     ontology_auto_approve_min_documents: int = 2
     # Предохранитель против всплеска LLM-вызовов: сколько тем проверять за прогон.
     ontology_auto_review_max_topics: int = 100
+    # Интервью: время на один вопрос и запас на сеть/распознавание речи.
+    answer_seconds: int = 300
+    answer_grace_seconds: int = 60
+    # STT-сервис (GigaAM). Пусто — голосовой ввод отключён.
+    stt_base_url: str | None = None
+    stt_timeout_seconds: float = 90.0
 
 
 @lru_cache

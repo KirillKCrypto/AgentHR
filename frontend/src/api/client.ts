@@ -30,6 +30,7 @@ export type InterviewSummary = components['schemas']['InterviewSummaryRead']
 export type InterviewAnswerRead = components['schemas']['InterviewAnswerRead']
 export type InterviewReportRead = components['schemas']['InterviewReportRead']
 export type InterviewReportTopicRead = components['schemas']['InterviewReportTopicRead']
+export type TranscriptionRead = components['schemas']['TranscriptionRead']
 export type DashboardRead = components['schemas']['DashboardRead']
 export type PlanProgressRead = components['schemas']['PlanProgressRead']
 
@@ -237,12 +238,40 @@ export function answerInterview(
   turnId: string,
   answerText: string,
   token: string,
+  answerMode: 'text' | 'voice' = 'text',
+  timedOut = false,
 ): Promise<InterviewAnswerRead> {
   return apiFetch(`/interviews/${encodeURIComponent(interviewId)}/answers`, {
     method: 'POST',
     token,
-    body: JSON.stringify({ turn_id: turnId, answer_text: answerText }),
+    body: JSON.stringify({
+      turn_id: turnId,
+      answer_text: answerText,
+      answer_mode: answerMode,
+      timed_out: timedOut,
+    }),
   })
+}
+
+export async function transcribeAudio(
+  interviewId: string,
+  turnId: string,
+  audio: Blob,
+  token: string,
+): Promise<TranscriptionRead> {
+  const form = new FormData()
+  form.append('file', audio, 'answer.webm')
+  form.append('interview_id', interviewId)
+  form.append('turn_id', turnId)
+  const response = await fetch(`${API_BASE_URL}/transcriptions`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token}` },
+    body: form,
+  })
+  if (!response.ok) {
+    throw new ApiError(response.status, await readErrorMessage(response))
+  }
+  return (await response.json()) as TranscriptionRead
 }
 
 /** Читает SSE-поток интервью и передаёт события в onEvent. */
@@ -253,6 +282,8 @@ export async function streamInterviewAnswer(
   token: string,
   onEvent: (event: string, data: Record<string, unknown>) => void,
   signal?: AbortSignal,
+  answerMode: 'text' | 'voice' = 'text',
+  timedOut = false,
 ): Promise<void> {
   const response = await fetch(
     `${API_BASE_URL}/interviews/${encodeURIComponent(interviewId)}/answers/stream`,
@@ -263,7 +294,12 @@ export async function streamInterviewAnswer(
         Accept: 'text/event-stream',
         Authorization: `Bearer ${token}`,
       },
-      body: JSON.stringify({ turn_id: turnId, answer_text: answerText }),
+      body: JSON.stringify({
+        turn_id: turnId,
+        answer_text: answerText,
+        answer_mode: answerMode,
+        timed_out: timedOut,
+      }),
       signal,
     },
   )

@@ -1,5 +1,5 @@
 import { useQuery } from '@tanstack/react-query'
-import { useEffect, useState, type FormEvent } from 'react'
+import { useEffect, useRef, useState, type FormEvent } from 'react'
 import { Link, useParams } from 'react-router'
 
 import {
@@ -8,11 +8,13 @@ import {
   fetchInterview,
   fetchInterviewReport,
   streamInterviewAnswer,
+  transcribeAudio,
   type InterviewRead,
   type InterviewReportRead,
   type InterviewReportTopicRead,
   type InterviewTurnRead,
 } from '@/api/client'
+import { AudioWaveform } from '@/components/AudioWaveform'
 import { Badge } from '@/components/ui/badge'
 import { Button, buttonVariants } from '@/components/ui/button'
 import { StartInterviewButton } from '@/components/StartInterviewButton'
@@ -37,6 +39,16 @@ export default function InterviewPage() {
   const [streamedTurnId, setStreamedTurnId] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [inputMode, setInputMode] = useState<'text' | 'voice'>('text')
+  const [recording, setRecording] = useState(false)
+  const [transcribing, setTranscribing] = useState(false)
+  const [mediaStream, setMediaStream] = useState<MediaStream | null>(null)
+  const [clock, setClock] = useState(() => Date.now())
+  const [serverOffset, setServerOffset] = useState(0)
+  const recorderRef = useRef<MediaRecorder | null>(null)
+  const chunksRef = useRef<Blob[]>([])
+  const pendingTimeoutRef = useRef(false)
+  const timeoutSentRef = useRef<string | null>(null)
 
   const interviewQuery = useQuery<InterviewRead>({
     queryKey: ['interview', interviewId, token],
@@ -88,26 +100,99 @@ export default function InterviewPage() {
     setAnswer(window.localStorage.getItem(draftKey) ?? '')
   }, [draftKey])
 
-  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault()
+  useEffect(() => {
+    if (session?.server_time) {
+      setServerOffset(new Date(session.server_time).getTime() - Date.now())
+    }
+  }, [session?.server_time])
+
+  useEffect(() => {
+    if (completed) {
+      return
+    }
+    const timer = window.setInterval(() => setClock(Date.now()), 1000)
+    return () => window.clearInterval(timer)
+  }, [completed])
+
+  const deadline = currentTurn?.deadline_at
+    ? new Date(currentTurn.deadline_at).getTime()
+    : null
+  const remaining =
+    deadline === null
+      ? null
+      : Math.max(0, Math.floor((deadline - (clock + serverOffset)) / 1000))
+
+  useEffect(() => {
+    if (!currentTurn || remaining === null || remaining > 0) {
+      return
+    }
+    if (recording) {
+      pendingTimeoutRef.current = true
+      stopRecording()
+      return
+    }
+    if (busy || transcribing) {
+      return
+    }
+    if (timeoutSentRef.current === currentTurn.id) {
+      return
+    }
+    timeoutSentRef.current = currentTurn.id
+    const text = answer.trim()
+    if (text.length >= 3) {
+      void submitAnswer(text, inputMode, false)
+    } else {
+      void submitAnswer('', inputMode, true)
+    }
+  }, [remaining, currentTurn, busy, recording, transcribing])
+
+  async function submitAnswer(
+    text: string,
+    mode: 'text' | 'voice',
+    timedOut: boolean,
+  ) {
     if (token === null || session === null || currentTurn === null) {
       return
     }
-    const text = answer.trim()
-    if (text.length < 3) {
-      setError('Напишите ответ подробнее.')
-      return
-    }
-
+    const sessionId = session.id
+    const turnId = currentTurn.id
+    const key = draftKey
     setBusy(true)
     setError(null)
     setStreamedFeedback('')
-    let evaluated = false
 
+    if (timedOut) {
+      try {
+        const result = await answerInterview(
+          sessionId,
+          turnId,
+          '',
+          token,
+          mode,
+          true,
+        )
+        setSession(result.session)
+        setAnswer('')
+        if (key) {
+          window.localStorage.removeItem(key)
+        }
+      } catch (value) {
+        if (value instanceof ApiError && value.status === 401) {
+          expire()
+          return
+        }
+        setError(errorMessage(value))
+      } finally {
+        setBusy(false)
+      }
+      return
+    }
+
+    let evaluated = false
     try {
       await streamInterviewAnswer(
-        session.id,
-        currentTurn.id,
+        sessionId,
+        turnId,
         text,
         token,
         (name, data) => {
@@ -117,14 +202,16 @@ export default function InterviewPage() {
             if (updated) {
               setSession(updated)
               setAnswer('')
-              if (draftKey) {
-                window.localStorage.removeItem(draftKey)
+              if (key) {
+                window.localStorage.removeItem(key)
               }
             }
             setStreamedFeedback('')
-            setStreamedTurnId(typeof data.turn === 'object' && data.turn !== null && 'id' in data.turn
-              ? String(data.turn.id)
-              : null)
+            setStreamedTurnId(
+              typeof data.turn === 'object' && data.turn !== null && 'id' in data.turn
+                ? String(data.turn.id)
+                : null,
+            )
           } else if (name === 'token') {
             const chunk = typeof data.text === 'string' ? data.text : ''
             setStreamedFeedback((current) => current + chunk)
@@ -132,14 +219,15 @@ export default function InterviewPage() {
             const updated = data.session as InterviewRead
             setSession(updated)
             setAnswer('')
-            if (draftKey) {
-              window.localStorage.removeItem(draftKey)
+            if (key) {
+              window.localStorage.removeItem(key)
             }
-            // Фидбек уже перенесён в разбор предыдущего вопроса.
             setStreamedFeedback('')
             setStreamedTurnId(null)
           }
         },
+        undefined,
+        mode,
       )
     } catch (value) {
       if (value instanceof ApiError && value.status === 401) {
@@ -148,13 +236,19 @@ export default function InterviewPage() {
       }
       if (!evaluated) {
         try {
-          const fallback = await answerInterview(session.id, currentTurn.id, text, token)
+          const fallback = await answerInterview(
+            sessionId,
+            turnId,
+            text,
+            token,
+            mode,
+          )
           setSession(fallback.session)
           setStreamedFeedback(fallback.turn.feedback ?? '')
           setStreamedTurnId(fallback.turn.id)
           setAnswer('')
-          if (draftKey) {
-            window.localStorage.removeItem(draftKey)
+          if (key) {
+            window.localStorage.removeItem(key)
           }
         } catch (fallbackError) {
           setError(errorMessage(fallbackError))
@@ -164,6 +258,95 @@ export default function InterviewPage() {
       }
     } finally {
       setBusy(false)
+    }
+  }
+
+  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    if (recording) {
+      setError('Остановите запись перед отправкой.')
+      return
+    }
+    const text = answer.trim()
+    if (text.length < 3) {
+      setError('Напишите ответ подробнее.')
+      return
+    }
+    await submitAnswer(text, inputMode, false)
+  }
+
+  async function startRecording() {
+    if (token === null || session === null || currentTurn === null) {
+      return
+    }
+    setError(null)
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
+      const recorder = new MediaRecorder(stream)
+      chunksRef.current = []
+      recorder.ondataavailable = (event) => {
+        if (event.data.size > 0) {
+          chunksRef.current.push(event.data)
+        }
+      }
+      recorder.onstop = () => {
+        stream.getTracks().forEach((track) => track.stop())
+        setMediaStream(null)
+        setRecording(false)
+        const blob = new Blob(chunksRef.current, {
+          type: recorder.mimeType || 'audio/webm',
+        })
+        void finishRecording(
+          blob,
+          session.id,
+          currentTurn.id,
+          draftKey,
+        )
+      }
+      recorderRef.current = recorder
+      setMediaStream(stream)
+      setRecording(true)
+      recorder.start()
+    } catch {
+      setError('Не удалось получить доступ к микрофону.')
+    }
+  }
+
+  function stopRecording() {
+    recorderRef.current?.stop()
+    recorderRef.current = null
+  }
+
+  async function finishRecording(
+    blob: Blob,
+    sessionId: string,
+    turnId: string,
+    key: string | null,
+  ) {
+    if (blob.size === 0 || token === null) {
+      return
+    }
+    setTranscribing(true)
+    try {
+      const result = await transcribeAudio(sessionId, turnId, blob, token)
+      const addition = result.text.trim()
+      const combined = [answer.trim(), addition].filter(Boolean).join(' ')
+      setAnswer(combined)
+      if (key) {
+        window.localStorage.setItem(key, combined)
+      }
+      if (pendingTimeoutRef.current) {
+        pendingTimeoutRef.current = false
+        await submitAnswer(combined, 'voice', combined.length < 3)
+      }
+    } catch (value) {
+      if (value instanceof ApiError && value.status === 401) {
+        expire()
+        return
+      }
+      setError(errorMessage(value))
+    } finally {
+      setTranscribing(false)
     }
   }
 
@@ -343,8 +526,8 @@ export default function InterviewPage() {
               ) : null}
             </CardTitle>
             <CardDescription>
-              Сложность {currentTurn.difficulty}/5. Ответьте текстом, интервьюер оценит
-              полноту.
+              Сложность {currentTurn.difficulty}/5. Ответьте текстом или голосом —
+              интервьюер оценит полноту.
             </CardDescription>
           </CardHeader>
           <CardContent>
@@ -358,6 +541,76 @@ export default function InterviewPage() {
                   </p>
                 ) : null}
               </div>
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                {remaining !== null ? (
+                  <Badge
+                    variant={
+                      remaining <= 30
+                        ? 'destructive'
+                        : remaining <= 60
+                          ? 'secondary'
+                          : 'outline'
+                    }
+                  >
+                    Осталось {formatSeconds(remaining)}
+                  </Badge>
+                ) : (
+                  <span />
+                )}
+                <div className="flex flex-wrap gap-2">
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant={inputMode === 'text' ? 'default' : 'outline'}
+                    disabled={recording || transcribing}
+                    onClick={() => setInputMode('text')}
+                  >
+                    Текст
+                  </Button>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant={inputMode === 'voice' ? 'default' : 'outline'}
+                    disabled={recording || transcribing}
+                    onClick={() => setInputMode('voice')}
+                  >
+                    Голос
+                  </Button>
+                </div>
+              </div>
+              {inputMode === 'voice' ? (
+                <div className="flex flex-col gap-2 rounded-md border p-3">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant={recording ? 'destructive' : 'secondary'}
+                      disabled={transcribing || busy}
+                      onClick={() => {
+                        if (recording) {
+                          stopRecording()
+                        } else {
+                          void startRecording()
+                        }
+                      }}
+                    >
+                      {recording
+                        ? 'Остановить запись'
+                        : transcribing
+                          ? 'Распознаём…'
+                          : 'Начать запись'}
+                    </Button>
+                    <span className="text-xs text-muted-foreground">
+                      {recording
+                        ? 'Идёт запись ответа'
+                        : transcribing
+                          ? 'Расшифровываем аудио'
+                          : 'Аудио не сохраняется'}
+                    </span>
+                  </div>
+                  {recording ? <AudioWaveform stream={mediaStream} active /> : null}
+                </div>
+              ) : null}
               <div className="flex flex-col gap-1">
                 <p className="text-sm font-medium">Ответ</p>
                 <Textarea
@@ -374,7 +627,10 @@ export default function InterviewPage() {
               </div>
               {error ? <p className="text-sm text-destructive">{error}</p> : null}
               <div>
-                <Button type="submit" disabled={busy}>
+                <Button
+                  type="submit"
+                  disabled={busy || recording || transcribing}
+                >
                   {busy
                     ? streamedTurnId
                       ? 'Готовим анализ…'
@@ -431,6 +687,12 @@ function ReportBlock({
       )}
     </div>
   )
+}
+
+function formatSeconds(total: number): string {
+  const minutes = Math.floor(total / 60)
+  const seconds = total % 60
+  return `${minutes}:${String(seconds).padStart(2, '0')}`
 }
 
 function AnsweredTurn({

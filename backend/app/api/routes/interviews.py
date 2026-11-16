@@ -132,6 +132,8 @@ async def answer(
             payload.turn_id,
             payload.answer_text,
             provider,
+            answer_mode=payload.answer_mode,
+            timed_out=payload.timed_out,
         )
     except (InterviewError, InterviewNotFound, InterviewStateError) as exc:
         _raise(exc)
@@ -162,6 +164,8 @@ async def answer_stream(
             payload.turn_id,
             payload.answer_text,
             provider,
+            answer_mode=payload.answer_mode,
+            timed_out=payload.timed_out,
         )
     except (InterviewError, InterviewNotFound, InterviewStateError) as exc:
         _raise(exc)

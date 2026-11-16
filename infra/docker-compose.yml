@@ -58,6 +58,11 @@ services:
       EMBEDDING_THRESHOLD: ${EMBEDDING_THRESHOLD:-0.35}
       EMBEDDING_CACHE_DIR: /app/.cache/fastembed
       CORS_ORIGINS: '${CORS_ORIGINS:-["http://localhost:5173"]}'
+      # Внутренний адрес STT (GigaAM); пусто — голосовой ввод отключён
+      STT_BASE_URL: ${STT_BASE_URL:-}
+      STT_TIMEOUT_SECONDS: ${STT_TIMEOUT_SECONDS:-90}
+      ANSWER_SECONDS: ${ANSWER_SECONDS:-300}
+      ANSWER_GRACE_SECONDS: ${ANSWER_GRACE_SECONDS:-60}
     volumes:
       # Кэш локальных моделей эмбеддеров: переживает пересборку образа
       - fastembed_cache:/app/.cache/fastembed
@@ -75,6 +80,29 @@ services:
       timeout: 5s
       retries: 5
       start_period: 30s
+
+  stt:
+    profiles: ["voice"]
+    build:
+      context: ../stt
+    container_name: agenthr-stt
+    restart: unless-stopped
+    environment:
+      GIGAAM_MODEL: ${GIGAAM_MODEL:-v3_e2e_ctc}
+    ports:
+      - "${STT_PORT:-9000}:9000"
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import sys, urllib.request; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:9000/health', timeout=5).status == 200 else 1)",
+        ]
+      interval: 20s
+      timeout: 10s
+      retries: 5
+      start_period: 180s
 
 volumes:
   postgres_data:

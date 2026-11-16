@@ -653,3 +653,66 @@ async def test_active_interview_is_reused(api_user: ApiUser) -> None:
     )
     assert fresh.status_code == 201, fresh.text
     assert fresh.json()["id"] != interview["id"]
+
+
+async def test_interview_deadline_and_voice_mode(api_user: ApiUser) -> None:
+    """Вопрос получает дедлайн, а ответ можно пометить голосовым."""
+    vacancy_id = await _create_vacancy(api_user)
+    _set_evaluation(api_user, 80)
+
+    created = await api_user.client.post(
+        "/interviews",
+        json={"vacancy_id": vacancy_id},
+        headers=api_user.headers,
+    )
+    assert created.status_code == 201, created.text
+    body = created.json()
+    assert body["answer_seconds"] == 300
+    assert body["server_time"]
+    assert body["turns"][0]["deadline_at"]
+    assert body["turns"][0]["answer_mode"] == "text"
+
+    turn = body["turns"][0]
+    answered = await api_user.client.post(
+        f"/interviews/{body['id']}/answers",
+        json={
+            "turn_id": turn["id"],
+            "answer_text": "Ответ по существу.",
+            "answer_mode": "voice",
+        },
+        headers=api_user.headers,
+    )
+    assert answered.status_code == 200, answered.text
+    assert answered.json()["turn"]["answer_mode"] == "voice"
+
+    too_early = await api_user.client.post(
+        f"/interviews/{body['id']}/answers",
+        json={
+            "turn_id": answered.json()["next_turn"]["id"],
+            "answer_text": "",
+            "timed_out": True,
+        },
+        headers=api_user.headers,
+    )
+    assert too_early.status_code == 409
+
+
+async def test_transcription_requires_stt_service(api_user: ApiUser) -> None:
+    """Без настроенного STT голосовой ввод возвращает 503, а не падает."""
+    vacancy_id = await _create_vacancy(api_user)
+    created = await api_user.client.post(
+        "/interviews",
+        json={"vacancy_id": vacancy_id},
+        headers=api_user.headers,
+    )
+    body = created.json()
+    turn = body["turns"][0]
+
+    response = await api_user.client.post(
+        "/transcriptions",
+        data={"interview_id": body["id"], "turn_id": turn["id"]},
+        files={"file": ("answer.webm", b"audio", "audio/webm")},
+        headers=api_user.headers,
+    )
+
+    assert response.status_code == 503

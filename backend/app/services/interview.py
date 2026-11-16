@@ -4,13 +4,14 @@ import logging
 import uuid
 from collections.abc import AsyncIterator, Sequence
 from dataclasses import dataclass, replace
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from time import perf_counter
 from typing import Any
 
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.config import get_settings
 from app.llm.base import ChatMessage, LLMError, LLMProvider
 from app.models import (
     InterviewSession,
@@ -131,6 +132,8 @@ class InterviewTurnData:
     context: str | None
     kind: str
     parent_turn_id: uuid.UUID | None
+    deadline_at: datetime | None
+    answer_mode: str
     difficulty: int
     status: str
     answer_text: str | None
@@ -158,6 +161,7 @@ class InterviewSnapshot:
     level: int | None
     question_count: int
     max_questions: int
+    answer_seconds: int
     answered_count: int
     created_at: datetime
     started_at: datetime | None
@@ -320,6 +324,7 @@ async def create_interview(
         status="in_progress",
         question_count=0,
         max_questions=MAX_INTERVIEW_QUESTIONS,
+        answer_seconds=get_settings().answer_seconds,
         topic_plan=topic_plan,
         started_at=datetime.now(UTC),
     )
@@ -540,6 +545,9 @@ async def answer_turn(
     turn_id: uuid.UUID,
     answer_text: str,
     provider: LLMProvider,
+    *,
+    answer_mode: str = "text",
+    timed_out: bool = False,
 ) -> AnswerOutcome:
     """Оценивает ответ и возвращает следующий вопрос или финал."""
     interview = await session.get(InterviewSession, interview_id)
@@ -563,30 +571,52 @@ async def answer_turn(
     if pending_position is not None and turn.position != pending_position:
         raise InterviewStateError("Сначала ответьте на текущий вопрос")
 
-    text = answer_text.strip()
-    if len(text) < 3:
-        raise InterviewError("Ответ слишком короткий")
+    now = datetime.now(UTC)
+    if (
+        turn.deadline_at is not None
+        and now > turn.deadline_at
+        + timedelta(seconds=get_settings().answer_grace_seconds)
+        and not timed_out
+    ):
+        raise InterviewStateError("Время на ответ истекло")
+    if (
+        timed_out
+        and turn.deadline_at is not None
+        and now < turn.deadline_at - timedelta(seconds=2)
+    ):
+        raise InterviewStateError("Время на ответ ещё не истекло")
 
-    evaluation = await _evaluate_answer(provider, turn, text)
-    turn.answer_text = text
-    turn.score = evaluation["score"]
-    turn.verdict = evaluation["verdict"]
-    turn.feedback = evaluation["feedback_brief"]
-    turn.covered_points = evaluation["covered_points"]
-    turn.missed_points = evaluation["missed_points"]
-    turn.score_breakdown = evaluation["breakdown"]
-    turn.status = "answered"
-    turn.answered_at = datetime.now(UTC)
-    await session.flush()
+    evaluation: dict[str, Any] | None = None
+    if timed_out:
+        turn.answer_mode = answer_mode
+        turn.status = "expired"
+        turn.answered_at = now
+        await session.flush()
+    else:
+        text = answer_text.strip()
+        if len(text) < 3:
+            raise InterviewError("Ответ слишком короткий")
+        evaluation = await _evaluate_answer(provider, turn, text)
+        turn.answer_text = text
+        turn.answer_mode = answer_mode
+        turn.score = evaluation["score"]
+        turn.verdict = evaluation["verdict"]
+        turn.feedback = evaluation["feedback_brief"]
+        turn.covered_points = evaluation["covered_points"]
+        turn.missed_points = evaluation["missed_points"]
+        turn.score_breakdown = evaluation["breakdown"]
+        turn.status = "answered"
+        turn.answered_at = now
+        await session.flush()
 
     next_turn: InterviewTurn | None = None
     if interview.question_count < interview.max_questions:
-        if _needs_follow_up(turn, evaluation["score"]):
+        if evaluation is not None and _needs_follow_up(turn, evaluation["score"]):
             next_turn = await _add_follow_up_turn(
                 session, interview, turn, provider
             )
         if next_turn is None:
-            delta = _difficulty_delta(evaluation["score"])
+            delta = _difficulty_delta(evaluation["score"]) if evaluation else 0
             next_turn = await _add_base_turn(
                 session,
                 interview,
@@ -875,6 +905,7 @@ def _snapshot(
         level=interview.level,
         question_count=interview.question_count,
         max_questions=interview.max_questions,
+        answer_seconds=interview.answer_seconds,
         answered_count=sum(1 for turn in turns if turn.status == "answered"),
         created_at=interview.created_at,
         started_at=interview.started_at,
@@ -896,6 +927,8 @@ def _turn_data(turn: InterviewTurn, topic: Topic) -> InterviewTurnData:
         context=turn.context,
         kind=turn.kind,
         parent_turn_id=turn.parent_turn_id,
+        deadline_at=turn.deadline_at,
+        answer_mode=turn.answer_mode,
         difficulty=turn.difficulty,
         status=turn.status,
         answer_text=turn.answer_text,
@@ -1026,6 +1059,8 @@ async def _append_turn(
         context=context,
         kind=kind,
         parent_turn_id=parent_turn_id,
+        deadline_at=datetime.now(UTC)
+        + timedelta(seconds=interview.answer_seconds),
         expected_points=list(question.expected_points or []),
         difficulty=question.difficulty,
         status="pending",

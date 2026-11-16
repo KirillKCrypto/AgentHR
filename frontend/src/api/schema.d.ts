@@ -423,6 +423,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/transcriptions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Transcribe Audio
+         * @description Проверяет доступ и пересылает аудио в GigaAM.
+         */
+        post: operations["transcribe_audio_transcriptions_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/questions/quiz": {
         parameters: {
             query?: never;
@@ -616,6 +636,21 @@ export interface components {
             resume: components["schemas"]["ResumeRead"];
             profile: components["schemas"]["ProfileRead"];
             gaps: components["schemas"]["GapAnalysisRead"];
+        };
+        /** Body_transcribe_audio_transcriptions_post */
+        Body_transcribe_audio_transcriptions_post: {
+            /** File */
+            file: string;
+            /**
+             * Interview Id
+             * Format: uuid
+             */
+            interview_id: string;
+            /**
+             * Turn Id
+             * Format: uuid
+             */
+            turn_id: string;
         };
         /** Body_upload_resume_resumes_upload_post */
         Body_upload_resume_resumes_upload_post: {
@@ -1003,6 +1038,16 @@ export interface components {
             turn_id: string;
             /** Answer Text */
             answer_text: string;
+            /**
+             * Answer Mode
+             * @default text
+             */
+            answer_mode: string;
+            /**
+             * Timed Out
+             * @default false
+             */
+            timed_out: boolean;
         };
         /**
          * InterviewCreate
@@ -1051,6 +1096,11 @@ export interface components {
              * @default 8
              */
             max_questions: number;
+            /**
+             * Answer Seconds
+             * @default 300
+             */
+            answer_seconds: number;
             /** Answered Count */
             answered_count: number;
             /**
@@ -1062,6 +1112,8 @@ export interface components {
             started_at?: string | null;
             /** Finished At */
             finished_at?: string | null;
+            /** Server Time */
+            server_time?: string | null;
             /**
              * Reused
              * @default false
@@ -1220,6 +1272,13 @@ export interface components {
             kind: string;
             /** Parent Turn Id */
             parent_turn_id?: string | null;
+            /** Deadline At */
+            deadline_at?: string | null;
+            /**
+             * Answer Mode
+             * @default text
+             */
+            answer_mode: string;
             /** Difficulty */
             difficulty: number;
             /** Status */
@@ -1773,6 +1832,18 @@ export interface components {
              * @default canonical
              */
             status: string;
+        };
+        /**
+         * TranscriptionRead
+         * @description Распознанный текст голосового ответа.
+         */
+        TranscriptionRead: {
+            /** Text */
+            text: string;
+            /** Duration Ms */
+            duration_ms?: number | null;
+            /** Confidence */
+            confidence?: number | null;
         };
         /**
          * UnmatchedSkillRead
@@ -2590,6 +2661,39 @@ export interface operations {
                 };
                 content: {
                     "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    transcribe_audio_transcriptions_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "multipart/form-data": components["schemas"]["Body_transcribe_audio_transcriptions_post"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TranscriptionRead"];
                 };
             };
             /** @description Validation Error */

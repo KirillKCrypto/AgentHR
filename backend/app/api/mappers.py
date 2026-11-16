@@ -1,5 +1,7 @@
 """Преобразование доменных объектов сервисного слоя в Pydantic-схемы API."""
 
+from datetime import UTC, datetime
+
 from app.models import Resume, Vacancy
 from app.schemas.analysis import (
     GapAnalysisRead,
@@ -181,6 +183,8 @@ def interview_turn_read(turn: InterviewTurnData) -> InterviewTurnRead:
         context=turn.context,
         kind=turn.kind,
         parent_turn_id=turn.parent_turn_id,
+        deadline_at=turn.deadline_at,
+        answer_mode=turn.answer_mode,
         difficulty=turn.difficulty,
         status=turn.status,
         answer_text=turn.answer_text,
@@ -208,10 +212,12 @@ def interview_read(snapshot: InterviewSnapshot) -> InterviewRead:
         level=snapshot.level,
         question_count=snapshot.question_count,
         max_questions=snapshot.max_questions,
+        answer_seconds=snapshot.answer_seconds,
         answered_count=snapshot.answered_count,
         created_at=snapshot.created_at,
         started_at=snapshot.started_at,
         finished_at=snapshot.finished_at,
+        server_time=datetime.now(UTC),
         reused=snapshot.reused,
         turns=[interview_turn_read(turn) for turn in snapshot.turns],
     )

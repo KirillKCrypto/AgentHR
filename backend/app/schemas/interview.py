@@ -1,7 +1,7 @@
 """Pydantic-схемы интервью."""
 
 from datetime import datetime
-from typing import Any
+from typing import Any, Literal
 from uuid import UUID
 
 from pydantic import BaseModel, Field
@@ -25,6 +25,8 @@ class InterviewTurnRead(BaseModel):
     context: str | None = None
     kind: str = "base"
     parent_turn_id: UUID | None = None
+    deadline_at: datetime | None = None
+    answer_mode: str = "text"
     difficulty: int
     status: str
     answer_text: str | None = None
@@ -51,10 +53,12 @@ class InterviewRead(BaseModel):
     level: int | None = None
     question_count: int
     max_questions: int = 8
+    answer_seconds: int = 300
     answered_count: int
     created_at: datetime
     started_at: datetime | None = None
     finished_at: datetime | None = None
+    server_time: datetime | None = None
     reused: bool = False
     turns: list[InterviewTurnRead] = []
 
@@ -109,7 +113,9 @@ class InterviewAnswerRequest(BaseModel):
     """Ответ на текущий вопрос."""
 
     turn_id: UUID
-    answer_text: str = Field(min_length=1, max_length=5000)
+    answer_text: str = Field(min_length=0, max_length=5000)
+    answer_mode: Literal["text", "voice"] = "text"
+    timed_out: bool = False
 
 
 class InterviewAnswerRead(BaseModel):
@@ -119,3 +125,11 @@ class InterviewAnswerRead(BaseModel):
     next_turn: InterviewTurnRead | None = None
     session: InterviewRead
     finished: bool
+
+
+class TranscriptionRead(BaseModel):
+    """Распознанный текст голосового ответа."""
+
+    text: str
+    duration_ms: int | None = None
+    confidence: float | None = None

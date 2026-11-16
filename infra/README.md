@@ -1,11 +1,13 @@
 # Infra
 
-Инфраструктура локальной разработки: Docker Compose с двумя сервисами.
+Инфраструктура локальной разработки: Docker Compose с сервисами API, PostgreSQL и
+опциональным STT для голосового ввода.
 
 | Сервис | Контейнер | Что это | Порт на хосте |
 |---|---|---|---|
 | `postgres` | `agenthr-postgres` | PostgreSQL 16 + pgvector | `POSTGRES_PORT` (по умолчанию `5433`) |
 | `api` | `agenthr-api` | backend-приложение (образ из `backend/Dockerfile`) | `API_PORT` (по умолчанию `8000`) |
+| `stt` | `agenthr-stt` | GigaAM, профиль `voice` | `STT_PORT` (по умолчанию `9000`) |
 
 ## Запуск
 
@@ -28,6 +30,16 @@ API доступен на `http://127.0.0.1:8000` (+ `/docs`). Контейне�
 docker compose up -d --build
 docker compose logs -f api     # логи: миграции + uvicorn
 ```
+
+## Голосовой ввод (STT)
+
+```powershell
+# в infra/.env: STT_BASE_URL=http://stt:9000
+docker compose --profile voice up -d --build
+```
+
+Первый запуск скачивает torch и модель GigaAM; CPU-распознавание длинного ответа занимает
+время. Аудио не сохраняется. Без профиля `voice` голосовой ввод отключён, текстовый работает.
 
 ## Подключение к БД
 

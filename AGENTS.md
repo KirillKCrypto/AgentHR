@@ -29,6 +29,7 @@ LLM + Agent Harness + Tool Calling + Knowledge Graph + Persistent Memory + Adapt
 - **M4 закрыт:** адаптивная сложность, follow-up вопросы и план по слабым,
   незатронутым темам и разрывам вакансии.
 - **M5 закрыт:** дашборд прогресса, живой прогресс плана и отдельный отчёт `/reports/:id`.
+- **Интервью:** таймер 5 минут на вопрос, голосовой ввод через GigaAM (опциональный STT-сервис), текст и голос взаимозаменяемы.
 - **Онтология:** этапы 1–4 закрыты — 90 canonical-тем, provisional-темы,
   backfill, CLI ревью, автоматическое ревью, `coverage_all` / `confirmed_readiness`,
   группы `AND/OR`, `criticality`.
