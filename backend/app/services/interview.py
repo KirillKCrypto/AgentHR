@@ -356,6 +356,17 @@ async def get_interview(
             .order_by(InterviewTurn.position)
         )
     ).all()
+    # Старые активные сессии созданы до миграции таймера: даём дедлайн при первом открытии.
+    if interview.status == "in_progress":
+        changed = False
+        for turn, _ in rows:
+            if turn.status == "pending" and turn.deadline_at is None:
+                turn.deadline_at = datetime.now(UTC) + timedelta(
+                    seconds=interview.answer_seconds
+                )
+                changed = True
+        if changed:
+            await session.commit()
     turns = tuple(_turn_data(turn, topic) for turn, topic in rows)
     vacancy_title = None
     if interview.vacancy_id is not None:
