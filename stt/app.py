@@ -3,8 +3,11 @@
 import json
 import logging
 import os
+import shutil
+import ssl
 import subprocess
 import tempfile
+import urllib.request
 from pathlib import Path
 
 from fastapi import FastAPI, File, HTTPException, UploadFile
@@ -12,6 +15,8 @@ from pydantic import BaseModel
 
 logger = logging.getLogger(__name__)
 MODEL_NAME = os.getenv("GIGAAM_MODEL", "v3_e2e_ctc")
+MODEL_CACHE = Path(os.getenv("GIGAAM_CACHE", "/models/gigaam"))
+MODEL_BASE_URL = "https://cdn.chatwm.opensmodel.sberdevices.ru/GigaAM"
 MOCK = os.getenv("GIGAAM_MOCK", "").lower() in {"1", "true", "yes"}
 MAX_BYTES = 25 * 1024 * 1024
 CHUNK_SECONDS = 20
@@ -38,10 +43,44 @@ def load_model() -> None:
     try:
         import gigaam
 
-        _model = gigaam.load_model(MODEL_NAME)
+        _ensure_model_files(MODEL_NAME)
+        _model = gigaam.load_model(MODEL_NAME, download_root=str(MODEL_CACHE))
         logger.info("GigaAM загружен: %s", MODEL_NAME)
     except Exception:
         logger.exception("Не удалось загрузить GigaAM")
+
+
+def _ensure_model_files(model_name: str) -> Path:
+    """Скачивает checkpoint и токенизатор в volume до вызова GigaAM.
+
+    CDN Sber отдаёт просроченный TLS-сертификат. Соединение остаётся
+    зашифрованным, а целостность checkpoint проверяет сам GigaAM по хешу.
+    """
+    short_names = {"ctc", "rnnt", "e2e_ctc", "e2e_rnnt", "ssl"}
+    resolved = f"v3_{model_name}" if model_name in short_names else model_name
+    MODEL_CACHE.mkdir(parents=True, exist_ok=True)
+    files = [f"{resolved}.ckpt"]
+    if "e2e" in resolved:
+        files.append(f"{resolved}_tokenizer.model")
+    for filename in files:
+        target = MODEL_CACHE / filename
+        if target.exists() and target.stat().st_size > 0:
+            continue
+        _download(f"{MODEL_BASE_URL}/{filename}", target)
+    return MODEL_CACHE
+
+
+def _download(url: str, target: Path) -> None:
+    """Скачивает файл с нестрогой проверкой сертификата CDN."""
+    logger.info("Скачиваю GigaAM: %s", url)
+    temporary = target.with_suffix(target.suffix + ".part")
+    context = ssl._create_unverified_context()
+    with urllib.request.urlopen(url, context=context, timeout=120) as source:
+        with temporary.open("wb") as destination:
+            shutil.copyfileobj(source, destination, length=1024 * 1024)
+    temporary.replace(target)
+    logger.info("Скачано: %s (%.1f МБ)", target.name, target.stat().st_size / 1024 / 1024)
+
 
 
 @app.get("/health")
@@ -67,9 +106,9 @@ async def transcribe(file: UploadFile = File(...)) -> Transcription:
 
     suffix = Path(file.filename or "answer.webm").suffix or ".webm"
     with tempfile.TemporaryDirectory() as tmp:
-        source = Path(tmp) / f"answer{suffix}"
+        source = Path(tmp) / f"input{suffix}"
         source.write_bytes(payload)
-        wav = Path(tmp) / "answer.wav"
+        wav = Path(tmp) / "converted.wav"
         try:
             subprocess.run(
                 [
