@@ -1041,8 +1041,9 @@ export interface components {
             /**
              * Answer Mode
              * @default text
+             * @enum {string}
              */
-            answer_mode: string;
+            answer_mode: "text" | "voice";
             /**
              * Timed Out
              * @default false
