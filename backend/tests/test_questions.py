@@ -211,6 +211,8 @@ async def test_quiz_api_returns_options_and_grades(api_user: ApiUser) -> None:
     assert python["source"] == "test"
     assert python["verified_level"] == result["level"]
     assert python["evidence_type"] == "test"
+    assert python["review_due_at"] is not None
+    assert python["review_interval_days"] >= 1
     assert python["proficiency"] == result["level"]
 
     async with async_session_factory() as session:

@@ -15,6 +15,7 @@ from app.llm.base import LLMProvider
 from app.models import Question, Topic, TopicTestResult, UserSkillState
 from app.questions.generator import generate_questions
 from app.services.normalization import normalize_name
+from app.services.review import next_review
 
 
 @dataclass(frozen=True)
@@ -262,6 +263,9 @@ async def save_test_result(
     state.source = "test"
     state.evidence_type = "test"
     state.verified_level = level
+    state.review_due_at, state.review_interval_days = next_review(
+        level, state.review_interval_days
+    )
     state.last_assessed = datetime.now(UTC)
     state.evidence = [
         *(state.evidence or []),

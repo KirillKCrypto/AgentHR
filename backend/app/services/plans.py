@@ -3,6 +3,7 @@
 import hashlib
 import uuid
 from dataclasses import dataclass, replace
+from datetime import UTC, datetime
 
 from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -23,7 +24,7 @@ from app.services.questions import count_by_topic
 MIN_TOPICS = 5
 MAX_TOPICS = 12
 # Версия алгоритма плана: старые отпечатки не переиспользуются после смены логики.
-PLAN_VERSION = "3"
+PLAN_VERSION = "4"
 
 
 class PlanError(ValueError):
@@ -329,6 +330,14 @@ async def _build_candidates(
 
     # 3. Слабые темы профиля: основа плана без вакансии и добор до минимума.
     for state, topic in profile_rows:
+        due = (
+            state.review_due_at is not None
+            and state.review_due_at <= datetime.now(UTC)
+        )
+        if due:
+            candidate = candidate_for(topic, vacancy_targets.get(topic.id, 100))
+            candidate.priority += 15
+            candidate.add_reason("пора повторить тему")
         if topic.id in vacancy_targets:
             continue
         candidate = candidate_for(topic, 100)
@@ -479,6 +488,10 @@ async def _plan_fingerprint(
                     str(state.proficiency),
                     str(state.confidence),
                     state.source,
+                    state.evidence_type,
+                    str(state.verified_level),
+                    state.review_due_at.isoformat() if state.review_due_at else "",
+                    str(state.review_interval_days),
                     state.last_assessed.isoformat() if state.last_assessed else "",
                 ]
             )

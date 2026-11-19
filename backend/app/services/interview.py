@@ -26,6 +26,7 @@ from app.questions.generator import generate_questions
 from app.services.learning_topics import NON_LEARNING_TOPIC_KEYS
 from app.services.profile import weighted_estimate
 from app.services.questions import add_questions, pick_questions
+from app.services.review import next_review
 from app.services.vacancy_level import level_band, resolve_vacancy_level
 
 logger = logging.getLogger(__name__)
@@ -889,6 +890,9 @@ async def _finish(session: AsyncSession, interview: InterviewSession) -> None:
         state.source = "interview"
         state.evidence_type = "interview"
         state.verified_level = round(topic_score)
+        state.review_due_at, state.review_interval_days = next_review(
+            topic_score, state.review_interval_days
+        )
         state.last_assessed = datetime.now(UTC)
         state.evidence = [
             *(state.evidence or []),

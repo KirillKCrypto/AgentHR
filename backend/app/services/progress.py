@@ -1,6 +1,7 @@
 """Агрегаты для дашборда и прогресса подготовки."""
 
 import uuid
+from datetime import UTC, datetime
 
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -24,6 +25,7 @@ from app.schemas.progress import (
     DashboardPlanRead,
     DashboardProfileRead,
     DashboardRead,
+    DashboardReviewTopicRead,
     DashboardTestsRead,
     DashboardVacancyRead,
     PlanProgressItemRead,
@@ -160,11 +162,35 @@ async def build_dashboard(
             started_at=active.started_at,
         )
 
+    review_topics = [
+        DashboardReviewTopicRead(
+            topic_key=topic.key,
+            topic_name=topic.name,
+            current_level=state.proficiency,
+            review_due_at=state.review_due_at,
+            review_interval_days=state.review_interval_days,
+        )
+        for state, topic in (
+            await session.execute(
+                select(UserSkillState, Topic)
+                .join(Topic, Topic.id == UserSkillState.topic_id)
+                .where(
+                    UserSkillState.user_id == user_id,
+                    UserSkillState.review_due_at.is_not(None),
+                    UserSkillState.review_due_at <= datetime.now(UTC),
+                )
+                .order_by(UserSkillState.review_due_at)
+                .limit(5)
+            )
+        ).all()
+    ]
+
     return DashboardRead(
         profile=profile,
         vacancy=vacancy_snapshot,
         last_interview=last_interview,
         active_interview=active_snapshot,
+        review_topics=review_topics,
         interview_history=[
             DashboardHistoryRead(
                 id=item.id,

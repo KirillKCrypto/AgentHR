@@ -107,6 +107,8 @@ class ProfileTopic:
     source: str = "resume"
     evidence_type: str = "self_report"
     verified_level: int | None = None
+    review_due_at: datetime | None = None
+    review_interval_days: int = 1
     last_assessed: datetime | None = None
     status: str = "canonical"
 
@@ -413,6 +415,8 @@ async def get_profile(session: AsyncSession, user_id: uuid.UUID) -> ProfileSnaps
             source=state.source,
             evidence_type=state.evidence_type,
             verified_level=state.verified_level,
+            review_due_at=state.review_due_at,
+            review_interval_days=state.review_interval_days,
             last_assessed=state.last_assessed,
             status=topic.status,
         )

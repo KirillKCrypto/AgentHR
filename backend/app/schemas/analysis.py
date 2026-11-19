@@ -112,6 +112,8 @@ class ProfileTopicRead(BaseModel):
     source: str
     evidence_type: str = "self_report"
     verified_level: int | None = None
+    review_due_at: datetime | None = None
+    review_interval_days: int = 1
     last_assessed: datetime | None = None
     status: str = "canonical"
 

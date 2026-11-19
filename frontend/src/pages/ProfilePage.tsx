@@ -297,6 +297,12 @@ function TopicRow({ topic, gap }: { topic: ProfileTopic; gap?: GapItem }) {
             <span>{formatDate(topic.last_assessed)}</span>
           </>
         ) : null}
+        {topic.review_due_at ? (
+          <>
+            <span>·</span>
+            <span>повторить {formatDate(topic.review_due_at)}</span>
+          </>
+        ) : null}
       </div>
     </div>
   )

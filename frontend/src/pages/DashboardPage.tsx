@@ -204,6 +204,33 @@ export default function DashboardPage() {
         </Card>
       ) : null}
 
+      {data.review_topics.length > 0 ? (
+        <Card>
+          <CardHeader>
+            <CardTitle>Пора повторить</CardTitle>
+            <CardDescription>
+              Темы, у которых подошёл срок повторения.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="flex flex-col gap-2">
+            {data.review_topics.map((topic) => (
+              <div
+                key={topic.topic_key}
+                className="flex flex-wrap items-center justify-between gap-2 rounded-md border p-2"
+              >
+                <span className="text-sm">{topic.topic_name}</span>
+                <span className="text-xs text-muted-foreground">
+                  уровень {topic.current_level} · интервал {topic.review_interval_days} дн.
+                </span>
+              </div>
+            ))}
+            <Link to="/profile" className={buttonVariants({ variant: 'outline' })}>
+              Открыть профиль
+            </Link>
+          </CardContent>
+        </Card>
+      ) : null}
+
       <div className="grid gap-4 md:grid-cols-3">
         <StatCard
           label="Тем в профиле"

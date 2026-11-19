@@ -115,6 +115,8 @@ def profile_read(snapshot: ProfileSnapshot) -> ProfileRead:
                 source=topic.source,
                 evidence_type=topic.evidence_type,
                 verified_level=topic.verified_level,
+                review_due_at=topic.review_due_at,
+                review_interval_days=topic.review_interval_days,
                 last_assessed=topic.last_assessed,
                 status=topic.status,
             )

@@ -88,6 +88,16 @@ class DashboardActiveInterviewRead(BaseModel):
     started_at: datetime | None = None
 
 
+class DashboardReviewTopicRead(BaseModel):
+    """Тема, которую пора повторить."""
+
+    topic_key: str
+    topic_name: str
+    current_level: int
+    review_due_at: datetime | None = None
+    review_interval_days: int = 1
+
+
 class DashboardTestsRead(BaseModel):
     """Сводка тестов по темам."""
 
@@ -110,6 +120,7 @@ class DashboardRead(BaseModel):
     vacancy: DashboardVacancyRead | None = None
     last_interview: DashboardInterviewRead | None = None
     active_interview: DashboardActiveInterviewRead | None = None
+    review_topics: list[DashboardReviewTopicRead] = []
     interview_history: list[DashboardHistoryRead] = []
     plan: DashboardPlanRead | None = None
     tests: DashboardTestsRead

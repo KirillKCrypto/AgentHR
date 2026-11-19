@@ -265,8 +265,8 @@ JWT-токенов в SPA; дашборд → `GET /me` с access-токеном
 - `POST /plans`, `GET /plans`, `GET /plans/{id}` — планы подготовки из тем резюме;
   повторный запрос при неизменном профиле возвращает существующий план с 200 и `reused=true`;
 - `GET /plans/{id}/progress` — живой прогресс плана по текущему профилю, тестам и интервью;
-- `GET /dashboard?vacancy_id=...` — готовность, фокусные пробелы, последнее интервью,
-  история, прогресс плана и активность;
+- `GET /dashboard?vacancy_id=...` — готовность, фокусные пробелы, незавершённое интервью,
+  история, прогресс плана, темы к повторению и активность;
 - `GET /questions?topic_key=...` — случайные вопросы банка по теме и сложности;
 - `POST /questions/quiz` — тест из 10 вопросов с вариантами ответа; при нехватке
   вопросов в банке темы они генерируются лениво перед стартом;
@@ -426,6 +426,8 @@ JWT-токенов в SPA; дашборд → `GET /me` с access-токеном
 - Миграция `b8c9d0e1f2a3` — свидетельства уровня:
   - `user_skill_states.evidence_type` (`self_report`/`test`/`interview`);
   - `user_skill_states.verified_level`.
+- Миграция `c9d0e1f2a3b4` — повторение тем:
+  - `user_skill_states.review_due_at`, `review_interval_days`.
 - Подключение: `DATABASE_URL` из `backend/.env` (локальный дефолт в `app/core/config.py`);
   движок и сессии — `backend/app/db/session.py` (asyncpg, `pool_pre_ping`).
 - Миграции: Alembic (async-шаблон), URL берётся в `alembic/env.py` из настроек;

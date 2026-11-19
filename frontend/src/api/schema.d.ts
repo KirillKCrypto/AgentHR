@@ -798,6 +798,11 @@ export interface components {
             last_interview?: components["schemas"]["DashboardInterviewRead"] | null;
             active_interview?: components["schemas"]["DashboardActiveInterviewRead"] | null;
             /**
+             * Review Topics
+             * @default []
+             */
+            review_topics: components["schemas"]["DashboardReviewTopicRead"][];
+            /**
              * Interview History
              * @default []
              */
@@ -805,6 +810,25 @@ export interface components {
             plan?: components["schemas"]["DashboardPlanRead"] | null;
             tests: components["schemas"]["DashboardTestsRead"];
             activity: components["schemas"]["DashboardActivityRead"];
+        };
+        /**
+         * DashboardReviewTopicRead
+         * @description Тема, которую пора повторить.
+         */
+        DashboardReviewTopicRead: {
+            /** Topic Key */
+            topic_key: string;
+            /** Topic Name */
+            topic_name: string;
+            /** Current Level */
+            current_level: number;
+            /** Review Due At */
+            review_due_at?: string | null;
+            /**
+             * Review Interval Days
+             * @default 1
+             */
+            review_interval_days: number;
         };
         /**
          * DashboardTestsRead
@@ -1556,6 +1580,13 @@ export interface components {
             evidence_type: string;
             /** Verified Level */
             verified_level?: number | null;
+            /** Review Due At */
+            review_due_at?: string | null;
+            /**
+             * Review Interval Days
+             * @default 1
+             */
+            review_interval_days: number;
             /** Last Assessed */
             last_assessed?: string | null;
             /**

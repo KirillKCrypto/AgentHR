@@ -62,6 +62,13 @@ class UserSkillState(Base):
     )
     # Подтверждённый тестом или интервью уровень; NULL — только самоотчёт.
     verified_level: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # Следующее повторение темы и текущий интервал в днях.
+    review_due_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    review_interval_days: Mapped[int] = mapped_column(
+        Integer, default=1, server_default=text("1")
+    )
     # resume | interview | manual | test
     source: Mapped[str] = mapped_column(
         String(30), default="resume", server_default=text("'resume'")
