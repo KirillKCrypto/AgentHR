@@ -48,6 +48,7 @@ npm run generate:api # обновить src/api/schema.d.ts из OpenAPI (нуж
   токены в localStorage → редирект на `/`; дашборд запрашивает `GET /me`.
 - Профиль: `/profile` → `POST /resumes` (текст) или `POST /resumes/upload` (PDF/DOCX) →
   `GET /profile`. Загруженное резюме дополняет профиль, старые оценки не снижаются.
+  У темы показывается подтверждённый уровень или «самоотчёт».
 - Проверка вакансии: `/vacancies/new` → `POST /vacancies` → `GET /profile/gaps`; резюме
   в этой форме не требуется. Если профиль пуст, экран предлагает загрузить резюме.
 - Вакансия: `/vacancies/:id` → `GET /vacancies/{id}` + `GET /profile/gaps`; полный текст,

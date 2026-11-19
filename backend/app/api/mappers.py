@@ -113,6 +113,8 @@ def profile_read(snapshot: ProfileSnapshot) -> ProfileRead:
                 proficiency=topic.proficiency,
                 confidence=topic.confidence,
                 source=topic.source,
+                evidence_type=topic.evidence_type,
+                verified_level=topic.verified_level,
                 last_assessed=topic.last_assessed,
                 status=topic.status,
             )
@@ -323,4 +325,9 @@ def gap_analysis_read(report: GapReport) -> GapAnalysisRead:
         critical_weight=report.critical_weight,
         critical_gap_count=report.critical_gap_count,
         unmatched_count=report.unmatched_count,
+        readiness=report.readiness,
+        readiness_low=report.readiness_low,
+        readiness_high=report.readiness_high,
+        critical_gate=report.critical_gate,
+        confidence=report.confidence,
     )

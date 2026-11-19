@@ -110,6 +110,8 @@ class ProfileTopicRead(BaseModel):
     proficiency: int
     confidence: float
     source: str
+    evidence_type: str = "self_report"
+    verified_level: int | None = None
     last_assessed: datetime | None = None
     status: str = "canonical"
 
@@ -195,6 +197,11 @@ class GapAnalysisRead(BaseModel):
     critical_weight: float = Field(description="Суммарный вес must_have-требований")
     critical_gap_count: int = Field(description="Количество незакрытых must_have-требований")
     unmatched_count: int = Field(description="Навыков вакансии вне онтологии")
+    readiness: float = Field(default=0.0, description="Готовность с критическим гейтом, 0..1")
+    readiness_low: float = Field(default=0.0, description="Нижняя граница готовности, 0..1")
+    readiness_high: float = Field(default=0.0, description="Верхняя граница готовности, 0..1")
+    critical_gate: float = Field(default=1.0, description="Множитель критического гейта, 0..1")
+    confidence: float = Field(default=0.0, description="Средняя уверенность требований, 0..1")
 
 
 class AnalysisRequest(BaseModel):

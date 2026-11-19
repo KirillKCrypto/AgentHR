@@ -275,6 +275,11 @@ function TopicRow({ topic, gap }: { topic: ProfileTopic; gap?: GapItem }) {
             <Badge variant="secondary">на проверке</Badge>
           ) : null}
           {topic.category ? <Badge variant="outline">{topic.category}</Badge> : null}
+          {typeof topic.verified_level === 'number' ? (
+            <Badge variant="secondary">подтверждено {topic.verified_level}</Badge>
+          ) : (
+            <Badge variant="outline">самоотчёт</Badge>
+          )}
           {gap && !gap.satisfied ? (
             <Badge variant="destructive">пробел −{gap.gap}</Badge>
           ) : null}

@@ -105,6 +105,8 @@ class ProfileTopic:
     proficiency: int
     confidence: float = 0.5
     source: str = "resume"
+    evidence_type: str = "self_report"
+    verified_level: int | None = None
     last_assessed: datetime | None = None
     status: str = "canonical"
 
@@ -409,6 +411,8 @@ async def get_profile(session: AsyncSession, user_id: uuid.UUID) -> ProfileSnaps
             proficiency=state.proficiency,
             confidence=state.confidence,
             source=state.source,
+            evidence_type=state.evidence_type,
+            verified_level=state.verified_level,
             last_assessed=state.last_assessed,
             status=topic.status,
         )

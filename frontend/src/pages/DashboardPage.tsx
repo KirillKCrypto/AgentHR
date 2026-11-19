@@ -418,7 +418,9 @@ function ReadinessCard({
   if (!vacancy) {
     return null
   }
-  const coverage = Math.round(vacancy.coverage * 100)
+  const coverage = Math.round(vacancy.readiness * 100)
+  const low = Math.round(vacancy.readiness_low * 100)
+  const high = Math.round(vacancy.readiness_high * 100)
   const critical =
     typeof vacancy.critical_readiness === 'number'
       ? Math.round(vacancy.critical_readiness * 100)
@@ -453,9 +455,12 @@ function ReadinessCard({
           <div className="flex flex-col gap-1">
             <span className="text-4xl font-medium">{coverage}%</span>
             <span className="text-sm text-muted-foreground">
-              готовность по вакансии
+              готовность с гейтом
             </span>
             <Progress value={coverage} />
+            <span className="text-xs text-muted-foreground">
+              диапазон {low}–{high}% · покрытие {Math.round(vacancy.coverage * 100)}%
+            </span>
           </div>
           <div className="flex flex-col gap-1">
             <span className="text-4xl font-medium">

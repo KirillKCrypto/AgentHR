@@ -347,6 +347,8 @@ async def test_critical_readiness_needs_fully_closed_requirements(
     assert body["critical_gap_count"] == 1
     assert body["satisfied_count"] == 0
     assert body["coverage_all"] == pytest.approx(0.988, abs=0.001)
+    assert body["readiness"] < body["coverage_all"]
+    assert body["readiness_low"] <= body["readiness"] <= body["readiness_high"]
 
 
 async def test_or_alternative_closes_critical_requirement(api_user: ApiUser) -> None:

@@ -209,6 +209,8 @@ async def test_quiz_api_returns_options_and_grades(api_user: ApiUser) -> None:
         topic for topic in profile.json()["topics"] if topic["topic_key"] == "python"
     )
     assert python["source"] == "test"
+    assert python["verified_level"] == result["level"]
+    assert python["evidence_type"] == "test"
     assert python["proficiency"] == result["level"]
 
     async with async_session_factory() as session:

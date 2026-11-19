@@ -836,6 +836,14 @@ export interface components {
             critical_readiness?: number | null;
             /** Average Gap */
             average_gap: number;
+            /** Readiness */
+            readiness: number;
+            /** Readiness Low */
+            readiness_low: number;
+            /** Readiness High */
+            readiness_high: number;
+            /** Critical Gate */
+            critical_gate: number;
             /** Requirements Count */
             requirements_count: number;
             /** Satisfied Count */
@@ -944,6 +952,36 @@ export interface components {
              * @description Навыков вакансии вне онтологии
              */
             unmatched_count: number;
+            /**
+             * Readiness
+             * @description Готовность с критическим гейтом, 0..1
+             * @default 0
+             */
+            readiness: number;
+            /**
+             * Readiness Low
+             * @description Нижняя граница готовности, 0..1
+             * @default 0
+             */
+            readiness_low: number;
+            /**
+             * Readiness High
+             * @description Верхняя граница готовности, 0..1
+             * @default 0
+             */
+            readiness_high: number;
+            /**
+             * Critical Gate
+             * @description Множитель критического гейта, 0..1
+             * @default 1
+             */
+            critical_gate: number;
+            /**
+             * Confidence
+             * @description Средняя уверенность требований, 0..1
+             * @default 0
+             */
+            confidence: number;
         };
         /**
          * GapItemRead
@@ -1511,6 +1549,13 @@ export interface components {
             confidence: number;
             /** Source */
             source: string;
+            /**
+             * Evidence Type
+             * @default self_report
+             */
+            evidence_type: string;
+            /** Verified Level */
+            verified_level?: number | null;
             /** Last Assessed */
             last_assessed?: string | null;
             /**

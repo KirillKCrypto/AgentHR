@@ -260,6 +260,8 @@ async def save_test_result(
     state.proficiency = level
     state.confidence = round(min(0.95, 0.5 + 0.45 * score), 3)
     state.source = "test"
+    state.evidence_type = "test"
+    state.verified_level = level
     state.last_assessed = datetime.now(UTC)
     state.evidence = [
         *(state.evidence or []),

@@ -423,6 +423,9 @@ JWT-токенов в SPA; дашборд → `GET /me` с access-токеном
 - Миграция `f6a7b8c9d0e1` — таймер ответа:
   - `interview_sessions.answer_seconds` — время на вопрос;
   - `interview_turns.deadline_at`, `answer_mode`.
+- Миграция `b8c9d0e1f2a3` — свидетельства уровня:
+  - `user_skill_states.evidence_type` (`self_report`/`test`/`interview`);
+  - `user_skill_states.verified_level`.
 - Подключение: `DATABASE_URL` из `backend/.env` (локальный дефолт в `app/core/config.py`);
   движок и сессии — `backend/app/db/session.py` (asyncpg, `pool_pre_ping`).
 - Миграции: Alembic (async-шаблон), URL берётся в `alembic/env.py` из настроек;

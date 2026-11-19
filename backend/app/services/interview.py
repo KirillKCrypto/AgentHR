@@ -887,6 +887,8 @@ async def _finish(session: AsyncSession, interview: InterviewSession) -> None:
         state.proficiency = level
         state.confidence = confidence
         state.source = "interview"
+        state.evidence_type = "interview"
+        state.verified_level = round(topic_score)
         state.last_assessed = datetime.now(UTC)
         state.evidence = [
             *(state.evidence or []),

@@ -38,7 +38,7 @@
 | CI: backend + frontend | ✅ |
 | Сквозной E2E M5 | ✅ |
 | Демо-данные | ✅ |
-| Онтология: evidence/verified level | следующий |
+| Онтология: evidence/verified level | ✅ |
 | M3. Подготовка | ✅ |
 | M4. Адаптивность | ✅ |
 | M5. Память и отчёт | ✅ |

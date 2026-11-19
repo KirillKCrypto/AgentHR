@@ -67,6 +67,12 @@ class GapReport:
     critical_weight: float = 0.0
     critical_gap_count: int = 0
     unmatched_count: int = 0
+    # Готовность с критическим гейтом и диапазоном уверенности.
+    readiness: float = 0.0
+    readiness_low: float = 0.0
+    readiness_high: float = 0.0
+    critical_gate: float = 1.0
+    confidence: float = 0.0
 
 async def compute_gaps(
     session: AsyncSession,
@@ -108,12 +114,14 @@ async def compute_gaps(
     unmatched_count = 0
     weighted_gap_total = 0.0
     weighted_gap_weight = 0.0
+    confidence_values: list[float] = []
 
     for skill in skills:
         topic = topics.get(skill.topic_id) if skill.topic_id is not None else None
         state = states.get(skill.topic_id) if skill.topic_id is not None else None
         user_level = state.proficiency if state is not None else 0
         gap = max(0, skill.required_level - user_level)
+        confidence_values.append(state.confidence if state is not None else 0.0)
         topic_status = topic.status if topic is not None else None
         logic = skill.requirement_logic or "SINGLE"
         criticality = skill.criticality or "must_have"
@@ -224,6 +232,20 @@ async def compute_gaps(
         if critical_metric_weight > 0
         else None
     )
+    critical_gate = (
+        1.0
+        if critical_readiness is None or critical_readiness >= 1.0
+        else round(0.7 + 0.3 * critical_readiness, 3)
+    )
+    readiness = round(coverage_all * critical_gate, 3)
+    confidence = (
+        round(sum(confidence_values) / len(confidence_values), 3)
+        if confidence_values
+        else 0.0
+    )
+    margin = round(0.03 + 0.12 * (1.0 - confidence), 3)
+    readiness_low = round(max(0.0, readiness - margin), 3)
+    readiness_high = round(min(1.0, readiness + margin), 3)
     average_gap = (
         round(weighted_gap_total / weighted_gap_weight, 1) if weighted_gap_weight > 0 else 0.0
     )
@@ -253,6 +275,11 @@ async def compute_gaps(
         critical_weight=round(critical_weight, 3),
         critical_gap_count=critical_gap_count,
         unmatched_count=unmatched_count,
+        readiness=readiness,
+        readiness_low=readiness_low,
+        readiness_high=readiness_high,
+        critical_gate=critical_gate,
+        confidence=confidence,
     )
 
 def _recommendations(items: list[GapItem], limit: int = 5) -> tuple[GapRecommendation, ...]:

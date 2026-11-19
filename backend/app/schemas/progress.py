@@ -34,6 +34,10 @@ class DashboardVacancyRead(BaseModel):
     coverage: float
     critical_readiness: float | None = None
     average_gap: float
+    readiness: float = Field(ge=0, le=1)
+    readiness_low: float = Field(ge=0, le=1)
+    readiness_high: float = Field(ge=0, le=1)
+    critical_gate: float = Field(ge=0, le=1)
     requirements_count: int
     satisfied_count: int
     critical_gap_count: int

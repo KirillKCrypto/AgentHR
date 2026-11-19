@@ -21,7 +21,10 @@ type GapItem = GapAnalysisRead['items'][number]
 type Recommendation = GapAnalysisRead['recommendations'][number]
 
 export function GapMetrics({ gaps }: { gaps: GapAnalysisRead }) {
-  const coverage = Math.round(gaps.coverage_all * 100)
+  const coverage = Math.round(gaps.readiness * 100)
+  const coverageAll = Math.round(gaps.coverage_all * 100)
+  const low = Math.round(gaps.readiness_low * 100)
+  const high = Math.round(gaps.readiness_high * 100)
   const critical =
     gaps.critical_readiness === null || gaps.critical_readiness === undefined
       ? null
@@ -32,8 +35,11 @@ export function GapMetrics({ gaps }: { gaps: GapAnalysisRead }) {
       <div className="grid gap-4 sm:grid-cols-3">
         <div className="flex flex-col gap-1">
           <span className="text-3xl font-medium">{coverage}%</span>
-          <span className="text-sm text-muted-foreground">готовность по вакансии</span>
+          <span className="text-sm text-muted-foreground">готовность с гейтом</span>
           <Progress value={coverage} />
+          <span className="text-xs text-muted-foreground">
+            диапазон {low}–{high}% · покрытие {coverageAll}%
+          </span>
         </div>
         <div className="flex flex-col gap-1">
           <span className="text-3xl font-medium">

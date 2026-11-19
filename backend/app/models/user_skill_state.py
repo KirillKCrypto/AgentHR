@@ -56,6 +56,12 @@ class UserSkillState(Base):
     proficiency: Mapped[int] = mapped_column(Integer, default=0, server_default=text("0"))
     # Уверенность оценки, 0..1
     confidence: Mapped[float] = mapped_column(Float, default=0.5, server_default=text("0.5"))
+    # Evidence type: self_report, test, interview, work, project, education.
+    evidence_type: Mapped[str] = mapped_column(
+        String(20), default="self_report", server_default=text("'self_report'")
+    )
+    # Подтверждённый тестом или интервью уровень; NULL — только самоотчёт.
+    verified_level: Mapped[int | None] = mapped_column(Integer, nullable=True)
     # resume | interview | manual | test
     source: Mapped[str] = mapped_column(
         String(30), default="resume", server_default=text("'resume'")
