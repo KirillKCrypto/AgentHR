@@ -74,6 +74,16 @@ npm.cmd run dev
 
 Подробный запуск, локальный backend и тесты — в [`AGENTS.md`](AGENTS.md).
 
+## Демо-данные
+
+```powershell
+cd backend
+uv run python -m scripts.seed_demo
+```
+
+Создаёт пользователя `demo@agenthr.local`, пароль `Demo12345`, профиль,
+вакансию Senior Python и план подготовки. Повторный запуск не дублирует данные.
+
 ## Статус
 
 M0–M5 закрыты. Онтология: этапы 1–4 закрыты (provisional-темы, backfill,

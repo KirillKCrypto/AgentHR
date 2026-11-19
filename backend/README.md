@@ -251,6 +251,15 @@ uv run python scripts/eval_extraction.py --min-f1 0.8 --show-skills
 
 Для живого прогона нужен `LLM_PROVIDER=openai` с ключом DeepSeek и моделью.
 
+## Демо-данные
+
+```powershell
+uv run python -m scripts.seed_demo
+```
+
+Пользователь `demo@agenthr.local`, пароль `Demo12345`, профиль, вакансия и план.
+Скрипт идемпотентен.
+
 ## Тесты и линтер
 
 ```powershell

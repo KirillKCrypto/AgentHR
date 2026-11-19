@@ -60,6 +60,8 @@ backend/
 | План подготовки | `app/services/plans.py`, `app/api/routes/plans.py` — reuse по `profile_fingerprint` |
 | Дашборд и прогресс | `app/services/progress.py`, `app/api/routes/dashboard.py` |
 | Голосовой ввод | `app/api/routes/transcriptions.py`, `stt/` (GigaAM) |
+| Демо-данные | `scripts/seed_demo.py` |
+| CI | `.github/workflows/ci.yml` |
 | Банк вопросов и тесты | `app/services/questions.py`, `app/questions/` |
 | Интервью | `app/services/interview.py`, `app/api/routes/interviews.py` — план/вакансия, SSE |
 | REST API | `app/api/routes/` |

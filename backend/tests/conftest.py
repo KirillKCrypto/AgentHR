@@ -7,7 +7,7 @@ from uuid import uuid4
 
 import pytest
 from httpx2 import ASGITransport, AsyncClient
-from sqlalchemy import select, text
+from sqlalchemy import func, select, text
 from sqlalchemy.exc import SQLAlchemyError
 
 from app.api.deps import get_embedder, get_llm_provider
@@ -20,8 +20,9 @@ from app.llm.base import (
     ToolSpec,
 )
 from app.main import app
-from app.models import User
+from app.models import Question, Topic, User
 from app.ontology.seed import seed_ontology
+from app.services.questions import fingerprint as question_fingerprint
 
 PASSWORD = "correct-horse-battery-staple"
 
@@ -145,10 +146,33 @@ async def seeded_db() -> AsyncGenerator[None]:
 
     async with async_session_factory() as session:
         await seed_ontology(session)
+        await _seed_test_questions(session)
 
     yield
 
     await engine.dispose()
+
+
+async def _seed_test_questions(session) -> None:
+    """Гарантирует банк для тестов на чистой БД (CI)."""
+    existing = await session.scalar(select(func.count()).select_from(Question))
+    if existing:
+        return
+    topics = (await session.scalars(select(Topic))).all()
+    for topic in topics:
+        for difficulty in (1, 3, 5):
+            text = f"Тестовый вопрос {topic.key}, сложность {difficulty}"
+            session.add(
+                Question(
+                    topic_id=topic.id,
+                    difficulty=difficulty,
+                    text=text,
+                    expected_points=["определение", "пример"],
+                    source="test",
+                    fingerprint=question_fingerprint(topic.id, difficulty, text),
+                )
+            )
+    await session.commit()
 
 
 @dataclass
