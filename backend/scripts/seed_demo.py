@@ -22,7 +22,8 @@ from app.models import (
 from app.ontology.seed import seed_ontology
 from app.services.plans import create_plan
 
-EMAIL = "demo@agenthr.local"
+EMAIL = "demo@agenthr.dev"
+LEGACY_EMAIL = "demo@agenthr.local"
 PASSWORD = "Demo12345"
 
 PROFILE = {
@@ -50,9 +51,16 @@ async def main() -> None:
         await seed_ontology(session)
         user = await session.scalar(select(User).where(User.email == EMAIL))
         if user is None:
-            user = User(email=EMAIL, password_hash=hash_password(PASSWORD))
-            session.add(user)
-            await session.flush()
+            legacy = await session.scalar(
+                select(User).where(User.email == LEGACY_EMAIL)
+            )
+            if legacy is not None:
+                legacy.email = EMAIL
+                user = legacy
+            else:
+                user = User(email=EMAIL, password_hash=hash_password(PASSWORD))
+                session.add(user)
+                await session.flush()
 
         topics = {
             topic.key: topic

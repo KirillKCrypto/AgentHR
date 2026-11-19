@@ -259,7 +259,7 @@ uv run python scripts/eval_extraction.py --min-f1 0.8 --show-skills
 uv run python -m scripts.seed_demo
 ```
 
-Пользователь `demo@agenthr.local`, пароль `Demo12345`, профиль, вакансия и план.
+Пользователь `demo@agenthr.dev`, пароль `Demo12345`, профиль, вакансия и план.
 Скрипт идемпотентен.
 
 ## Тесты и линтер

@@ -81,7 +81,7 @@ cd backend
 uv run python -m scripts.seed_demo
 ```
 
-Создаёт пользователя `demo@agenthr.local`, пароль `Demo12345`, профиль,
+Создаёт пользователя `demo@agenthr.dev`, пароль `Demo12345`, профиль,
 вакансию Senior Python и план подготовки. Повторный запуск не дублирует данные.
 
 ## Статус
