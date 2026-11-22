@@ -56,6 +56,7 @@ class MockProvider:
         *,
         schema_name: str = "result",
         max_tokens: int | None = None,
+        temperature: float | None = None,
     ) -> StructuredResult:
         """Возвращает распарсенный JSON из следующего запрограммированного ответа."""
         self.calls.append(

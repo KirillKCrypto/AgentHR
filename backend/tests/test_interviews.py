@@ -1,5 +1,10 @@
 """Интервью: сценарий из плана, ответы, SSE и обновление профиля."""
 
+from datetime import UTC, datetime, timedelta
+from uuid import UUID
+
+from app.db.session import async_session_factory
+from app.models import InterviewSession, InterviewTurn
 from app.services.interview import _difficulties_for_level, _verdict_for
 from app.services.vacancy_level import normalize_level
 from tests.conftest import ApiUser
@@ -716,3 +721,39 @@ async def test_transcription_requires_stt_service(api_user: ApiUser) -> None:
     )
 
     assert response.status_code == 503
+
+
+async def test_timeout_on_last_question_finishes_interview(api_user: ApiUser) -> None:
+    """Таймаут на последнем вопросе завершает интервью, а не оставляет 0:00."""
+    vacancy_id = await _create_vacancy(api_user)
+    _set_evaluation(api_user, 80)
+
+    created = await api_user.client.post(
+        "/interviews",
+        json={"vacancy_id": vacancy_id},
+        headers=api_user.headers,
+    )
+    assert created.status_code == 201, created.text
+    session = created.json()
+    turn = session["turns"][0]
+
+    # Последний вопрос: лимит интервью исчерпан, дедлайн уже прошёл.
+    async with async_session_factory() as db:
+        interview = await db.get(InterviewSession, UUID(session["id"]))
+        pending = await db.get(InterviewTurn, UUID(turn["id"]))
+        assert interview is not None
+        assert pending is not None
+        interview.max_questions = interview.question_count
+        pending.deadline_at = datetime.now(UTC) - timedelta(seconds=10)
+        await db.commit()
+
+    timed_out = await api_user.client.post(
+        f"/interviews/{session['id']}/answers",
+        json={"turn_id": turn["id"], "answer_text": "", "timed_out": True},
+        headers=api_user.headers,
+    )
+
+    assert timed_out.status_code == 200, timed_out.text
+    body = timed_out.json()
+    assert body["finished"] is True
+    assert body["session"]["status"] == "completed"

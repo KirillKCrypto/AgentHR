@@ -118,6 +118,7 @@ class OpenAIProvider:
         *,
         schema_name: str = "result",
         max_tokens: int | None = None,
+        temperature: float | None = None,
     ) -> StructuredResult:
         """Возвращает JSON-ответ, соответствующий переданной JSON Schema.
 
@@ -144,13 +145,15 @@ class OpenAIProvider:
                 }
                 if max_tokens is not None:
                     request["max_tokens"] = max_tokens
+                if temperature is not None:
+                    request["temperature"] = temperature
                 completion = await self._client.chat.completions.create(**request)
             except OpenAIError as exc:
                 logger.warning(
                     "Запрос со строгой JSON Schema не прошёл (%s), повторяю без неё", exc
                 )
                 completion = await self._generate_prompt_json(
-                    messages, schema, max_tokens=max_tokens
+                    messages, schema, max_tokens=max_tokens, temperature=temperature
                 )
         elif self._structured_mode == "json_object":
             completion = await self._generate_prompt_json(
@@ -158,10 +161,11 @@ class OpenAIProvider:
                 schema,
                 response_format={"type": "json_object"},
                 max_tokens=max_tokens,
+                temperature=temperature,
             )
         else:
             completion = await self._generate_prompt_json(
-                messages, schema, max_tokens=max_tokens
+                messages, schema, max_tokens=max_tokens, temperature=temperature
             )
 
         content = completion.choices[0].message.content
@@ -193,6 +197,7 @@ class OpenAIProvider:
         *,
         response_format: dict[str, str] | None = None,
         max_tokens: int | None = None,
+        temperature: float | None = None,
     ) -> Any:
         """Запрос со схемой в системном сообщении (режимы json_object и prompt)."""
         instruction = ChatMessage(
@@ -209,6 +214,8 @@ class OpenAIProvider:
             request["response_format"] = response_format
         if max_tokens is not None:
             request["max_tokens"] = max_tokens
+        if temperature is not None:
+            request["temperature"] = temperature
         try:
             return await self._client.chat.completions.create(**request)
         except OpenAIError as exc:

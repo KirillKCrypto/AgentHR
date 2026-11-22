@@ -34,6 +34,7 @@ from app.services.analysis import (
     extract_vacancy_requirements,
 )
 from app.services.errors import NotFoundError
+from app.services.learning_topics import NON_LEARNING_TOPIC_KEYS
 from app.services.normalization import (
     DEFAULT_FUZZY_THRESHOLD,
     TopicIndex,
@@ -163,7 +164,14 @@ async def analyze_vacancy(
     company: str | None = None,
     embedder: EmbeddingProvider | None = None,
 ) -> Vacancy:
-    """Создаёт вакансию и сохраняет извлечённые из неё навыки."""
+    """Создаёт вакансию и сохраняет извлечённые из неё навыки.
+
+    Тот же текст вакансии у того же пользователя переиспользует уже
+    извлечённые требования: набор тем не зависит от повторного вызова LLM.
+    """
+    cached = await _find_cached_vacancy(session, user_id, raw_text)
+    if cached is not None:
+        return await _clone_vacancy(session, cached, title=title, company=company)
     requirements = await extract_vacancy_requirements(provider, raw_text)
     return await save_vacancy_analysis(
         session,
@@ -175,6 +183,62 @@ async def analyze_vacancy(
         provider=provider,
         embedder=embedder,
     )
+
+
+async def _find_cached_vacancy(
+    session: AsyncSession, user_id: uuid.UUID, raw_text: str
+) -> Vacancy | None:
+    """Последняя вакансия пользователя с тем же текстом."""
+    return await session.scalar(
+        select(Vacancy)
+        .where(Vacancy.user_id == user_id, Vacancy.raw_text == raw_text)
+        .order_by(Vacancy.created_at.desc())
+        .limit(1)
+    )
+
+
+async def _clone_vacancy(
+    session: AsyncSession,
+    source: Vacancy,
+    *,
+    title: str | None,
+    company: str | None,
+) -> Vacancy:
+    """Копирует вакансию вместе с требованиями, без повторного вызова LLM."""
+    vacancy = Vacancy(
+        user_id=source.user_id,
+        title=_clean(title) or source.title,
+        company=_clean(company) or source.company,
+        level=source.level,
+        raw_text=source.raw_text,
+    )
+    session.add(vacancy)
+    await session.flush()
+
+    skills = (
+        await session.scalars(
+            select(VacancySkill).where(VacancySkill.vacancy_id == source.id)
+        )
+    ).all()
+    for skill in skills:
+        session.add(
+            VacancySkill(
+                vacancy_id=vacancy.id,
+                topic_id=skill.topic_id,
+                raw_name=skill.raw_name,
+                required_level=skill.required_level,
+                weight=skill.weight,
+                requirement_group=skill.requirement_group,
+                requirement_logic=skill.requirement_logic,
+                criticality=skill.criticality,
+                confidence=skill.confidence,
+                evidence=skill.evidence,
+                match_method=skill.match_method,
+            )
+        )
+    await session.commit()
+    await session.refresh(vacancy)
+    return vacancy
 
 
 async def save_vacancy_analysis(
@@ -210,6 +274,7 @@ async def save_vacancy_analysis(
         source_type="vacancy",
         source_id=vacancy.id,
     )
+    skills, matches = _merge_skills_by_topic(skills, matches)
     touched_topic_ids = [match.topic_id for match in matches]
 
     for skill, match in zip(skills, matches, strict=True):
@@ -251,7 +316,14 @@ async def analyze_resume(
     title: str | None = None,
     embedder: EmbeddingProvider | None = None,
 ) -> Resume:
-    """Создаёт резюме, сохраняет навыки и пересобирает профиль знаний."""
+    """Создаёт резюме, сохраняет навыки и пересобирает профиль знаний.
+
+    Тот же текст резюме у того же пользователя переиспользует уже извлечённые
+    навыки, поэтому повторная загрузка не меняет профиль случайным образом.
+    """
+    cached = await _find_cached_resume(session, user_id, raw_text)
+    if cached is not None:
+        return await _clone_resume(session, cached, title=title)
     profile: ResumeProfile = await extract_resume_skills(provider, raw_text)
     return await save_resume_analysis(
         session,
@@ -262,6 +334,56 @@ async def analyze_resume(
         provider=provider,
         embedder=embedder,
     )
+
+
+async def _find_cached_resume(
+    session: AsyncSession, user_id: uuid.UUID, raw_text: str
+) -> Resume | None:
+    """Последнее резюме пользователя с тем же текстом."""
+    return await session.scalar(
+        select(Resume)
+        .where(Resume.user_id == user_id, Resume.raw_text == raw_text)
+        .order_by(Resume.created_at.desc())
+        .limit(1)
+    )
+
+
+async def _clone_resume(
+    session: AsyncSession,
+    source: Resume,
+    *,
+    title: str | None,
+) -> Resume:
+    """Копирует резюме вместе с навыками, без повторного вызова LLM."""
+    resume = Resume(
+        user_id=source.user_id,
+        title=_clean(title) or source.title,
+        raw_text=source.raw_text,
+    )
+    session.add(resume)
+    await session.flush()
+
+    skills = (
+        await session.scalars(
+            select(ResumeSkill).where(ResumeSkill.resume_id == source.id)
+        )
+    ).all()
+    for skill in skills:
+        session.add(
+            ResumeSkill(
+                resume_id=resume.id,
+                topic_id=skill.topic_id,
+                raw_name=skill.raw_name,
+                proficiency=skill.proficiency,
+                confidence=skill.confidence,
+                evidence=skill.evidence,
+                match_method=skill.match_method,
+            )
+        )
+    await session.commit()
+    await session.refresh(resume)
+    await rebuild_profile(session, source.user_id)
+    return resume
 
 
 async def save_resume_analysis(
@@ -287,6 +409,7 @@ async def save_resume_analysis(
         source_type="resume",
         source_id=resume.id,
     )
+    skills, matches = _merge_skills_by_topic(skills, matches)
     touched_topic_ids = [match.topic_id for match in matches]
 
     for skill, match in zip(skills, matches, strict=True):
@@ -399,6 +522,7 @@ async def get_profile(session: AsyncSession, user_id: uuid.UUID) -> ProfileSnaps
             .where(
                 UserSkillState.user_id == user_id,
                 Topic.status.in_(("canonical", "provisional")),
+                Topic.key.not_in(NON_LEARNING_TOPIC_KEYS),
             )
             .order_by(Topic.key)
         )
@@ -672,6 +796,43 @@ def _unique_skills(skills: tuple[ExtractedSkill, ...]) -> list[ExtractedSkill]:
         seen.add(key)
         result.append(skill)
     return result
+
+
+def _merge_skills_by_topic(
+    skills: list[ExtractedSkill],
+    matches: list[TopicMatch],
+) -> tuple[list[ExtractedSkill], list[TopicMatch]]:
+    """Сливает навыки, попавшие в одну тему: сильнейший уровень и общий evidence."""
+    merged: dict[uuid.UUID, tuple[ExtractedSkill, TopicMatch]] = {}
+    for skill, match in zip(skills, matches, strict=True):
+        current = merged.get(match.topic_id)
+        if current is None:
+            merged[match.topic_id] = (skill, match)
+            continue
+        previous, previous_match = current
+        evidence_parts = [
+            value for value in (previous.evidence, skill.evidence) if value
+        ]
+        evidence = "; ".join(dict.fromkeys(evidence_parts)) or None
+        criticality = (
+            "must_have"
+            if "must_have" in (previous.criticality, skill.criticality)
+            else "nice_to_have"
+        )
+        merged[match.topic_id] = (
+            replace(
+                previous,
+                level=max(previous.level, skill.level),
+                weight=max(previous.weight, skill.weight),
+                confidence=max(previous.confidence, skill.confidence),
+                evidence=evidence,
+                criticality=criticality,
+            ),
+            previous_match,
+        )
+    return [skill for skill, _ in merged.values()], [
+        match for _, match in merged.values()
+    ]
 
 
 def _clamp_level(value: Any) -> int:

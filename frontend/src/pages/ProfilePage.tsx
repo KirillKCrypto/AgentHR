@@ -139,7 +139,7 @@ export default function ProfilePage() {
 
   const canonicalTopics = profile.topics.filter((topic) => topic.status !== 'provisional')
   const provisionalTopics = profile.topics.filter((topic) => topic.status === 'provisional')
-  const isEmpty = profile.topics.length === 0 && profile.unmatched_skills.length === 0
+  const isEmpty = profile.topics.length === 0
 
   return (
     <div className="flex flex-col gap-6">
@@ -185,7 +185,7 @@ export default function ProfilePage() {
         <>
           <CollapsibleCard
             title="Темы"
-            description="Подтверждённые темы: владение 0–100, источник и уверенность под шкалой."
+            description="Темы профиля: владение 0–100 и источник оценки."
             storageKey="profile-topics"
           >
             <div className="flex flex-col gap-5">
@@ -235,30 +235,6 @@ export default function ProfilePage() {
             onSelect={setSelectedVacancyId}
             onRetry={() => void gapsQuery.refetch()}
           />
-
-          <CollapsibleCard
-            title="Навыки вне онтологии"
-            description="Сохранены из резюме как есть; в готовность к вакансии не входят."
-            storageKey="profile-unmatched"
-          >
-            {profile.unmatched_skills.length === 0 ? (
-              <p className="text-sm text-muted-foreground">
-                Все навыки из резюме сопоставлены с темами.
-              </p>
-            ) : (
-              <div className="flex flex-col gap-2">
-                {profile.unmatched_skills.map((skill) => (
-                  <div
-                    key={`${skill.raw_name}-${skill.level}`}
-                    className="flex items-center justify-between gap-3 text-sm"
-                  >
-                    <span>{skill.raw_name}</span>
-                    <span className="text-muted-foreground">уровень {skill.level}</span>
-                  </div>
-                ))}
-              </div>
-            )}
-          </CollapsibleCard>
         </>
       )}
     </div>
@@ -277,9 +253,7 @@ function TopicRow({ topic, gap }: { topic: ProfileTopic; gap?: GapItem }) {
           {topic.category ? <Badge variant="outline">{topic.category}</Badge> : null}
           {typeof topic.verified_level === 'number' ? (
             <Badge variant="secondary">подтверждено {topic.verified_level}</Badge>
-          ) : (
-            <Badge variant="outline">самоотчёт</Badge>
-          )}
+          ) : null}
           {gap && !gap.satisfied ? (
             <Badge variant="destructive">пробел −{gap.gap}</Badge>
           ) : null}
@@ -289,8 +263,6 @@ function TopicRow({ topic, gap }: { topic: ProfileTopic; gap?: GapItem }) {
       <Progress value={topic.proficiency} />
       <div className="flex flex-wrap gap-2 text-xs text-muted-foreground">
         <span>источник: {sourceLabel(topic.source)}</span>
-        <span>·</span>
-        <span>уверенность: {Math.round(topic.confidence * 100)}%</span>
         {topic.last_assessed ? (
           <>
             <span>·</span>

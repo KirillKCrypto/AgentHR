@@ -69,10 +69,6 @@ export default function DashboardPage() {
     }
   }, [meQuery.error, dashboardQuery.error])
 
-  function handleLogout() {
-    clearTokens()
-    setToken(null)
-  }
 
   if (token === null) {
     return (
@@ -112,9 +108,6 @@ export default function DashboardPage() {
           <Button variant="outline" onClick={() => void dashboardQuery.refetch()}>
             Повторить
           </Button>
-          <Button variant="ghost" onClick={handleLogout}>
-            Выйти
-          </Button>
         </CardContent>
       </Card>
     )
@@ -132,10 +125,11 @@ export default function DashboardPage() {
         <CardHeader>
           <CardTitle>Дашборд</CardTitle>
           <CardDescription>
-            {meQuery.data ? `Вы вошли как ${meQuery.data.email}. ` : ''}
             {hasProfile
-              ? 'Показываем готовность, последний результат и следующий шаг.'
-              : 'Начните с резюме — построим профиль знаний и покажем пробелы.'}
+              ? hasVacancy
+                ? 'Смотрите готовность к вакансии, обязательные пробелы, последний результат и следующий шаг.'
+                : 'Профиль готов. Загрузите вакансию — покажем готовность, разрывы и что подтянуть.'
+              : 'AgentHR помогает подготовиться к техническому интервью по конкретной вакансии. Начните с резюме: построим профиль знаний, покажем пробелы и соберём план.'}
           </CardDescription>
         </CardHeader>
         <CardContent className="flex flex-wrap items-center gap-2">
@@ -168,9 +162,6 @@ export default function DashboardPage() {
               Профиль знаний
             </Link>
           ) : null}
-          <Button variant="ghost" className="ml-auto" onClick={handleLogout}>
-            Выйти
-          </Button>
         </CardContent>
       </Card>
 
@@ -248,9 +239,9 @@ export default function DashboardPage() {
           }
         />
         <StatCard
-          label="Активность"
+          label="Пройдено интервью"
           value={data.activity.interviews_completed}
-          hint={`интервью · ${data.activity.tests_completed} тестов`}
+          hint={`Тестов: ${data.activity.tests_completed}`}
         />
       </div>
 

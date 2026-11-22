@@ -109,6 +109,7 @@ class SchemaStubProvider:
         *,
         schema_name: str = "result",
         max_tokens: int | None = None,
+        temperature: float | None = None,
     ) -> StructuredResult:
         """Возвращает ответ, привязанный к имени схемы."""
         self.calls.append(schema_name)

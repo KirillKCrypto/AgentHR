@@ -79,7 +79,7 @@ export function ResumeUploadCard({
   return (
     <CollapsibleCard
       title="Загрузить резюме"
-      description="Шаг 1. Загрузите файл PDF/DOCX или вставьте текст — AgentHR извлечёт навыки и обновит профиль знаний."
+      description="Загрузите файл PDF/DOCX или вставьте текст — AgentHR извлечёт навыки и обновит профиль знаний."
       storageKey="profile-resume"
     >
       <form className="flex flex-col gap-4" onSubmit={handleSubmit}>

@@ -7,14 +7,20 @@ from sqlalchemy import select
 
 from app.core.security import hash_password
 from app.db.session import async_session_factory
-from app.models import Resume, ResumeSkill, Topic, User, UserSkillState
+from app.models import Resume, ResumeSkill, Topic, User, UserSkillState, VacancySkill
+from app.services.analysis import ExtractedSkill
+from app.services.normalization import TopicMatch
 from app.services.profile import (
     NotFoundError,
+    _merge_skills_by_topic,
+    analyze_resume,
+    analyze_vacancy,
     get_profile,
     rebuild_profile,
     update_skill_proficiency,
     weighted_estimate,
 )
+from tests.conftest import RESUME_TEXT, VACANCY_TEXT, SchemaStubProvider
 
 PASSWORD = "correct-horse-battery-staple"
 
@@ -152,3 +158,113 @@ async def test_update_unknown_topic_raises(seeded_db: None) -> None:
                 )
         finally:
             await _cleanup_user(user)
+
+
+async def test_profile_hides_service_topic(seeded_db: None) -> None:
+    """Служебная тема авто-ревью не попадает в пользовательский профиль."""
+    async with async_session_factory() as session:
+        user = await _create_user(session)
+        try:
+            python = await session.scalar(select(Topic).where(Topic.key == "python"))
+            service = await session.scalar(
+                select(Topic).where(Topic.key == "other-auto-review")
+            )
+            assert python is not None
+            assert service is not None
+            session.add_all(
+                [
+                    UserSkillState(user_id=user.id, topic_id=python.id, proficiency=70),
+                    UserSkillState(user_id=user.id, topic_id=service.id, proficiency=10),
+                ]
+            )
+            await session.commit()
+
+            snapshot = await get_profile(session, user.id)
+
+            keys = {topic.topic_key for topic in snapshot.topics}
+            assert "python" in keys
+            assert "other-auto-review" not in keys
+        finally:
+            await _cleanup_user(user)
+
+
+async def test_repeated_vacancy_text_reuses_extraction(seeded_db: None) -> None:
+    """Повторная загрузка того же текста не вызывает LLM второй раз."""
+    async with async_session_factory() as session:
+        user = await _create_user(session)
+        provider = SchemaStubProvider()
+        try:
+            first = await analyze_vacancy(
+                session, provider, user.id, raw_text=VACANCY_TEXT
+            )
+            second = await analyze_vacancy(
+                session, provider, user.id, raw_text=VACANCY_TEXT
+            )
+
+            assert first.id != second.id
+            assert provider.calls.count("vacancy_requirements") == 1
+            first_skills = (
+                await session.scalars(
+                    select(VacancySkill).where(VacancySkill.vacancy_id == first.id)
+                )
+            ).all()
+            second_skills = (
+                await session.scalars(
+                    select(VacancySkill).where(VacancySkill.vacancy_id == second.id)
+                )
+            ).all()
+            assert sorted(skill.raw_name for skill in first_skills) == sorted(
+                skill.raw_name for skill in second_skills
+            )
+        finally:
+            await _cleanup_user(user)
+
+
+async def test_repeated_resume_text_reuses_extraction(seeded_db: None) -> None:
+    """Повторная загрузка того же резюме даёт тот же набор навыков."""
+    async with async_session_factory() as session:
+        user = await _create_user(session)
+        provider = SchemaStubProvider()
+        try:
+            first = await analyze_resume(session, provider, user.id, raw_text=RESUME_TEXT)
+            second = await analyze_resume(session, provider, user.id, raw_text=RESUME_TEXT)
+
+            assert first.id != second.id
+            assert provider.calls.count("resume_skills") == 1
+            first_skills = (
+                await session.scalars(
+                    select(ResumeSkill).where(ResumeSkill.resume_id == first.id)
+                )
+            ).all()
+            second_skills = (
+                await session.scalars(
+                    select(ResumeSkill).where(ResumeSkill.resume_id == second.id)
+                )
+            ).all()
+            assert sorted(skill.raw_name for skill in first_skills) == sorted(
+                skill.raw_name for skill in second_skills
+            )
+        finally:
+            await _cleanup_user(user)
+
+
+def test_merge_skills_by_topic_keeps_strongest() -> None:
+    """Навыки одной темы сливаются в один: максимум уровня и общий evidence."""
+    topic_id = uuid4()
+    skills = [
+        ExtractedSkill("Python", 60, 0.5, "знаю Python", 0.6),
+        ExtractedSkill("python3", 85, 0.9, "писал на python3", 0.8),
+    ]
+    matches = [
+        TopicMatch(topic_id, "exact", 1.0),
+        TopicMatch(topic_id, "fuzzy", 0.9),
+    ]
+
+    merged, merged_matches = _merge_skills_by_topic(skills, matches)
+
+    assert len(merged) == 1
+    assert len(merged_matches) == 1
+    assert merged[0].level == 85
+    assert merged[0].weight == 0.9
+    assert merged[0].confidence == 0.8
+    assert merged[0].evidence == "знаю Python; писал на python3"

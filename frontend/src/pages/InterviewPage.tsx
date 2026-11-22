@@ -146,6 +146,39 @@ export default function InterviewPage() {
     }
   }, [remaining, currentTurn, busy, recording, transcribing])
 
+  async function finishExpiredTurn(
+    sessionId: string,
+    turnId: string,
+    mode: 'text' | 'voice',
+    key: string | null,
+  ) {
+    if (token === null) {
+      return
+    }
+    try {
+      const result = await answerInterview(
+        sessionId,
+        turnId,
+        '',
+        token,
+        mode,
+        true,
+      )
+      setSession(result.session)
+      setAnswer('')
+      if (key) {
+        window.localStorage.removeItem(key)
+      }
+    } catch (value) {
+      if (value instanceof ApiError && value.status === 401) {
+        expire()
+        return
+      }
+      // 409 значит, что вопрос уже закрыт: подтягиваем актуальное состояние.
+      void interviewQuery.refetch()
+    }
+  }
+
   async function submitAnswer(
     text: string,
     mode: 'text' | 'voice',
@@ -162,29 +195,8 @@ export default function InterviewPage() {
     setStreamedFeedback('')
 
     if (timedOut) {
-      try {
-        const result = await answerInterview(
-          sessionId,
-          turnId,
-          '',
-          token,
-          mode,
-          true,
-        )
-        setSession(result.session)
-        setAnswer('')
-        if (key) {
-          window.localStorage.removeItem(key)
-        }
-      } catch (value) {
-        if (value instanceof ApiError && value.status === 401) {
-          expire()
-          return
-        }
-        setError(errorMessage(value))
-      } finally {
-        setBusy(false)
-      }
+      await finishExpiredTurn(sessionId, turnId, mode, key)
+      setBusy(false)
       return
     }
 
@@ -251,7 +263,11 @@ export default function InterviewPage() {
             window.localStorage.removeItem(key)
           }
         } catch (fallbackError) {
-          setError(errorMessage(fallbackError))
+          if (fallbackError instanceof ApiError && fallbackError.status === 409) {
+            await finishExpiredTurn(sessionId, turnId, mode, key)
+          } else {
+            setError(errorMessage(fallbackError))
+          }
         }
       } else {
         setError('Фидбек прервался. Обновите страницу — оценка уже сохранена.')

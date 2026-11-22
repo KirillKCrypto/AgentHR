@@ -1,5 +1,7 @@
 import type { components } from './schema'
 
+import { clearTokens, getRefreshToken, saveTokens } from '@/lib/tokens'
+
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? 'http://127.0.0.1:8000'
 
 export type LoginRequest = components['schemas']['LoginRequest']
@@ -48,17 +50,78 @@ interface ApiFetchOptions extends RequestInit {
   token?: string | null
 }
 
-async function apiFetch<T>(path: string, options: ApiFetchOptions = {}): Promise<T> {
+// Один общий refresh: параллельные 401 не создают лавину запросов.
+let refreshPromise: Promise<string | null> | null = null
+
+async function refreshAccessToken(): Promise<string | null> {
+  const refreshToken = getRefreshToken()
+  if (!refreshToken) {
+    return null
+  }
+  if (refreshPromise === null) {
+    refreshPromise = (async () => {
+      try {
+        const response = await fetch(`${API_BASE_URL}/auth/refresh`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ refresh_token: refreshToken }),
+        })
+        if (!response.ok) {
+          return null
+        }
+        const tokens = (await response.json()) as TokenResponse
+        saveTokens(tokens)
+        return tokens.access_token
+      } catch {
+        return null
+      } finally {
+        refreshPromise = null
+      }
+    })()
+  }
+  return refreshPromise
+}
+
+async function fetchWithRefresh(
+  url: string,
+  init: RequestInit,
+  token: string | null | undefined,
+  allowRefresh = true,
+): Promise<Response> {
+  const response = await fetch(url, init)
+  if (response.status !== 401 || !allowRefresh || !token) {
+    return response
+  }
+  const nextToken = await refreshAccessToken()
+  if (nextToken === null) {
+    clearTokens()
+    return response
+  }
+  const headers = new Headers(init.headers)
+  headers.set('Authorization', `Bearer ${nextToken}`)
+  return fetchWithRefresh(url, { ...init, headers }, nextToken, false)
+}
+
+async function apiFetch<T>(
+  path: string,
+  options: ApiFetchOptions = {},
+  allowRefresh = true,
+): Promise<T> {
   const { token, headers, ...rest } = options
   const isFormData = rest.body instanceof FormData
-  const response = await fetch(`${API_BASE_URL}${path}`, {
-    ...rest,
-    headers: {
-      ...(isFormData ? {} : { 'Content-Type': 'application/json' }),
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
-      ...headers,
+  const response = await fetchWithRefresh(
+    `${API_BASE_URL}${path}`,
+    {
+      ...rest,
+      headers: {
+        ...(isFormData ? {} : { 'Content-Type': 'application/json' }),
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        ...headers,
+      },
     },
-  })
+    token,
+    allowRefresh,
+  )
 
   if (!response.ok) {
     throw new ApiError(response.status, await readErrorMessage(response))
@@ -263,11 +326,15 @@ export async function transcribeAudio(
   form.append('file', audio, 'answer.webm')
   form.append('interview_id', interviewId)
   form.append('turn_id', turnId)
-  const response = await fetch(`${API_BASE_URL}/transcriptions`, {
-    method: 'POST',
-    headers: { Authorization: `Bearer ${token}` },
-    body: form,
-  })
+  const response = await fetchWithRefresh(
+    `${API_BASE_URL}/transcriptions`,
+    {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}` },
+      body: form,
+    },
+    token,
+  )
   if (!response.ok) {
     throw new ApiError(response.status, await readErrorMessage(response))
   }
@@ -285,7 +352,7 @@ export async function streamInterviewAnswer(
   answerMode: 'text' | 'voice' = 'text',
   timedOut = false,
 ): Promise<void> {
-  const response = await fetch(
+  const response = await fetchWithRefresh(
     `${API_BASE_URL}/interviews/${encodeURIComponent(interviewId)}/answers/stream`,
     {
       method: 'POST',
@@ -302,6 +369,7 @@ export async function streamInterviewAnswer(
       }),
       signal,
     },
+    token,
   )
 
   if (!response.ok) {

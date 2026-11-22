@@ -20,3 +20,9 @@ def test_review_interval_is_capped() -> None:
     """Интервал не растёт бесконечно."""
     _, days = next_review(100, previous_days=14)
     assert days == 14
+
+
+def test_review_interval_accepts_missing_previous_days() -> None:
+    """Новое состояние без интервала не роняет расчёт (регресс 500)."""
+    _, days = next_review(90, previous_days=None)
+    assert days == 7

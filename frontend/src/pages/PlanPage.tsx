@@ -154,8 +154,6 @@ export default function PlanPage() {
                   <span>·</span>
                   <span>вопросов в банке: {item.question_count}</span>
                   <span>·</span>
-                  <span>уверенность {Math.round(item.confidence * 100)}%</span>
-                  <span>·</span>
                   <span>{item.reason}</span>
                 </div>
                 <TopicTest topicKey={item.topic_key} token={token} onUnauthorized={expire} />

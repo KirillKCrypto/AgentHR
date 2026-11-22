@@ -34,6 +34,8 @@ class FlakyProvider:
         schema: dict[str, Any],
         *,
         schema_name: str = "result",
+        max_tokens: int | None = None,
+        temperature: float | None = None,
     ) -> StructuredResult:
         """Первый вызов имитирует таймаут."""
         self.calls += 1

@@ -33,6 +33,7 @@ from app.schemas.progress import (
 )
 from app.services.gaps import compute_gaps
 from app.services.interview import list_interviews
+from app.services.learning_topics import NON_LEARNING_TOPIC_KEYS
 from app.services.plans import PlanNotFoundError
 
 
@@ -315,7 +316,11 @@ async def _profile_summary(
         await session.scalar(
             select(func.count())
             .select_from(UserSkillState)
-            .where(UserSkillState.user_id == user_id)
+            .join(Topic, Topic.id == UserSkillState.topic_id)
+            .where(
+                UserSkillState.user_id == user_id,
+                Topic.key.not_in(NON_LEARNING_TOPIC_KEYS),
+            )
         )
     ) or 0
     confirmed = (
@@ -326,6 +331,7 @@ async def _profile_summary(
             .where(
                 UserSkillState.user_id == user_id,
                 Topic.status == "canonical",
+                Topic.key.not_in(NON_LEARNING_TOPIC_KEYS),
             )
         )
     ) or 0
