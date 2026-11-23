@@ -219,7 +219,7 @@ async def build_plan_progress(
 ) -> PlanProgressRead:
     """Считает живой прогресс плана по текущему профилю и тестам."""
     plan = await session.get(LearningPlan, plan_id)
-    if plan is None or plan.user_id != user_id:
+    if plan is None or plan.user_id != user_id or plan.status == "archived":
         raise PlanNotFoundError("План не найден")
 
     rows = (

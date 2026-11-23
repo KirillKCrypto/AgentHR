@@ -152,11 +152,11 @@ async def create_plan(
         .limit(1)
     )
     if latest is not None:
-        if latest.profile_fingerprint is None:
+        if latest.profile_fingerprint is None and latest.resume_id == resume_id:
             latest.profile_fingerprint = fingerprint
             await session.commit()
             return replace(await get_plan(session, user_id, latest.id), reused=True)
-        if latest.profile_fingerprint == fingerprint:
+        if latest.profile_fingerprint == fingerprint and latest.resume_id == resume_id:
             return replace(await get_plan(session, user_id, latest.id), reused=True)
 
     candidates = await _build_candidates(
@@ -406,7 +406,7 @@ async def _latest_interview(
 async def get_plan(session: AsyncSession, user_id: uuid.UUID, plan_id: uuid.UUID) -> PlanSnapshot:
     """Возвращает план пользователя с темами."""
     plan = await session.get(LearningPlan, plan_id)
-    if plan is None or plan.user_id != user_id:
+    if plan is None or plan.user_id != user_id or plan.status == "archived":
         raise PlanNotFoundError("План не найден")
 
     rows = (

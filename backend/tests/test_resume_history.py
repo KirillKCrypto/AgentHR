@@ -2,13 +2,14 @@
 
 from uuid import uuid4
 
+import pytest
 from sqlalchemy import select
 
 from app.core.security import hash_password
 from app.db.session import async_session_factory
-from app.models import Resume, Topic, User, UserSkillState
+from app.models import LearningPlan, Resume, Topic, User, UserSkillState
 from app.services.analysis import ExtractedSkill, ResumeProfile
-from app.services.plans import create_plan, get_plan, list_plans
+from app.services.plans import PlanNotFoundError, create_plan, get_plan, list_plans
 from app.services.profile import (
     activate_resume,
     clear_resumes,
@@ -179,8 +180,105 @@ async def test_switching_resume_rebuilds_plan(seeded_db: None) -> None:
             assert len(active) == 1
             assert active[0].id != first_plan.id
             assert active[0].resume_id == second.id
-            old_plan = await get_plan(session, user.id, first_plan.id)
-            assert old_plan.status == "archived"
+            with pytest.raises(PlanNotFoundError):
+                await get_plan(session, user.id, first_plan.id)
+        finally:
+            await _cleanup_user(user)
+
+
+async def test_deleting_last_resume_archives_plan(seeded_db: None) -> None:
+    """Удаление последнего резюме очищает активный план."""
+    async with async_session_factory() as session:
+        user = await _create_user(session)
+        try:
+            resume = await save_resume_analysis(
+                session,
+                user.id,
+                raw_text="Резюме Python",
+                profile=ResumeProfile(
+                    skills=(ExtractedSkill("Python", 85, confidence=0.9),)
+                ),
+            )
+            plan = await create_plan(session, user.id)
+            assert plan.status == "active"
+
+            await delete_resume(session, user.id, resume.id)
+
+            plans = await list_plans(session, user.id)
+            assert [item for item in plans if item.status == "active"] == []
+        finally:
+            await _cleanup_user(user)
+
+
+async def test_deleting_active_resume_moves_plan_to_next(seeded_db: None) -> None:
+    """Удаление активного резюме пересобирает план под следующее."""
+    async with async_session_factory() as session:
+        user = await _create_user(session)
+        try:
+            first = await save_resume_analysis(
+                session,
+                user.id,
+                raw_text="Резюме Python",
+                profile=ResumeProfile(
+                    skills=(ExtractedSkill("Python", 85, confidence=0.9),)
+                ),
+            )
+            second = await save_resume_analysis(
+                session,
+                user.id,
+                raw_text="Резюме SQL",
+                profile=ResumeProfile(skills=(ExtractedSkill("SQL", 60, confidence=0.8),)),
+            )
+            plan = await create_plan(session, user.id)
+            assert plan.resume_id == second.id
+
+            await delete_resume(session, user.id, second.id)
+
+            plans = await list_plans(session, user.id)
+            active = [item for item in plans if item.status == "active"]
+            assert len(active) == 1
+            assert active[0].resume_id == first.id
+            assert active[0].id != plan.id
+        finally:
+            await _cleanup_user(user)
+
+
+async def test_deleting_active_resume_rebinds_legacy_plan(seeded_db: None) -> None:
+    """Старый план без отпечатка не остаётся после удаления активного резюме."""
+    async with async_session_factory() as session:
+        user = await _create_user(session)
+        try:
+            first = await save_resume_analysis(
+                session,
+                user.id,
+                raw_text="Резюме Python",
+                profile=ResumeProfile(
+                    skills=(ExtractedSkill("Python", 85, confidence=0.9),)
+                ),
+            )
+            second = await save_resume_analysis(
+                session,
+                user.id,
+                raw_text="Резюме SQL",
+                profile=ResumeProfile(skills=(ExtractedSkill("SQL", 60, confidence=0.8),)),
+            )
+            legacy = LearningPlan(
+                user_id=user.id,
+                title="Старый план",
+                status="active",
+                resume_id=second.id,
+                profile_fingerprint=None,
+            )
+            session.add(legacy)
+            await session.commit()
+
+            await delete_resume(session, user.id, second.id)
+
+            plans = await list_plans(session, user.id)
+            active = [item for item in plans if item.status == "active"]
+            assert len(active) == 1
+            assert active[0].resume_id == first.id
+            assert active[0].id != legacy.id
         finally:
             await _cleanup_user(user)
 
