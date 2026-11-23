@@ -137,16 +137,20 @@ export interface paths {
         };
         /**
          * List Resumes
-         * @description Резюме текущего пользователя (без навыков).
+         * @description История резюме пользователя с числом навыков.
          */
         get: operations["list_resumes_resumes_get"];
         put?: never;
         /**
          * Create Resume
-         * @description Создаёт резюме, извлекает навыки и пересобирает профиль знаний.
+         * @description Создаёт резюме, извлекает навыки и делает его активным.
          */
         post: operations["create_resume_resumes_post"];
-        delete?: never;
+        /**
+         * Clear Resume History
+         * @description Удаляет все резюме; оценки из интервью и ручные оценки сохраняются.
+         */
+        delete: operations["clear_resume_history_resumes_delete"];
         options?: never;
         head?: never;
         patch?: never;
@@ -163,10 +167,9 @@ export interface paths {
         put?: never;
         /**
          * Upload Resume
-         * @description Принимает PDF/DOCX, извлекает текст и сохраняет резюме.
+         * @description Загружает PDF/DOCX, извлекает текст и сохраняет резюме.
          *
-         *     Сам файл не сохраняется: в БД попадает только текст. Сканы без текстового
-         *     слоя отклоняются с понятной ошибкой.
+         *     Повторная загрузка того же текста возвращает существующее резюме.
          */
         post: operations["upload_resume_resumes_upload_post"];
         delete?: never;
@@ -184,11 +187,35 @@ export interface paths {
         };
         /**
          * Read Resume
-         * @description Карточка резюме с извлечёнными навыками.
+         * @description Возвращает резюме с текстом и навыками.
          */
         get: operations["read_resume_resumes__resume_id__get"];
         put?: never;
         post?: never;
+        /**
+         * Remove Resume
+         * @description Удаляет резюме; активным становится следующее по дате.
+         */
+        delete: operations["remove_resume_resumes__resume_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/resumes/{resume_id}/activate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Make Resume Active
+         * @description Делает резюме активным и пересобирает профиль.
+         */
+        post: operations["make_resume_active_resumes__resume_id__activate_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1809,6 +1836,16 @@ export interface components {
              * @default []
              */
             skills: components["schemas"]["SkillRead"][];
+            /**
+             * Is Active
+             * @default false
+             */
+            is_active: boolean;
+            /**
+             * Reused
+             * @default false
+             */
+            reused: boolean;
         };
         /**
          * ResumeSummary
@@ -1827,6 +1864,16 @@ export interface components {
              * Format: date-time
              */
             created_at: string;
+            /**
+             * Skills Count
+             * @default 0
+             */
+            skills_count: number;
+            /**
+             * Is Active
+             * @default false
+             */
+            is_active: boolean;
         };
         /**
          * SkillRead
@@ -2004,6 +2051,11 @@ export interface components {
              * @default []
              */
             skills: components["schemas"]["SkillRead"][];
+            /**
+             * Reused
+             * @default false
+             */
+            reused: boolean;
         };
         /**
          * VacancySummary
@@ -2305,6 +2357,24 @@ export interface operations {
             };
         };
     };
+    clear_resume_history_resumes_delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
     upload_resume_resumes_upload_post: {
         parameters: {
             query?: never;
@@ -2339,6 +2409,66 @@ export interface operations {
         };
     };
     read_resume_resumes__resume_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                resume_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ResumeRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    remove_resume_resumes__resume_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                resume_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    make_resume_active_resumes__resume_id__activate_post: {
         parameters: {
             query?: never;
             header?: never;

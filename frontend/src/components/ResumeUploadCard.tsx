@@ -56,9 +56,13 @@ export function ResumeUploadCard({
           : await createResume({ raw_text: text.trim(), title: title.trim() || null }, token)
 
       await queryClient.invalidateQueries({ queryKey: ['profile'] })
+      await queryClient.invalidateQueries({ queryKey: ['resumes'] })
+      await queryClient.invalidateQueries({ queryKey: ['dashboard'] })
       setSuccess(
-        `Резюме сохранено. Извлечено навыков: ${resume.skills.length}. ` +
-          'Профиль обновлён — проверьте навыки в блоке ниже.',
+        resume.reused
+          ? 'Это резюме уже загружено — сделали его активным.'
+          : `Резюме сохранено. Извлечено навыков: ${resume.skills.length}. ` +
+              'Профиль обновлён — проверьте навыки в блоке ниже.',
       )
       setText('')
       setFile(null)

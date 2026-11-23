@@ -33,6 +33,7 @@ export default function VacancyUploadPage() {
   const [vacancyText, setVacancyText] = useState('')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [notice, setNotice] = useState<string | null>(null)
   const [vacancy, setVacancy] = useState<VacancyRead | null>(null)
   const [gaps, setGaps] = useState<GapAnalysisRead | null>(null)
 
@@ -60,6 +61,7 @@ export default function VacancyUploadPage() {
     }
 
     setError(null)
+    setNotice(null)
     setVacancy(null)
     setGaps(null)
     setBusy(true)
@@ -73,9 +75,13 @@ export default function VacancyUploadPage() {
         token,
       )
       setVacancy(created)
+      if (created.reused) {
+        setNotice('Эта вакансия уже проверена — открыт сохранённый анализ.')
+      }
       const report = await fetchGaps(created.id, token)
       setGaps(report)
       await queryClient.invalidateQueries({ queryKey: ['vacancies'] })
+      await queryClient.invalidateQueries({ queryKey: ['dashboard'] })
     } catch (err) {
       if (err instanceof ApiError && err.status === 401) {
         expire()
@@ -163,6 +169,7 @@ export default function VacancyUploadPage() {
             </div>
 
             {error ? <p className="text-sm text-destructive">{error}</p> : null}
+            {notice ? <p className="text-sm text-muted-foreground">{notice}</p> : null}
 
             <div className="flex flex-wrap items-center gap-3">
               <Button type="submit" disabled={busy}>

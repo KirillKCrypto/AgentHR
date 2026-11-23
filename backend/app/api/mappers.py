@@ -39,7 +39,12 @@ from app.services.profile import (
 )
 
 
-def vacancy_read(vacancy: Vacancy, skills: tuple[SkillEntry, ...]) -> VacancyRead:
+def vacancy_read(
+    vacancy: Vacancy,
+    skills: tuple[SkillEntry, ...],
+    *,
+    reused: bool = False,
+) -> VacancyRead:
     """Вакансия с навыками для ответа API."""
     return VacancyRead(
         id=vacancy.id,
@@ -50,10 +55,16 @@ def vacancy_read(vacancy: Vacancy, skills: tuple[SkillEntry, ...]) -> VacancyRea
         raw_text=vacancy.raw_text,
         created_at=vacancy.created_at,
         skills=skills_read(skills),
+        reused=reused,
     )
 
 
-def resume_read(resume: Resume, skills: tuple[SkillEntry, ...]) -> ResumeRead:
+def resume_read(
+    resume: Resume,
+    skills: tuple[SkillEntry, ...],
+    *,
+    reused: bool = False,
+) -> ResumeRead:
     """Резюме с навыками для ответа API."""
     return ResumeRead(
         id=resume.id,
@@ -62,6 +73,8 @@ def resume_read(resume: Resume, skills: tuple[SkillEntry, ...]) -> ResumeRead:
         raw_text=resume.raw_text,
         created_at=resume.created_at,
         skills=skills_read(skills),
+        is_active=resume.is_active,
+        reused=reused,
     )
 
 

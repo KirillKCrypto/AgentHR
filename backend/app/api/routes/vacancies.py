@@ -2,7 +2,7 @@
 
 from uuid import UUID
 
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter, HTTPException, Response, status
 from sqlalchemy import select
 
 from app.api.deps import CurrentUser, DbSession, Embedder, LlmProvider
@@ -10,7 +10,13 @@ from app.api.mappers import vacancy_read
 from app.models import Vacancy
 from app.schemas.analysis import VacancyCreate, VacancyRead, VacancySummary
 from app.services.analysis import AnalysisError
-from app.services.profile import NotFoundError, analyze_vacancy, get_vacancy, load_vacancy_skills
+from app.services.profile import (
+    NotFoundError,
+    analyze_vacancy,
+    find_vacancy_by_text,
+    get_vacancy,
+    load_vacancy_skills,
+)
 
 router = APIRouter(prefix="/vacancies", tags=["vacancies"])
 
@@ -18,12 +24,19 @@ router = APIRouter(prefix="/vacancies", tags=["vacancies"])
 @router.post("", status_code=status.HTTP_201_CREATED)
 async def create_vacancy(
     payload: VacancyCreate,
+    response: Response,
     db: DbSession,
     provider: LlmProvider,
     embedder: Embedder,
     current_user: CurrentUser,
 ) -> VacancyRead:
     """Создаёт вакансию и сразу извлекает из неё требования."""
+    existing = await find_vacancy_by_text(db, current_user.id, payload.raw_text)
+    if existing is not None:
+        response.status_code = status.HTTP_200_OK
+        skills = await load_vacancy_skills(db, existing.id)
+        return vacancy_read(existing, skills, reused=True)
+
     try:
         vacancy = await analyze_vacancy(
             db,

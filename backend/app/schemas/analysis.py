@@ -65,6 +65,7 @@ class VacancyRead(BaseModel):
     raw_text: str
     created_at: datetime
     skills: list[SkillRead] = []
+    reused: bool = False
 
 
 class VacancySummary(BaseModel):
@@ -88,6 +89,8 @@ class ResumeRead(BaseModel):
     raw_text: str
     created_at: datetime
     skills: list[SkillRead] = []
+    is_active: bool = False
+    reused: bool = False
 
 
 class ResumeSummary(BaseModel):
@@ -96,6 +99,8 @@ class ResumeSummary(BaseModel):
     id: UUID
     title: str | None = None
     created_at: datetime
+    skills_count: int = 0
+    is_active: bool = False
 
     model_config = ConfigDict(from_attributes=True)
 

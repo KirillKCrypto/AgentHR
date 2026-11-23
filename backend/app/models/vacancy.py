@@ -40,6 +40,7 @@ class Vacancy(Base):
     # Уровень позиции из текста вакансии: junior | middle | senior | lead.
     level: Mapped[str | None] = mapped_column(String(20), nullable=True)
     raw_text: Mapped[str] = mapped_column(Text)
+    content_hash: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
     # manual | file — источник загрузки
     source: Mapped[str] = mapped_column(
         String(20), default="manual", server_default=text("'manual'")

@@ -189,6 +189,28 @@ export function listResumes(token: string): Promise<ResumeSummary[]> {
   return apiFetch('/resumes', { token })
 }
 
+export function fetchResume(resumeId: string, token: string): Promise<ResumeRead> {
+  return apiFetch(`/resumes/${encodeURIComponent(resumeId)}`, { token })
+}
+
+export function activateResume(resumeId: string, token: string): Promise<ResumeRead> {
+  return apiFetch(`/resumes/${encodeURIComponent(resumeId)}/activate`, {
+    method: 'POST',
+    token,
+  })
+}
+
+export function deleteResume(resumeId: string, token: string): Promise<void> {
+  return apiFetch(`/resumes/${encodeURIComponent(resumeId)}`, {
+    method: 'DELETE',
+    token,
+  })
+}
+
+export function clearResumes(token: string): Promise<void> {
+  return apiFetch('/resumes', { method: 'DELETE', token })
+}
+
 export function fetchProfile(token: string): Promise<ProfileRead> {
   return apiFetch('/profile', { token })
 }

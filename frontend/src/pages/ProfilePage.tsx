@@ -24,6 +24,7 @@ import { CollapsibleCard } from '@/components/CollapsibleCard'
 import { CreatePlanButton } from '@/components/CreatePlanButton'
 import { GapMetrics, GapRecommendations, GapTable } from '@/components/Gaps'
 import { PlanSkillTestsCard } from '@/components/PlanSkillTestsCard'
+import { ResumeHistoryCard } from '@/components/ResumeHistoryCard'
 import { ResumeUploadCard } from '@/components/ResumeUploadCard'
 import { errorMessage } from '@/lib/errors'
 import { formatDate, sourceLabel } from '@/lib/labels'
@@ -169,6 +170,8 @@ export default function ProfilePage() {
       </Card>
 
       <ResumeUploadCard token={token} onUnauthorized={expire} />
+
+      <ResumeHistoryCard token={token} onUnauthorized={expire} />
 
       <PlanSkillTestsCard token={token} onUnauthorized={expire} />
 

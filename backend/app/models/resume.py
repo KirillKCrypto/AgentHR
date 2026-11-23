@@ -4,6 +4,7 @@ import uuid
 from datetime import datetime
 
 from sqlalchemy import (
+    Boolean,
     CheckConstraint,
     DateTime,
     Float,
@@ -25,6 +26,14 @@ class Resume(Base):
     """Резюме пользователя (в MVP — введённый текстом)."""
 
     __tablename__ = "resumes"
+    __table_args__ = (
+        Index(
+            "uq_resumes_active_user",
+            "user_id",
+            unique=True,
+            postgresql_where=text("is_active"),
+        ),
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(
         Uuid,
@@ -37,6 +46,10 @@ class Resume(Base):
     )
     title: Mapped[str | None] = mapped_column(String(200), nullable=True)
     raw_text: Mapped[str] = mapped_column(Text)
+    content_hash: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
+    is_active: Mapped[bool] = mapped_column(
+        Boolean, default=False, server_default=text("false"), index=True
+    )
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     def __repr__(self) -> str:

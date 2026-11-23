@@ -201,21 +201,18 @@ async def test_repeated_vacancy_text_reuses_extraction(seeded_db: None) -> None:
                 session, provider, user.id, raw_text=VACANCY_TEXT
             )
 
-            assert first.id != second.id
+            assert first.id == second.id
             assert provider.calls.count("vacancy_requirements") == 1
-            first_skills = (
+            skills = (
                 await session.scalars(
                     select(VacancySkill).where(VacancySkill.vacancy_id == first.id)
                 )
             ).all()
-            second_skills = (
-                await session.scalars(
-                    select(VacancySkill).where(VacancySkill.vacancy_id == second.id)
-                )
-            ).all()
-            assert sorted(skill.raw_name for skill in first_skills) == sorted(
-                skill.raw_name for skill in second_skills
-            )
+            assert sorted(skill.raw_name for skill in skills) == [
+                "Kafka",
+                "PostgreSQL",
+                "Python",
+            ]
         finally:
             await _cleanup_user(user)
 
@@ -229,21 +226,15 @@ async def test_repeated_resume_text_reuses_extraction(seeded_db: None) -> None:
             first = await analyze_resume(session, provider, user.id, raw_text=RESUME_TEXT)
             second = await analyze_resume(session, provider, user.id, raw_text=RESUME_TEXT)
 
-            assert first.id != second.id
+            assert first.id == second.id
+            assert first.is_active is True
             assert provider.calls.count("resume_skills") == 1
-            first_skills = (
+            skills = (
                 await session.scalars(
                     select(ResumeSkill).where(ResumeSkill.resume_id == first.id)
                 )
             ).all()
-            second_skills = (
-                await session.scalars(
-                    select(ResumeSkill).where(ResumeSkill.resume_id == second.id)
-                )
-            ).all()
-            assert sorted(skill.raw_name for skill in first_skills) == sorted(
-                skill.raw_name for skill in second_skills
-            )
+            assert sorted(skill.raw_name for skill in skills) == ["Docker", "Python", "SQL"]
         finally:
             await _cleanup_user(user)
 

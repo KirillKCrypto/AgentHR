@@ -13,7 +13,7 @@ from dataclasses import dataclass, replace
 from datetime import UTC, datetime
 from typing import Any
 
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.embeddings.base import EmbeddingProvider
@@ -33,6 +33,7 @@ from app.services.analysis import (
     extract_resume_skills,
     extract_vacancy_requirements,
 )
+from app.services.content_hash import content_hash
 from app.services.errors import NotFoundError
 from app.services.learning_topics import NON_LEARNING_TOPIC_KEYS
 from app.services.normalization import (
@@ -166,12 +167,12 @@ async def analyze_vacancy(
 ) -> Vacancy:
     """Создаёт вакансию и сохраняет извлечённые из неё навыки.
 
-    Тот же текст вакансии у того же пользователя переиспользует уже
-    извлечённые требования: набор тем не зависит от повторного вызова LLM.
+    Тот же текст вакансии у того же пользователя возвращает уже сохранённую
+    вакансию: повторная проверка не создаёт дубль и не вызывает LLM.
     """
-    cached = await _find_cached_vacancy(session, user_id, raw_text)
-    if cached is not None:
-        return await _clone_vacancy(session, cached, title=title, company=company)
+    existing = await find_vacancy_by_text(session, user_id, raw_text)
+    if existing is not None:
+        return existing
     requirements = await extract_vacancy_requirements(provider, raw_text)
     return await save_vacancy_analysis(
         session,
@@ -185,60 +186,19 @@ async def analyze_vacancy(
     )
 
 
-async def _find_cached_vacancy(
+async def find_vacancy_by_text(
     session: AsyncSession, user_id: uuid.UUID, raw_text: str
 ) -> Vacancy | None:
-    """Последняя вакансия пользователя с тем же текстом."""
+    """Вакансия пользователя с тем же нормализованным текстом."""
     return await session.scalar(
         select(Vacancy)
-        .where(Vacancy.user_id == user_id, Vacancy.raw_text == raw_text)
-        .order_by(Vacancy.created_at.desc())
+        .where(
+            Vacancy.user_id == user_id,
+            Vacancy.content_hash == content_hash(raw_text),
+        )
+        .order_by(Vacancy.created_at)
         .limit(1)
     )
-
-
-async def _clone_vacancy(
-    session: AsyncSession,
-    source: Vacancy,
-    *,
-    title: str | None,
-    company: str | None,
-) -> Vacancy:
-    """Копирует вакансию вместе с требованиями, без повторного вызова LLM."""
-    vacancy = Vacancy(
-        user_id=source.user_id,
-        title=_clean(title) or source.title,
-        company=_clean(company) or source.company,
-        level=source.level,
-        raw_text=source.raw_text,
-    )
-    session.add(vacancy)
-    await session.flush()
-
-    skills = (
-        await session.scalars(
-            select(VacancySkill).where(VacancySkill.vacancy_id == source.id)
-        )
-    ).all()
-    for skill in skills:
-        session.add(
-            VacancySkill(
-                vacancy_id=vacancy.id,
-                topic_id=skill.topic_id,
-                raw_name=skill.raw_name,
-                required_level=skill.required_level,
-                weight=skill.weight,
-                requirement_group=skill.requirement_group,
-                requirement_logic=skill.requirement_logic,
-                criticality=skill.criticality,
-                confidence=skill.confidence,
-                evidence=skill.evidence,
-                match_method=skill.match_method,
-            )
-        )
-    await session.commit()
-    await session.refresh(vacancy)
-    return vacancy
 
 
 async def save_vacancy_analysis(
@@ -260,6 +220,7 @@ async def save_vacancy_analysis(
         company=_clean(company) or requirements.company,
         level=resolve_vacancy_level(requirements.level, resolved_title, raw_text),
         raw_text=raw_text,
+        content_hash=content_hash(raw_text),
     )
     session.add(vacancy)
     await session.flush()
@@ -318,12 +279,13 @@ async def analyze_resume(
 ) -> Resume:
     """Создаёт резюме, сохраняет навыки и пересобирает профиль знаний.
 
-    Тот же текст резюме у того же пользователя переиспользует уже извлечённые
-    навыки, поэтому повторная загрузка не меняет профиль случайным образом.
+    Повторная загрузка того же текста возвращает существующее резюме и делает
+    его активным. Профиль строится только по активному резюме.
     """
-    cached = await _find_cached_resume(session, user_id, raw_text)
-    if cached is not None:
-        return await _clone_resume(session, cached, title=title)
+    existing = await find_resume_by_text(session, user_id, raw_text)
+    if existing is not None:
+        await activate_resume(session, user_id, existing.id, title=title)
+        return existing
     profile: ResumeProfile = await extract_resume_skills(provider, raw_text)
     return await save_resume_analysis(
         session,
@@ -336,54 +298,75 @@ async def analyze_resume(
     )
 
 
-async def _find_cached_resume(
+async def find_resume_by_text(
     session: AsyncSession, user_id: uuid.UUID, raw_text: str
 ) -> Resume | None:
-    """Последнее резюме пользователя с тем же текстом."""
+    """Резюме пользователя с тем же нормализованным текстом."""
     return await session.scalar(
         select(Resume)
-        .where(Resume.user_id == user_id, Resume.raw_text == raw_text)
-        .order_by(Resume.created_at.desc())
+        .where(
+            Resume.user_id == user_id,
+            Resume.content_hash == content_hash(raw_text),
+        )
+        .order_by(Resume.created_at)
         .limit(1)
     )
 
 
-async def _clone_resume(
+async def activate_resume(
     session: AsyncSession,
-    source: Resume,
+    user_id: uuid.UUID,
+    resume_id: uuid.UUID,
     *,
-    title: str | None,
+    title: str | None = None,
 ) -> Resume:
-    """Копирует резюме вместе с навыками, без повторного вызова LLM."""
-    resume = Resume(
-        user_id=source.user_id,
-        title=_clean(title) or source.title,
-        raw_text=source.raw_text,
+    """Делает резюме активным и пересобирает профиль."""
+    resume = await get_resume(session, user_id, resume_id)
+    if title and not resume.title:
+        resume.title = _clean(title)
+    await session.execute(
+        update(Resume)
+        .where(Resume.user_id == user_id, Resume.id != resume_id)
+        .values(is_active=False)
     )
-    session.add(resume)
+    resume.is_active = True
+    await session.commit()
+    await rebuild_profile(session, user_id)
+    await session.refresh(resume)
+    return resume
+
+
+async def delete_resume(
+    session: AsyncSession,
+    user_id: uuid.UUID,
+    resume_id: uuid.UUID,
+) -> None:
+    """Удаляет резюме; активным становится следующее по дате."""
+    resume = await get_resume(session, user_id, resume_id)
+    was_active = resume.is_active
+    await session.delete(resume)
     await session.flush()
 
-    skills = (
-        await session.scalars(
-            select(ResumeSkill).where(ResumeSkill.resume_id == source.id)
+    if was_active:
+        next_resume = await session.scalar(
+            select(Resume)
+            .where(Resume.user_id == user_id)
+            .order_by(Resume.created_at.desc())
+            .limit(1)
         )
-    ).all()
-    for skill in skills:
-        session.add(
-            ResumeSkill(
-                resume_id=resume.id,
-                topic_id=skill.topic_id,
-                raw_name=skill.raw_name,
-                proficiency=skill.proficiency,
-                confidence=skill.confidence,
-                evidence=skill.evidence,
-                match_method=skill.match_method,
-            )
-        )
+        if next_resume is not None:
+            next_resume.is_active = True
     await session.commit()
-    await session.refresh(resume)
-    await rebuild_profile(session, source.user_id)
-    return resume
+    await rebuild_profile(session, user_id)
+
+
+async def clear_resumes(session: AsyncSession, user_id: uuid.UUID) -> None:
+    """Удаляет все резюме пользователя; ручные оценки и интервью сохраняются."""
+    resumes = (await session.scalars(select(Resume).where(Resume.user_id == user_id))).all()
+    for resume in resumes:
+        await session.delete(resume)
+    await session.commit()
+    await rebuild_profile(session, user_id)
 
 
 async def save_resume_analysis(
@@ -397,7 +380,16 @@ async def save_resume_analysis(
     embedder: EmbeddingProvider | None = None,
 ) -> Resume:
     """Сохраняет резюме с уже извлечёнными навыками и обновляет профиль."""
-    resume = Resume(user_id=user_id, title=_clean(title), raw_text=raw_text)
+    await session.execute(
+        update(Resume).where(Resume.user_id == user_id).values(is_active=False)
+    )
+    resume = Resume(
+        user_id=user_id,
+        title=_clean(title),
+        raw_text=raw_text,
+        content_hash=content_hash(raw_text),
+        is_active=True,
+    )
     session.add(resume)
     await session.flush()
 
@@ -447,17 +439,21 @@ async def rebuild_profile(
     *,
     now: datetime | None = None,
 ) -> ProfileSnapshot:
-    """Пересчитывает профиль знаний по всем резюме пользователя.
+    """Пересчитывает профиль знаний по активному резюме пользователя.
 
     Более сильные источники (`interview`, `manual`) не
     перезаписываются: пересчёт по резюме не должен снижать оценку, полученную
-    на собеседовании. Свидетельства из резюме объединяются взвешенно.
+    на собеседовании. Свидетельства из активного резюме объединяются взвешенно.
     """
     rows = (
         await session.execute(
             select(ResumeSkill, Resume.id)
             .join(Resume, Resume.id == ResumeSkill.resume_id)
-            .where(Resume.user_id == user_id, ResumeSkill.topic_id.is_not(None))
+            .where(
+                Resume.user_id == user_id,
+                Resume.is_active.is_(True),
+                ResumeSkill.topic_id.is_not(None),
+            )
             .order_by(Resume.created_at, ResumeSkill.created_at)
         )
     ).all()
@@ -715,7 +711,11 @@ async def _unmatched_resume_skills(
         await session.scalars(
             select(ResumeSkill)
             .join(Resume, Resume.id == ResumeSkill.resume_id)
-            .where(Resume.user_id == user_id, ResumeSkill.topic_id.is_(None))
+            .where(
+                Resume.user_id == user_id,
+                Resume.is_active.is_(True),
+                ResumeSkill.topic_id.is_(None),
+            )
             .order_by(ResumeSkill.created_at)
         )
     ).all()
