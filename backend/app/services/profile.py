@@ -19,6 +19,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.embeddings.base import EmbeddingProvider
 from app.llm.base import LLMProvider
 from app.models import (
+    LearningPlan,
     Resume,
     ResumeSkill,
     Topic,
@@ -506,7 +507,33 @@ async def rebuild_profile(
             await session.delete(state)
 
     await session.commit()
+    await _refresh_active_plans(session, user_id)
     return await get_profile(session, user_id)
+
+
+async def _refresh_active_plans(session: AsyncSession, user_id: uuid.UUID) -> None:
+    """Пересобирает активные планы после смены активного резюме."""
+    from app.services.plans import PlanError, create_plan
+
+    plans = (
+        await session.scalars(
+            select(LearningPlan).where(
+                LearningPlan.user_id == user_id,
+                LearningPlan.status == "active",
+            )
+        )
+    ).all()
+    specs = [(plan.id, plan.vacancy_id) for plan in plans]
+    for plan_id, vacancy_id in specs:
+        try:
+            await create_plan(session, user_id, vacancy_id=vacancy_id)
+        except PlanError:
+            await session.execute(
+                update(LearningPlan)
+                .where(LearningPlan.id == plan_id)
+                .values(status="archived")
+            )
+            await session.commit()
 
 
 async def get_profile(session: AsyncSession, user_id: uuid.UUID) -> ProfileSnapshot:

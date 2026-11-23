@@ -92,6 +92,7 @@ export default function PlanPage() {
         <CardHeader>
           <CardTitle>{plan.title}</CardTitle>
           <CardDescription>
+            {plan.resume_title ? `Резюме: ${plan.resume_title}. ` : ''}
             {plan.items.length} тем: сначала разрывы вакансии, слабые ответы и
             незатронутые темы.
           </CardDescription>

@@ -34,6 +34,8 @@ class PlanRead(BaseModel):
     user_id: UUID
     vacancy_id: UUID | None = None
     vacancy_title: str | None = None
+    resume_id: UUID | None = None
+    resume_title: str | None = None
     title: str
     status: str
     created_at: datetime | None = None
@@ -48,6 +50,7 @@ class PlanSummaryRead(BaseModel):
     title: str
     status: str
     vacancy_id: UUID | None = None
+    resume_id: UUID | None = None
     topic_count: int
 
 

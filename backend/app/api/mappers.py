@@ -155,6 +155,8 @@ def plan_read(plan: PlanSnapshot) -> PlanRead:
         user_id=plan.user_id,
         vacancy_id=plan.vacancy_id,
         vacancy_title=plan.vacancy_title,
+        resume_id=plan.resume_id,
+        resume_title=plan.resume_title,
         title=plan.title,
         status=plan.status,
         created_at=None,
@@ -184,6 +186,7 @@ def plan_summary_read(plan: PlanSummary) -> PlanSummaryRead:
         title=plan.title,
         status=plan.status,
         vacancy_id=plan.vacancy_id,
+        resume_id=plan.resume_id,
         topic_count=plan.topic_count,
     )
 

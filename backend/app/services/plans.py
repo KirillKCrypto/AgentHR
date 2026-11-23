@@ -13,6 +13,7 @@ from app.models import (
     InterviewTurn,
     LearningPlan,
     PlanItem,
+    Resume,
     Topic,
     UserSkillState,
     Vacancy,
@@ -59,6 +60,8 @@ class PlanSnapshot:
     user_id: uuid.UUID
     vacancy_id: uuid.UUID | None
     vacancy_title: str | None
+    resume_id: uuid.UUID | None
+    resume_title: str | None
     title: str
     status: str
     items: tuple[PlanTopic, ...]
@@ -73,6 +76,7 @@ class PlanSummary:
     title: str
     status: str
     vacancy_id: uuid.UUID | None
+    resume_id: uuid.UUID | None
     topic_count: int
 
 
@@ -137,7 +141,11 @@ async def create_plan(
     if not profile_rows and not vacancy_rows:
         raise PlanError("Профиль пуст: сначала загрузите резюме")
 
-    fingerprint = await _plan_fingerprint(session, user_id, vacancy)
+    active_resume = await session.scalar(
+        select(Resume).where(Resume.user_id == user_id, Resume.is_active.is_(True))
+    )
+    resume_id = active_resume.id if active_resume is not None else None
+    fingerprint = await _plan_fingerprint(session, user_id, vacancy, resume_id)
     latest = await session.scalar(
         _active_plan_query(user_id, vacancy_id)
         .order_by(LearningPlan.created_at.desc())
@@ -179,6 +187,7 @@ async def create_plan(
     plan = LearningPlan(
         user_id=user_id,
         vacancy_id=vacancy.id if vacancy is not None else None,
+        resume_id=resume_id,
         title=(
             f"Подготовка: {vacancy.title}"
             if vacancy is not None and vacancy.title
@@ -228,6 +237,8 @@ async def create_plan(
         user_id=user_id,
         vacancy_id=plan.vacancy_id,
         vacancy_title=vacancy.title if vacancy is not None else None,
+        resume_id=resume_id,
+        resume_title=active_resume.title if active_resume is not None else None,
         title=plan.title,
         status=plan.status,
         items=tuple(items),
@@ -410,6 +421,10 @@ async def get_plan(session: AsyncSession, user_id: uuid.UUID, plan_id: uuid.UUID
     if plan.vacancy_id is not None:
         vacancy = await session.get(Vacancy, plan.vacancy_id)
         vacancy_title = vacancy.title if vacancy is not None else None
+    resume_title = None
+    if plan.resume_id is not None:
+        resume = await session.get(Resume, plan.resume_id)
+        resume_title = resume.title if resume is not None else None
 
     question_counts = await count_by_topic(session, [topic.id for _, topic in rows])
 
@@ -418,6 +433,8 @@ async def get_plan(session: AsyncSession, user_id: uuid.UUID, plan_id: uuid.UUID
         user_id=plan.user_id,
         vacancy_id=plan.vacancy_id,
         vacancy_title=vacancy_title,
+        resume_id=plan.resume_id,
+        resume_title=resume_title,
         title=plan.title,
         status=plan.status,
         items=tuple(
@@ -460,6 +477,7 @@ async def list_plans(session: AsyncSession, user_id: uuid.UUID) -> list[PlanSumm
                 title=plan.title,
                 status=plan.status,
                 vacancy_id=plan.vacancy_id,
+                resume_id=plan.resume_id,
                 topic_count=count,
             )
         )
@@ -470,8 +488,9 @@ async def _plan_fingerprint(
     session: AsyncSession,
     user_id: uuid.UUID,
     vacancy: Vacancy | None,
+    resume_id: uuid.UUID | None,
 ) -> str:
-    """Отпечаток источника плана: профиль, вакансия и последнее интервью."""
+    """Отпечаток источника плана: профиль, вакансия, резюме и интервью."""
     states = (
         await session.scalars(
             select(UserSkillState)
@@ -481,6 +500,7 @@ async def _plan_fingerprint(
     ).all()
     parts = [
         f"plan:{PLAN_VERSION}",
+        f"resume:{resume_id}" if resume_id is not None else "resume:none",
         *[
             ":".join(
                 [

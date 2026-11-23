@@ -30,6 +30,8 @@ export function ResumeHistoryCard({
 }) {
   const queryClient = useQueryClient()
   const [expandedId, setExpandedId] = useState<string | null>(null)
+  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null)
+  const [confirmClear, setConfirmClear] = useState(false)
   const [busy, setBusy] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
 
@@ -52,6 +54,9 @@ export function ResumeHistoryCard({
       queryClient.invalidateQueries({ queryKey: ['profile'] }),
       queryClient.invalidateQueries({ queryKey: ['dashboard'] }),
       queryClient.invalidateQueries({ queryKey: ['vacancies'] }),
+      queryClient.invalidateQueries({ queryKey: ['plans'] }),
+      queryClient.invalidateQueries({ queryKey: ['plan'] }),
+      queryClient.invalidateQueries({ queryKey: ['plan-progress'] }),
     ])
   }
 
@@ -130,29 +135,53 @@ export function ResumeHistoryCard({
                           size="sm"
                           variant="outline"
                           disabled={busy !== null}
-                          onClick={() =>
+                          onClick={() => {
+                            setConfirmDeleteId(null)
                             void run(
                               () => activateResume(resume.id, token),
                               resume.id,
                             )
-                          }
+                          }}
                         >
                           {busy === resume.id ? 'Переключаем…' : 'Сделать активным'}
                         </Button>
                       )}
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        disabled={busy !== null}
-                        onClick={() => {
-                          if (!window.confirm(`Удалить резюме «${resumeTitle(resume)}»?`)) {
-                            return
-                          }
-                          void run(() => deleteResume(resume.id, token), resume.id)
-                        }}
-                      >
-                        Удалить
-                      </Button>
+                      {confirmDeleteId === resume.id ? (
+                        <>
+                          <Button
+                            size="sm"
+                            variant="destructive"
+                            disabled={busy !== null}
+                            onClick={() => {
+                              setExpandedId(null)
+                              setConfirmDeleteId(null)
+                              void run(() => deleteResume(resume.id, token), resume.id)
+                            }}
+                          >
+                            Подтвердить удаление
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            disabled={busy !== null}
+                            onClick={() => setConfirmDeleteId(null)}
+                          >
+                            Отмена
+                          </Button>
+                        </>
+                      ) : (
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          disabled={busy !== null}
+                          onClick={() => {
+                            setConfirmClear(false)
+                            setConfirmDeleteId(resume.id)
+                          }}
+                        >
+                          Удалить
+                        </Button>
+                      )}
                     </div>
                   </div>
 
@@ -168,23 +197,46 @@ export function ResumeHistoryCard({
             </div>
 
             <div>
-              <Button
-                variant="outline"
-                size="sm"
-                disabled={busy !== null}
-                onClick={() => {
-                  if (
-                    !window.confirm(
-                      'Удалить все резюме и оценки из них? Ручные оценки и интервью сохранятся.',
-                    )
-                  ) {
-                    return
-                  }
-                  void run(() => clearResumes(token), 'clear')
-                }}
-              >
-                {busy === 'clear' ? 'Очищаем…' : 'Очистить историю резюме'}
-              </Button>
+              {confirmClear ? (
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="text-sm text-muted-foreground">
+                    Удалить все резюме и оценки из них? Ручные оценки и интервью сохранятся.
+                  </span>
+                  <Button
+                    variant="destructive"
+                    size="sm"
+                    disabled={busy !== null}
+                    onClick={() => {
+                      setConfirmClear(false)
+                      setExpandedId(null)
+                      setConfirmDeleteId(null)
+                      void run(() => clearResumes(token), 'clear')
+                    }}
+                  >
+                    {busy === 'clear' ? 'Очищаем…' : 'Подтвердить очистку'}
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    disabled={busy !== null}
+                    onClick={() => setConfirmClear(false)}
+                  >
+                    Отмена
+                  </Button>
+                </div>
+              ) : (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  disabled={busy !== null}
+                  onClick={() => {
+                    setConfirmDeleteId(null)
+                    setConfirmClear(true)
+                  }}
+                >
+                  Очистить историю резюме
+                </Button>
+              )}
             </div>
           </>
         )}

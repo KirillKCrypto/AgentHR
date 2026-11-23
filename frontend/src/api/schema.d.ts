@@ -1521,6 +1521,10 @@ export interface components {
             vacancy_id?: string | null;
             /** Vacancy Title */
             vacancy_title?: string | null;
+            /** Resume Id */
+            resume_id?: string | null;
+            /** Resume Title */
+            resume_title?: string | null;
             /** Title */
             title: string;
             /** Status */
@@ -1554,6 +1558,8 @@ export interface components {
             status: string;
             /** Vacancy Id */
             vacancy_id?: string | null;
+            /** Resume Id */
+            resume_id?: string | null;
             /** Topic Count */
             topic_count: number;
         };

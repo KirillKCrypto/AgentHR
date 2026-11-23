@@ -38,6 +38,10 @@ class LearningPlan(Base):
     vacancy_id: Mapped[uuid.UUID | None] = mapped_column(
         Uuid, ForeignKey("vacancies.id", ondelete="SET NULL"), nullable=True, index=True
     )
+    # Резюме, по которому построен план: переключение резюме пересобирает план.
+    resume_id: Mapped[uuid.UUID | None] = mapped_column(
+        Uuid, ForeignKey("resumes.id", ondelete="SET NULL"), nullable=True, index=True
+    )
     title: Mapped[str] = mapped_column(String(200), default="")
     # active | completed | archived
     status: Mapped[str] = mapped_column(

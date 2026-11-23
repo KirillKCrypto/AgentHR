@@ -8,6 +8,7 @@ from app.core.security import hash_password
 from app.db.session import async_session_factory
 from app.models import Resume, Topic, User, UserSkillState
 from app.services.analysis import ExtractedSkill, ResumeProfile
+from app.services.plans import create_plan, get_plan, list_plans
 from app.services.profile import (
     activate_resume,
     clear_resumes,
@@ -143,6 +144,40 @@ async def test_clear_resumes_keeps_manual_assessments(seeded_db: None) -> None:
             assert topics["docker"].proficiency == 77
             assert topics["docker"].source == "manual"
             assert "python" not in topics
+        finally:
+            await _cleanup_user(user)
+
+
+async def test_switching_resume_rebuilds_plan(seeded_db: None) -> None:
+    """Активный план пересобирается под новое активное резюме."""
+    async with async_session_factory() as session:
+        user = await _create_user(session)
+        try:
+            await save_resume_analysis(
+                session,
+                user.id,
+                raw_text="Резюме Python",
+                profile=ResumeProfile(
+                    skills=(ExtractedSkill("Python", 85, confidence=0.9),)
+                ),
+            )
+            first_plan = await create_plan(session, user.id)
+            assert first_plan.resume_id is not None
+
+            second = await save_resume_analysis(
+                session,
+                user.id,
+                raw_text="Резюме SQL",
+                profile=ResumeProfile(skills=(ExtractedSkill("SQL", 60, confidence=0.8),)),
+            )
+
+            plans = await list_plans(session, user.id)
+            active = [plan for plan in plans if plan.status == "active"]
+            assert len(active) == 1
+            assert active[0].id != first_plan.id
+            assert active[0].resume_id == second.id
+            old_plan = await get_plan(session, user.id, first_plan.id)
+            assert old_plan.status == "archived"
         finally:
             await _cleanup_user(user)
 
