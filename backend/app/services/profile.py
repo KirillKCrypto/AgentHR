@@ -515,6 +515,21 @@ async def _refresh_active_plans(session: AsyncSession, user_id: uuid.UUID) -> No
     """Пересобирает активные планы после смены активного резюме."""
     from app.services.plans import PlanError, create_plan
 
+    active_resume_id = await session.scalar(
+        select(Resume.id).where(Resume.user_id == user_id, Resume.is_active.is_(True))
+    )
+    if active_resume_id is None:
+        await session.execute(
+            update(LearningPlan)
+            .where(
+                LearningPlan.user_id == user_id,
+                LearningPlan.status == "active",
+            )
+            .values(status="archived")
+        )
+        await session.commit()
+        return
+
     plans = (
         await session.scalars(
             select(LearningPlan).where(

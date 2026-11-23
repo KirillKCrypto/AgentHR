@@ -132,6 +132,7 @@ async def test_clear_resumes_keeps_manual_assessments(seeded_db: None) -> None:
                 )
             )
             await session.commit()
+            await create_plan(session, user.id)
 
             await clear_resumes(session, user.id)
 
@@ -139,6 +140,8 @@ async def test_clear_resumes_keeps_manual_assessments(seeded_db: None) -> None:
                 await session.scalars(select(Resume).where(Resume.user_id == user.id))
             ).all()
             assert resumes == []
+            plans = await list_plans(session, user.id)
+            assert [plan for plan in plans if plan.status == "active"] == []
             snapshot = await get_profile(session, user.id)
             topics = {topic.topic_key: topic for topic in snapshot.topics}
             assert topics["docker"].proficiency == 77
