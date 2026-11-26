@@ -155,8 +155,14 @@ async def create_plan(
         if latest.profile_fingerprint is None and latest.resume_id == resume_id:
             latest.profile_fingerprint = fingerprint
             await session.commit()
+            await _archive_other_active_plans(
+                session, user_id, latest.vacancy_id, latest.id
+            )
             return replace(await get_plan(session, user_id, latest.id), reused=True)
         if latest.profile_fingerprint == fingerprint and latest.resume_id == resume_id:
+            await _archive_other_active_plans(
+                session, user_id, latest.vacancy_id, latest.id
+            )
             return replace(await get_plan(session, user_id, latest.id), reused=True)
 
     candidates = await _build_candidates(
@@ -257,6 +263,31 @@ def _active_plan_query(user_id: uuid.UUID, vacancy_id: uuid.UUID | None):
         LearningPlan.status == "active",
         vacancy_filter,
     )
+
+
+async def _archive_other_active_plans(
+    session: AsyncSession,
+    user_id: uuid.UUID,
+    vacancy_id: uuid.UUID | None,
+    keep_id: uuid.UUID,
+) -> None:
+    """Оставляет ровно один активный план для вакансии или профиля."""
+    vacancy_filter = (
+        LearningPlan.vacancy_id.is_(None)
+        if vacancy_id is None
+        else LearningPlan.vacancy_id == vacancy_id
+    )
+    await session.execute(
+        update(LearningPlan)
+        .where(
+            LearningPlan.user_id == user_id,
+            LearningPlan.status == "active",
+            LearningPlan.id != keep_id,
+            vacancy_filter,
+        )
+        .values(status="archived")
+    )
+    await session.commit()
 
 
 async def _build_candidates(

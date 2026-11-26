@@ -283,6 +283,39 @@ async def test_deleting_active_resume_rebinds_legacy_plan(seeded_db: None) -> No
             await _cleanup_user(user)
 
 
+async def test_create_plan_keeps_single_active_plan(seeded_db: None) -> None:
+    """Повторное построение не оставляет два активных плана."""
+    async with async_session_factory() as session:
+        user = await _create_user(session)
+        try:
+            resume = await save_resume_analysis(
+                session,
+                user.id,
+                raw_text="Резюме Python",
+                profile=ResumeProfile(
+                    skills=(ExtractedSkill("Python", 85, confidence=0.9),)
+                ),
+            )
+            await create_plan(session, user.id)
+            session.add(
+                LearningPlan(
+                    user_id=user.id,
+                    title="Дубликат",
+                    status="active",
+                    resume_id=resume.id,
+                    profile_fingerprint=None,
+                )
+            )
+            await session.commit()
+
+            await create_plan(session, user.id)
+
+            plans = await list_plans(session, user.id)
+            assert len([item for item in plans if item.status == "active"]) == 1
+        finally:
+            await _cleanup_user(user)
+
+
 async def test_duplicate_vacancy_returns_existing(api_user: ApiUser) -> None:
     """Повторная проверка того же текста не создаёт новую вакансию."""
     first = await api_user.client.post(

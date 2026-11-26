@@ -69,13 +69,22 @@ export default function PlanPage() {
   }
 
   if (planQuery.isError || !planQuery.data) {
+    const planIsArchived =
+      planQuery.error instanceof ApiError && planQuery.error.status === 404
     return (
       <Card>
         <CardHeader>
           <CardTitle>План подготовки</CardTitle>
-          <CardDescription>{errorMessage(planQuery.error)}</CardDescription>
+          <CardDescription>
+            {planIsArchived
+              ? 'Этот план больше не актуален: после смены резюме он архивирован. Новый план строится автоматически.'
+              : errorMessage(planQuery.error)}
+          </CardDescription>
         </CardHeader>
-        <CardContent>
+        <CardContent className="flex flex-wrap gap-2">
+          <Link to="/" className={buttonVariants()}>
+            На дашборд
+          </Link>
           <Link to="/profile" className={buttonVariants({ variant: 'outline' })}>
             К профилю
           </Link>
