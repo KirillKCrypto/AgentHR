@@ -1562,6 +1562,11 @@ export interface components {
             resume_id?: string | null;
             /** Topic Count */
             topic_count: number;
+            /**
+             * Is Current
+             * @default false
+             */
+            is_current: boolean;
         };
         /**
          * ProfileRead

@@ -52,6 +52,7 @@ class PlanSummaryRead(BaseModel):
     vacancy_id: UUID | None = None
     resume_id: UUID | None = None
     topic_count: int
+    is_current: bool = False
 
 
 class QuestionRead(BaseModel):

@@ -2,14 +2,13 @@
 
 from uuid import uuid4
 
-import pytest
 from sqlalchemy import select
 
 from app.core.security import hash_password
 from app.db.session import async_session_factory
 from app.models import LearningPlan, Resume, Topic, User, UserSkillState
 from app.services.analysis import ExtractedSkill, ResumeProfile
-from app.services.plans import PlanNotFoundError, create_plan, get_plan, list_plans
+from app.services.plans import create_plan, list_plans
 from app.services.profile import (
     activate_resume,
     clear_resumes,
@@ -172,14 +171,12 @@ async def test_uploading_resume_does_not_create_plan(seeded_db: None) -> None:
             await _cleanup_user(user)
 
 
-async def test_switching_resume_archives_plan_without_creating_new(
-    seeded_db: None,
-) -> None:
-    """Смена резюме архивирует план, но не создаёт новый автоматически."""
+async def test_switching_resume_keeps_plan_for_each_resume(seeded_db: None) -> None:
+    """Планы сохраняются по резюме и снова становятся текущими."""
     async with async_session_factory() as session:
         user = await _create_user(session)
         try:
-            await save_resume_analysis(
+            first = await save_resume_analysis(
                 session,
                 user.id,
                 raw_text="Резюме Python",
@@ -188,9 +185,9 @@ async def test_switching_resume_archives_plan_without_creating_new(
                 ),
             )
             first_plan = await create_plan(session, user.id)
-            assert first_plan.resume_id is not None
+            assert first_plan.resume_id == first.id
 
-            await save_resume_analysis(
+            second = await save_resume_analysis(
                 session,
                 user.id,
                 raw_text="Резюме SQL",
@@ -198,9 +195,20 @@ async def test_switching_resume_archives_plan_without_creating_new(
             )
 
             plans = await list_plans(session, user.id)
-            assert [plan for plan in plans if plan.status == "active"] == []
-            with pytest.raises(PlanNotFoundError):
-                await get_plan(session, user.id, first_plan.id)
+            assert [plan.id for plan in plans if plan.is_current] == []
+            assert any(plan.id == first_plan.id and plan.status == "active" for plan in plans)
+
+            await activate_resume(session, user.id, first.id)
+            plans = await list_plans(session, user.id)
+            current = [plan for plan in plans if plan.is_current]
+            assert [plan.id for plan in current] == [first_plan.id]
+
+            recreated = await create_plan(session, user.id)
+            assert recreated.id == first_plan.id
+            assert recreated.resume_id == first.id
+
+            await activate_resume(session, user.id, second.id)
+            assert await create_plan(session, user.id) is not None
         finally:
             await _cleanup_user(user)
 

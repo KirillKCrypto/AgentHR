@@ -345,6 +345,15 @@ async def delete_resume(
     """Удаляет резюме; активным становится следующее по дате."""
     resume = await get_resume(session, user_id, resume_id)
     was_active = resume.is_active
+    await session.execute(
+        update(LearningPlan)
+        .where(
+            LearningPlan.user_id == user_id,
+            LearningPlan.status == "active",
+            LearningPlan.resume_id == resume_id,
+        )
+        .values(status="archived")
+    )
     await session.delete(resume)
     await session.flush()
 
@@ -362,7 +371,15 @@ async def delete_resume(
 
 
 async def clear_resumes(session: AsyncSession, user_id: uuid.UUID) -> None:
-    """Удаляет все резюме пользователя; ручные оценки и интервью сохраняются."""
+    """Удаляет все резюме пользователя; планы архивируются, интервью сохраняются."""
+    await session.execute(
+        update(LearningPlan)
+        .where(
+            LearningPlan.user_id == user_id,
+            LearningPlan.status == "active",
+        )
+        .values(status="archived")
+    )
     resumes = (await session.scalars(select(Resume).where(Resume.user_id == user_id))).all()
     for resume in resumes:
         await session.delete(resume)
@@ -507,39 +524,7 @@ async def rebuild_profile(
             await session.delete(state)
 
     await session.commit()
-    await _refresh_active_plans(session, user_id)
     return await get_profile(session, user_id)
-
-
-async def _refresh_active_plans(session: AsyncSession, user_id: uuid.UUID) -> None:
-    """Архивирует планы, построенные по другому резюме.
-
-    Новый план не создаётся: его строит только явное действие пользователя.
-    """
-    active_resume_id = await session.scalar(
-        select(Resume.id).where(Resume.user_id == user_id, Resume.is_active.is_(True))
-    )
-    if active_resume_id is None:
-        await session.execute(
-            update(LearningPlan)
-            .where(
-                LearningPlan.user_id == user_id,
-                LearningPlan.status == "active",
-            )
-            .values(status="archived")
-        )
-    else:
-        await session.execute(
-            update(LearningPlan)
-            .where(
-                LearningPlan.user_id == user_id,
-                LearningPlan.status == "active",
-                (LearningPlan.resume_id.is_(None))
-                | (LearningPlan.resume_id != active_resume_id),
-            )
-            .values(status="archived")
-        )
-    await session.commit()
 
 
 async def get_profile(session: AsyncSession, user_id: uuid.UUID) -> ProfileSnapshot:

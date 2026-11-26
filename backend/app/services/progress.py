@@ -11,6 +11,7 @@ from app.models import (
     InterviewTurn,
     LearningPlan,
     PlanItem,
+    Resume,
     Topic,
     TopicTestResult,
     UserSkillState,
@@ -364,10 +365,16 @@ async def _active_plan(
     user_id: uuid.UUID,
     vacancy: Vacancy | None,
 ) -> LearningPlan | None:
-    """Активный план для вакансии или последний активный."""
+    """Активный план для текущего резюме и вакансии."""
+    active_resume_id = await session.scalar(
+        select(Resume.id).where(Resume.user_id == user_id, Resume.is_active.is_(True))
+    )
+    if active_resume_id is None:
+        return None
     query = select(LearningPlan).where(
         LearningPlan.user_id == user_id,
         LearningPlan.status == "active",
+        LearningPlan.resume_id == active_resume_id,
     )
     if vacancy is not None:
         query = query.where(LearningPlan.vacancy_id == vacancy.id)

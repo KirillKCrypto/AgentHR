@@ -25,7 +25,7 @@ export function PlanSkillTestsCard({
     retry: false,
   })
   const planId =
-    plansQuery.data?.find((plan) => plan.status === 'active')?.id ?? null
+    plansQuery.data?.find((plan) => plan.is_current)?.id ?? null
   const planQuery = useQuery<PlanRead>({
     queryKey: ['plan', planId, token],
     queryFn: () => fetchPlan(planId as string, token),

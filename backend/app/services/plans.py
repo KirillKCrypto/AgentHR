@@ -78,6 +78,7 @@ class PlanSummary:
     vacancy_id: uuid.UUID | None
     resume_id: uuid.UUID | None
     topic_count: int
+    is_current: bool = False
 
 
 @dataclass
@@ -147,7 +148,7 @@ async def create_plan(
     resume_id = active_resume.id if active_resume is not None else None
     fingerprint = await _plan_fingerprint(session, user_id, vacancy, resume_id)
     latest = await session.scalar(
-        _active_plan_query(user_id, vacancy_id)
+        _active_plan_query(user_id, vacancy_id, resume_id)
         .order_by(LearningPlan.created_at.desc())
         .limit(1)
     )
@@ -156,12 +157,12 @@ async def create_plan(
             latest.profile_fingerprint = fingerprint
             await session.commit()
             await _archive_other_active_plans(
-                session, user_id, latest.vacancy_id, latest.id
+                session, user_id, latest.vacancy_id, resume_id, latest.id
             )
             return replace(await get_plan(session, user_id, latest.id), reused=True)
         if latest.profile_fingerprint == fingerprint and latest.resume_id == resume_id:
             await _archive_other_active_plans(
-                session, user_id, latest.vacancy_id, latest.id
+                session, user_id, latest.vacancy_id, resume_id, latest.id
             )
             return replace(await get_plan(session, user_id, latest.id), reused=True)
 
@@ -185,6 +186,11 @@ async def create_plan(
                 LearningPlan.vacancy_id.is_(None)
                 if vacancy is None
                 else LearningPlan.vacancy_id == vacancy.id
+            ),
+            (
+                LearningPlan.resume_id.is_(None)
+                if resume_id is None
+                else LearningPlan.resume_id == resume_id
             ),
         )
         .values(status="archived")
@@ -251,17 +257,27 @@ async def create_plan(
     )
 
 
-def _active_plan_query(user_id: uuid.UUID, vacancy_id: uuid.UUID | None):
-    """Активный план для того же источника: вакансия или профиль."""
+def _active_plan_query(
+    user_id: uuid.UUID,
+    vacancy_id: uuid.UUID | None,
+    resume_id: uuid.UUID | None,
+):
+    """Активный план для того же источника, вакансии и резюме."""
     vacancy_filter = (
         LearningPlan.vacancy_id.is_(None)
         if vacancy_id is None
         else LearningPlan.vacancy_id == vacancy_id
     )
+    resume_filter = (
+        LearningPlan.resume_id.is_(None)
+        if resume_id is None
+        else LearningPlan.resume_id == resume_id
+    )
     return select(LearningPlan).where(
         LearningPlan.user_id == user_id,
         LearningPlan.status == "active",
         vacancy_filter,
+        resume_filter,
     )
 
 
@@ -269,13 +285,19 @@ async def _archive_other_active_plans(
     session: AsyncSession,
     user_id: uuid.UUID,
     vacancy_id: uuid.UUID | None,
+    resume_id: uuid.UUID | None,
     keep_id: uuid.UUID,
 ) -> None:
-    """Оставляет ровно один активный план для вакансии или профиля."""
+    """Оставляет ровно один активный план для вакансии и резюме."""
     vacancy_filter = (
         LearningPlan.vacancy_id.is_(None)
         if vacancy_id is None
         else LearningPlan.vacancy_id == vacancy_id
+    )
+    resume_filter = (
+        LearningPlan.resume_id.is_(None)
+        if resume_id is None
+        else LearningPlan.resume_id == resume_id
     )
     await session.execute(
         update(LearningPlan)
@@ -284,6 +306,7 @@ async def _archive_other_active_plans(
             LearningPlan.status == "active",
             LearningPlan.id != keep_id,
             vacancy_filter,
+            resume_filter,
         )
         .values(status="archived")
     )
@@ -488,6 +511,9 @@ async def get_plan(session: AsyncSession, user_id: uuid.UUID, plan_id: uuid.UUID
 
 async def list_plans(session: AsyncSession, user_id: uuid.UUID) -> list[PlanSummary]:
     """Список планов пользователя, новые сверху."""
+    active_resume_id = await session.scalar(
+        select(Resume.id).where(Resume.user_id == user_id, Resume.is_active.is_(True))
+    )
     plans = (
         await session.scalars(
             select(LearningPlan)
@@ -510,6 +536,11 @@ async def list_plans(session: AsyncSession, user_id: uuid.UUID) -> list[PlanSumm
                 vacancy_id=plan.vacancy_id,
                 resume_id=plan.resume_id,
                 topic_count=count,
+                is_current=(
+                    plan.status == "active"
+                    and active_resume_id is not None
+                    and plan.resume_id == active_resume_id
+                ),
             )
         )
     return result
@@ -543,7 +574,6 @@ async def _plan_fingerprint(
                     str(state.verified_level),
                     state.review_due_at.isoformat() if state.review_due_at else "",
                     str(state.review_interval_days),
-                    state.last_assessed.isoformat() if state.last_assessed else "",
                 ]
             )
             for state in states

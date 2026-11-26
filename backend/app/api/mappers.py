@@ -188,6 +188,7 @@ def plan_summary_read(plan: PlanSummary) -> PlanSummaryRead:
         vacancy_id=plan.vacancy_id,
         resume_id=plan.resume_id,
         topic_count=plan.topic_count,
+        is_current=plan.is_current,
     )
 
 
