@@ -152,8 +152,30 @@ async def test_clear_resumes_keeps_manual_assessments(seeded_db: None) -> None:
             await _cleanup_user(user)
 
 
-async def test_switching_resume_rebuilds_plan(seeded_db: None) -> None:
-    """Активный план пересобирается под новое активное резюме."""
+async def test_uploading_resume_does_not_create_plan(seeded_db: None) -> None:
+    """Загрузка резюме не строит план автоматически."""
+    async with async_session_factory() as session:
+        user = await _create_user(session)
+        try:
+            await save_resume_analysis(
+                session,
+                user.id,
+                raw_text="Резюме Python",
+                profile=ResumeProfile(
+                    skills=(ExtractedSkill("Python", 85, confidence=0.9),)
+                ),
+            )
+
+            plans = await list_plans(session, user.id)
+            assert plans == []
+        finally:
+            await _cleanup_user(user)
+
+
+async def test_switching_resume_archives_plan_without_creating_new(
+    seeded_db: None,
+) -> None:
+    """Смена резюме архивирует план, но не создаёт новый автоматически."""
     async with async_session_factory() as session:
         user = await _create_user(session)
         try:
@@ -168,7 +190,7 @@ async def test_switching_resume_rebuilds_plan(seeded_db: None) -> None:
             first_plan = await create_plan(session, user.id)
             assert first_plan.resume_id is not None
 
-            second = await save_resume_analysis(
+            await save_resume_analysis(
                 session,
                 user.id,
                 raw_text="Резюме SQL",
@@ -176,10 +198,7 @@ async def test_switching_resume_rebuilds_plan(seeded_db: None) -> None:
             )
 
             plans = await list_plans(session, user.id)
-            active = [plan for plan in plans if plan.status == "active"]
-            assert len(active) == 1
-            assert active[0].id != first_plan.id
-            assert active[0].resume_id == second.id
+            assert [plan for plan in plans if plan.status == "active"] == []
             with pytest.raises(PlanNotFoundError):
                 await get_plan(session, user.id, first_plan.id)
         finally:
@@ -210,12 +229,12 @@ async def test_deleting_last_resume_archives_plan(seeded_db: None) -> None:
             await _cleanup_user(user)
 
 
-async def test_deleting_active_resume_moves_plan_to_next(seeded_db: None) -> None:
-    """Удаление активного резюме пересобирает план под следующее."""
+async def test_deleting_active_resume_archives_plan(seeded_db: None) -> None:
+    """Удаление активного резюме очищает план до явного создания нового."""
     async with async_session_factory() as session:
         user = await _create_user(session)
         try:
-            first = await save_resume_analysis(
+            await save_resume_analysis(
                 session,
                 user.id,
                 raw_text="Резюме Python",
@@ -235,20 +254,17 @@ async def test_deleting_active_resume_moves_plan_to_next(seeded_db: None) -> Non
             await delete_resume(session, user.id, second.id)
 
             plans = await list_plans(session, user.id)
-            active = [item for item in plans if item.status == "active"]
-            assert len(active) == 1
-            assert active[0].resume_id == first.id
-            assert active[0].id != plan.id
+            assert [item for item in plans if item.status == "active"] == []
         finally:
             await _cleanup_user(user)
 
 
-async def test_deleting_active_resume_rebinds_legacy_plan(seeded_db: None) -> None:
-    """Старый план без отпечатка не остаётся после удаления активного резюме."""
+async def test_deleting_active_resume_archives_legacy_plan(seeded_db: None) -> None:
+    """Старый план без отпечатка тоже архивируется после удаления резюме."""
     async with async_session_factory() as session:
         user = await _create_user(session)
         try:
-            first = await save_resume_analysis(
+            await save_resume_analysis(
                 session,
                 user.id,
                 raw_text="Резюме Python",
@@ -275,10 +291,7 @@ async def test_deleting_active_resume_rebinds_legacy_plan(seeded_db: None) -> No
             await delete_resume(session, user.id, second.id)
 
             plans = await list_plans(session, user.id)
-            active = [item for item in plans if item.status == "active"]
-            assert len(active) == 1
-            assert active[0].resume_id == first.id
-            assert active[0].id != legacy.id
+            assert [item for item in plans if item.status == "active"] == []
         finally:
             await _cleanup_user(user)
 

@@ -24,7 +24,8 @@ export function PlanSkillTestsCard({
     queryFn: () => listPlans(token),
     retry: false,
   })
-  const planId = plansQuery.data?.[0]?.id ?? null
+  const planId =
+    plansQuery.data?.find((plan) => plan.status === 'active')?.id ?? null
   const planQuery = useQuery<PlanRead>({
     queryKey: ['plan', planId, token],
     queryFn: () => fetchPlan(planId as string, token),
@@ -39,11 +40,7 @@ export function PlanSkillTestsCard({
     }
   }, [error, onUnauthorized])
 
-  // Карточка появляется после построения плана.
-  if (!plansQuery.isPending && !plansQuery.isError && planId === null) {
-    return null
-  }
-
+  // Карточка остаётся на месте: при отсутствии плана показываем пустое состояние.
   return (
     <CollapsibleCard
       id="skill-assessment"
@@ -56,10 +53,18 @@ export function PlanSkillTestsCard({
           <p className="text-sm text-muted-foreground">Загружаем план…</p>
         ) : plansQuery.isError ? (
           <p className="text-sm text-destructive">{errorMessage(plansQuery.error)}</p>
-        ) : planId === null ? null : planQuery.isPending ? (
+        ) : planId === null ? (
+          <p className="text-sm text-muted-foreground">
+            Активного плана нет. Создайте план подготовки, чтобы пройти тесты по темам.
+          </p>
+        ) : planQuery.isPending ? (
           <p className="text-sm text-muted-foreground">Загружаем темы плана…</p>
         ) : planQuery.isError || !planQuery.data ? (
-          <p className="text-sm text-destructive">{errorMessage(planQuery.error)}</p>
+          <p className="text-sm text-muted-foreground">
+            {planQuery.error instanceof ApiError && planQuery.error.status === 404
+              ? 'План больше не актуален. Создайте новый план подготовки.'
+              : errorMessage(planQuery.error)}
+          </p>
         ) : (
           <>
             <div className="flex flex-wrap items-center justify-between gap-2">

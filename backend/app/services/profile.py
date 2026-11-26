@@ -512,9 +512,10 @@ async def rebuild_profile(
 
 
 async def _refresh_active_plans(session: AsyncSession, user_id: uuid.UUID) -> None:
-    """Пересобирает активные планы после смены активного резюме."""
-    from app.services.plans import PlanError, create_plan
+    """Архивирует планы, построенные по другому резюме.
 
+    Новый план не создаётся: его строит только явное действие пользователя.
+    """
     active_resume_id = await session.scalar(
         select(Resume.id).where(Resume.user_id == user_id, Resume.is_active.is_(True))
     )
@@ -527,28 +528,18 @@ async def _refresh_active_plans(session: AsyncSession, user_id: uuid.UUID) -> No
             )
             .values(status="archived")
         )
-        await session.commit()
-        return
-
-    plans = (
-        await session.scalars(
-            select(LearningPlan).where(
+    else:
+        await session.execute(
+            update(LearningPlan)
+            .where(
                 LearningPlan.user_id == user_id,
                 LearningPlan.status == "active",
+                (LearningPlan.resume_id.is_(None))
+                | (LearningPlan.resume_id != active_resume_id),
             )
+            .values(status="archived")
         )
-    ).all()
-    specs = [(plan.id, plan.vacancy_id) for plan in plans]
-    for plan_id, vacancy_id in specs:
-        try:
-            await create_plan(session, user_id, vacancy_id=vacancy_id)
-        except PlanError:
-            await session.execute(
-                update(LearningPlan)
-                .where(LearningPlan.id == plan_id)
-                .values(status="archived")
-            )
-            await session.commit()
+    await session.commit()
 
 
 async def get_profile(session: AsyncSession, user_id: uuid.UUID) -> ProfileSnapshot:
