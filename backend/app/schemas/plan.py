@@ -21,6 +21,7 @@ class PlanItemRead(BaseModel):
     category: str | None = None
     current_level: int = Field(ge=0, le=100)
     target_level: int = Field(ge=0, le=100)
+    criticality: str = "nice_to_have"
     confidence: float = Field(ge=0, le=1)
     priority: float
     reason: str
@@ -38,6 +39,7 @@ class PlanRead(BaseModel):
     resume_title: str | None = None
     title: str
     status: str
+    kind: str = "general"
     created_at: datetime | None = None
     reused: bool = False
     items: list[PlanItemRead] = []
@@ -50,8 +52,11 @@ class PlanSummaryRead(BaseModel):
     title: str
     status: str
     vacancy_id: UUID | None = None
+    vacancy_title: str | None = None
     resume_id: UUID | None = None
     topic_count: int
+    kind: str = "general"
+    created_at: datetime | None = None
     is_current: bool = False
 
 

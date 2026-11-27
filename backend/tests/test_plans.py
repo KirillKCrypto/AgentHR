@@ -40,7 +40,7 @@ async def test_create_plan_from_resume(api_user: ApiUser) -> None:
     assert body["items"][0]["topic_key"] == "kafka"
     assert body["items"][0]["current_level"] == 40
     assert "низкий уровень в профиле" in body["items"][0]["reason"]
-    assert all(item["target_level"] == 100 for item in body["items"])
+    assert all(item["target_level"] == 80 for item in body["items"])
     keys = [item["topic_key"] for item in body["items"]]
     assert keys.index("kafka") < keys.index("python")
 
@@ -88,6 +88,63 @@ async def test_create_plan_uses_vacancy_targets(api_user: ApiUser) -> None:
     assert "разрыв 30" in redis["reason"]
     assert "требуется 80%" in redis["reason"]
     assert body["vacancy_title"] == "Backend"
+
+
+async def test_vacancy_plan_keeps_all_must_have_even_without_gap(
+    api_user: ApiUser,
+) -> None:
+    """Обязательный навык с нулевым разрывом остаётся в плане для подтверждения."""
+    await _create_resume(api_user)
+    api_user.provider.responses["vacancy_requirements"] = {
+        "title": "Backend",
+        "company": "Acme",
+        "level": "middle",
+        "skills": [
+            {
+                "name": "Python",
+                "required_level": 70,
+                "weight": 1.0,
+                "evidence": "Python",
+                "confidence": 0.9,
+                "criticality": "must_have",
+            },
+            {
+                "name": "Kafka",
+                "required_level": 80,
+                "weight": 0.8,
+                "evidence": "Kafka",
+                "confidence": 0.8,
+                "criticality": "must_have",
+            },
+            {
+                "name": "Redis",
+                "required_level": 80,
+                "weight": 0.3,
+                "evidence": "Redis",
+                "confidence": 0.5,
+                "criticality": "nice_to_have",
+            },
+        ],
+    }
+    vacancy = await api_user.client.post(
+        "/vacancies",
+        json={"title": "Backend", "raw_text": "Python Kafka Redis"},
+        headers=api_user.headers,
+    )
+    assert vacancy.status_code == 201, vacancy.text
+
+    plan = await api_user.client.post(
+        "/plans",
+        json={"vacancy_id": vacancy.json()["id"]},
+        headers=api_user.headers,
+    )
+    assert plan.status_code == 201, plan.text
+    items = {item["topic_key"]: item for item in plan.json()["items"]}
+    assert "python" in items
+    assert "kafka" in items
+    assert items["python"]["criticality"] == "must_have"
+    assert items["kafka"]["criticality"] == "must_have"
+    assert "подтвердить" in items["python"]["reason"]
 
 
 async def test_plans_are_bound_to_vacancy(api_user: ApiUser) -> None:

@@ -78,7 +78,11 @@ class PlanItem(Base):
     )
     position: Mapped[int] = mapped_column(Integer, default=0)
     current_level: Mapped[int] = mapped_column(Integer, default=0)
-    target_level: Mapped[int] = mapped_column(Integer, default=100)
+    target_level: Mapped[int] = mapped_column(Integer, default=80)
+    # must_have | nice_to_have
+    criticality: Mapped[str] = mapped_column(
+        String(20), default="nice_to_have", server_default=text("'nice_to_have'")
+    )
     confidence: Mapped[float] = mapped_column(Float, default=0.0)
     priority: Mapped[float] = mapped_column(Float, default=0.0)
     reason: Mapped[str] = mapped_column(Text, default="")

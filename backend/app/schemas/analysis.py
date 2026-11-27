@@ -157,6 +157,16 @@ class GapItemRead(BaseModel):
     requirement_logic: str = "SINGLE"
     criticality: str = "must_have"
     covered_by_alternative: bool = False
+    self_level: int = Field(default=0, description="Уровень из резюме или ручной оценки")
+    verified_level: int = Field(default=0, description="Уровень, подтверждённый тестом или интервью")
+    verified_gap: int = Field(default=0, description="Разрыв по подтверждённому уровню")
+    verified_satisfied: bool = Field(default=False, description="Навык закрыт подтверждённым уровнем")
+    status: str = Field(
+        default="unverified",
+        description="confirmed | partial | self_only | unverified",
+    )
+    evidence_type: str = Field(default="none", description="test | interview | resume | manual | none")
+    confidence: float = Field(default=0.0, ge=0, le=1)
 
 
 class GapRecommendationRead(BaseModel):
@@ -170,6 +180,33 @@ class GapRecommendationRead(BaseModel):
     gap: int
     priority: float
     criticality: str
+    reason: str
+
+
+class GapBlockerRead(BaseModel):
+    """Обязательное требование, которое мешает готовности."""
+
+    skill_name: str
+    topic_key: str | None = None
+    topic_name: str | None = None
+    required_level: int
+    verified_level: int
+    gap: int
+    weight: float
+    criticality: str = "must_have"
+
+
+class GapConfirmationRead(BaseModel):
+    """Навык, подтверждение которого уточнит расчёт готовности."""
+
+    skill_name: str
+    topic_key: str | None = None
+    topic_name: str | None = None
+    required_level: int
+    self_level: int
+    verified_level: int
+    criticality: str = "must_have"
+    potential_gain: float = Field(ge=0, le=1, description="Прирост verified readiness, 0..1")
     reason: str
 
 
@@ -209,6 +246,22 @@ class GapAnalysisRead(BaseModel):
     readiness_high: float = Field(default=0.0, description="Верхняя граница готовности, 0..1")
     critical_gate: float = Field(default=1.0, description="Множитель критического гейта, 0..1")
     confidence: float = Field(default=0.0, description="Средняя уверенность требований, 0..1")
+    potential_readiness: float = Field(
+        default=0.0, description="Готовность по эффективному уровню, 0..1"
+    )
+    verified_readiness: float | None = Field(
+        default=None, description="Готовность только по подтверждённым навыкам, 0..1"
+    )
+    critical_verified: float | None = Field(
+        default=None, description="Закрытие must_have подтверждёнными навыками, 0..1"
+    )
+    evidence_coverage: float = Field(
+        default=0.0, description="Доля веса требований с подтверждением, 0..1"
+    )
+    band: str = Field(default="not_ready", description="ready | almost | needs_confirmation | not_ready")
+    band_reason: str = ""
+    blockers: list[GapBlockerRead] = []
+    confirmation_queue: list[GapConfirmationRead] = []
 
 
 class AnalysisRequest(BaseModel):

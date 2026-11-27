@@ -5,6 +5,8 @@ from uuid import UUID
 
 from pydantic import BaseModel, Field
 
+from app.schemas.analysis import GapBlockerRead, GapConfirmationRead
+
 
 class DashboardProfileRead(BaseModel):
     """Сводка профиля знаний."""
@@ -41,6 +43,13 @@ class DashboardVacancyRead(BaseModel):
     requirements_count: int
     satisfied_count: int
     critical_gap_count: int
+    verified_readiness: float | None = Field(default=None, ge=0, le=1)
+    critical_verified: float | None = Field(default=None, ge=0, le=1)
+    evidence_coverage: float = Field(default=0.0, ge=0, le=1)
+    band: str = "not_ready"
+    band_reason: str = ""
+    blockers: list[GapBlockerRead] = []
+    confirmation_queue: list[GapConfirmationRead] = []
     focus_topics: list[DashboardFocusTopicRead] = []
 
 
@@ -71,10 +80,15 @@ class DashboardPlanRead(BaseModel):
 
     id: UUID
     title: str
+    kind: str = "general"
     topic_count: int
     progress: float
     completed_count: int
     remaining_count: int
+    tests_completed: int = 0
+    tests_passed: int = 0
+    average_score: float | None = None
+    attempts_count: int = 0
 
 
 class DashboardActiveInterviewRead(BaseModel):
@@ -138,7 +152,11 @@ class PlanProgressItemRead(BaseModel):
     progress: float = Field(ge=0, le=1)
     completed: bool
     test_level: int | None = None
+    test_score: float | None = Field(default=None, ge=0, le=1)
     interview_score: float | None = None
+    status: str = "not_tested"
+    attempts_count: int = 0
+    last_tested_at: datetime | None = None
 
 
 class PlanProgressRead(BaseModel):
@@ -149,4 +167,10 @@ class PlanProgressRead(BaseModel):
     topics_total: int
     completed_count: int
     remaining_count: int
+    tests_completed: int = 0
+    tests_passed: int = 0
+    average_score: float | None = Field(default=None, ge=0, le=1)
+    attempts_count: int = 0
+    next_topic_key: str | None = None
+    next_topic_name: str | None = None
     items: list[PlanProgressItemRead] = []

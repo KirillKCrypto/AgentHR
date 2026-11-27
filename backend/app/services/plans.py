@@ -25,7 +25,8 @@ from app.services.questions import count_by_topic
 MIN_TOPICS = 5
 MAX_TOPICS = 12
 # Версия алгоритма плана: старые отпечатки не переиспользуются после смены логики.
-PLAN_VERSION = "4"
+PLAN_VERSION = "5"
+DEFAULT_TARGET_LEVEL = 80
 
 
 class PlanError(ValueError):
@@ -47,6 +48,7 @@ class PlanTopic:
     current_level: int
     confidence: float
     target_level: int
+    criticality: str
     priority: float
     reason: str
     question_count: int = 0
@@ -76,8 +78,11 @@ class PlanSummary:
     title: str
     status: str
     vacancy_id: uuid.UUID | None
+    vacancy_title: str | None
     resume_id: uuid.UUID | None
     topic_count: int
+    kind: str = "general"
+    created_at: datetime | None = None
     is_current: bool = False
 
 
@@ -89,6 +94,7 @@ class PlanCandidate:
     current_level: int
     confidence: float
     target_level: int
+    criticality: str
     priority: float
     reasons: list[str]
 
@@ -224,6 +230,7 @@ async def create_plan(
                 position=position,
                 current_level=candidate.current_level,
                 target_level=candidate.target_level,
+                criticality=candidate.criticality,
                 confidence=candidate.confidence,
                 priority=round(candidate.priority, 3),
                 reason=reason,
@@ -238,6 +245,7 @@ async def create_plan(
                 current_level=candidate.current_level,
                 confidence=candidate.confidence,
                 target_level=candidate.target_level,
+                criticality=candidate.criticality,
                 priority=round(candidate.priority, 3),
                 reason=reason,
                 question_count=question_counts.get(candidate.topic.id, 0),
@@ -324,10 +332,16 @@ async def _build_candidates(
     states = {state.topic_id: state for state, _ in profile_rows}
     candidates: dict[uuid.UUID, PlanCandidate] = {}
 
-    def candidate_for(topic: Topic, target: int = 100) -> PlanCandidate:
+    def candidate_for(
+        topic: Topic,
+        target: int = DEFAULT_TARGET_LEVEL,
+        criticality: str = "nice_to_have",
+    ) -> PlanCandidate:
         existing = candidates.get(topic.id)
         if existing is not None:
             existing.target_level = max(existing.target_level, target)
+            if criticality == "must_have":
+                existing.criticality = "must_have"
             return existing
         state = states.get(topic.id)
         current = state.proficiency if state is not None else 0
@@ -337,6 +351,7 @@ async def _build_candidates(
             current_level=current,
             confidence=confidence,
             target_level=target,
+            criticality=criticality,
             priority=0.0,
             reasons=[],
         )
@@ -345,12 +360,26 @@ async def _build_candidates(
 
     # 1. Разрывы вакансии: главный источник слабых тем.
     vacancy_targets: dict[uuid.UUID, int] = {}
+    vacancy_criticality: dict[uuid.UUID, str] = {}
     for skill, topic in vacancy_rows:
-        candidate = candidate_for(topic, max(skill.required_level, 1))
+        criticality = skill.criticality or "must_have"
+        if criticality == "must_have":
+            vacancy_criticality[topic.id] = "must_have"
+        else:
+            vacancy_criticality.setdefault(topic.id, "nice_to_have")
+        candidate = candidate_for(
+            topic,
+            max(skill.required_level, 1),
+            criticality,
+        )
         target = candidate.target_level
         vacancy_targets[topic.id] = target
         gap = max(0, target - candidate.current_level)
         if gap <= 0:
+            if candidate.criticality == "must_have":
+                candidate.reasons.append(
+                    "обязательное требование: подтвердить уровень тестом"
+                )
             continue
         factor = 1.6 if skill.criticality == "must_have" else 0.7
         priority = (gap / max(target, 1)) * 100 * skill.weight * factor
@@ -381,14 +410,22 @@ async def _build_candidates(
         for turn, topic in turn_rows:
             if turn.score is None or turn.score >= 70:
                 continue
-            candidate = candidate_for(topic, vacancy_targets.get(topic.id, 100))
+            candidate = candidate_for(
+                topic,
+                vacancy_targets.get(topic.id, DEFAULT_TARGET_LEVEL),
+                vacancy_criticality.get(topic.id, "nice_to_have"),
+            )
             candidate.priority += (70 - turn.score) * 1.2 + 10
             candidate.add_reason(f"слабый ответ в интервью: {round(turn.score)}/100")
         if vacancy is not None:
             for skill, topic in vacancy_rows:
                 if topic.id in asked:
                     continue
-                candidate = candidate_for(topic, vacancy_targets.get(topic.id, 100))
+                candidate = candidate_for(
+                    topic,
+                    vacancy_targets.get(topic.id, DEFAULT_TARGET_LEVEL),
+                    vacancy_criticality.get(topic.id, "nice_to_have"),
+                )
                 factor = 1.4 if skill.criticality == "must_have" else 0.8
                 candidate.priority += 60 * skill.weight * factor
                 candidate.add_reason("не затронуто в интервью по вакансии")
@@ -400,12 +437,16 @@ async def _build_candidates(
             and state.review_due_at <= datetime.now(UTC)
         )
         if due:
-            candidate = candidate_for(topic, vacancy_targets.get(topic.id, 100))
+            candidate = candidate_for(
+                topic,
+                vacancy_targets.get(topic.id, DEFAULT_TARGET_LEVEL),
+                vacancy_criticality.get(topic.id, "nice_to_have"),
+            )
             candidate.priority += 15
             candidate.add_reason("пора повторить тему")
         if topic.id in vacancy_targets:
             continue
-        candidate = candidate_for(topic, 100)
+        candidate = candidate_for(topic, DEFAULT_TARGET_LEVEL)
         confidence_factor = 1 - 0.35 * candidate.confidence
         weakness = (100 - candidate.current_level) * confidence_factor
         scale = 0.6 if vacancy is not None else 1.0
@@ -420,24 +461,37 @@ async def _build_candidates(
 
 
 def _select_candidates(candidates: list[PlanCandidate]) -> list[PlanCandidate]:
-    """Сначала самые слабые и важные, затем добор до MIN_TOPICS."""
-    weak = [candidate for candidate in candidates if candidate.priority > 0]
-    weak.sort(
-        key=lambda item: (-item.priority, item.current_level, item.topic.name)
-    )
-    selected = weak[:MAX_TOPICS]
+    """Все обязательные темы плюс самые слабые до общего лимита.
+
+    Лимит MAX_TOPICS не должен скрывать must-have: иначе пользователь не может
+    подтвердить навык, который вакансия считает обязательным.
+    """
+    must_have = [candidate for candidate in candidates if candidate.criticality == "must_have"]
+    must_have.sort(key=lambda item: (item.current_level, item.topic.name))
+    selected = list(must_have)
+    chosen = {item.topic.id for item in selected}
+
+    nice = [
+        candidate
+        for candidate in candidates
+        if candidate.topic.id not in chosen and candidate.priority > 0
+    ]
+    nice.sort(key=lambda item: (-item.priority, item.current_level, item.topic.name))
+    target_total = max(MAX_TOPICS, len(selected))
+    selected.extend(nice[: max(0, target_total - len(selected))])
+
     if len(selected) < MIN_TOPICS:
         chosen = {item.topic.id for item in selected}
         rest = [
             candidate
             for candidate in candidates
-            if candidate.topic.id not in chosen
+            if candidate.topic.id not in chosen and candidate.criticality != "must_have"
         ]
         rest.sort(
             key=lambda item: (item.current_level, item.confidence, item.topic.name)
         )
         selected.extend(rest[: MIN_TOPICS - len(selected)])
-    return selected[:MAX_TOPICS]
+    return selected
 
 
 async def _latest_interview(
@@ -500,6 +554,7 @@ async def get_plan(session: AsyncSession, user_id: uuid.UUID, plan_id: uuid.UUID
                 current_level=item.current_level,
                 confidence=item.confidence,
                 target_level=item.target_level,
+                criticality=item.criticality,
                 priority=item.priority,
                 reason=item.reason,
                 question_count=question_counts.get(topic.id, 0),
@@ -521,6 +576,18 @@ async def list_plans(session: AsyncSession, user_id: uuid.UUID) -> list[PlanSumm
             .order_by(LearningPlan.created_at.desc())
         )
     ).all()
+    vacancy_ids = {plan.vacancy_id for plan in plans if plan.vacancy_id is not None}
+    vacancy_titles: dict[uuid.UUID, str | None] = {}
+    if vacancy_ids:
+        vacancy_titles = {
+            vacancy_id: title
+            for vacancy_id, title in (
+                await session.execute(
+                    select(Vacancy.id, Vacancy.title).where(Vacancy.id.in_(vacancy_ids))
+                )
+            ).all()
+        }
+
     result: list[PlanSummary] = []
     for plan in plans:
         count = (
@@ -534,8 +601,11 @@ async def list_plans(session: AsyncSession, user_id: uuid.UUID) -> list[PlanSumm
                 title=plan.title,
                 status=plan.status,
                 vacancy_id=plan.vacancy_id,
+                vacancy_title=vacancy_titles.get(plan.vacancy_id) if plan.vacancy_id else None,
                 resume_id=plan.resume_id,
                 topic_count=count,
+                kind="vacancy" if plan.vacancy_id is not None else "general",
+                created_at=plan.created_at,
                 is_current=(
                     plan.status == "active"
                     and active_resume_id is not None

@@ -86,7 +86,7 @@ async def test_full_user_journey(api_user: ApiUser) -> None:
         "items": [
             {
                 "number": number,
-                "options": ["A", "B", "C", "D"],
+                "options": ["Вариант A", "Вариант B", "Вариант C", "Вариант D"],
                 "correct_index": 0,
                 "explanation": "A",
             }

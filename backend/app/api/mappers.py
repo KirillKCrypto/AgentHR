@@ -5,6 +5,8 @@ from datetime import UTC, datetime
 from app.models import Resume, Vacancy
 from app.schemas.analysis import (
     GapAnalysisRead,
+    GapBlockerRead,
+    GapConfirmationRead,
     GapItemRead,
     GapRecommendationRead,
     ProfileRead,
@@ -159,6 +161,7 @@ def plan_read(plan: PlanSnapshot) -> PlanRead:
         resume_title=plan.resume_title,
         title=plan.title,
         status=plan.status,
+        kind="vacancy" if plan.vacancy_id is not None else "general",
         created_at=None,
         reused=plan.reused,
         items=[
@@ -169,6 +172,7 @@ def plan_read(plan: PlanSnapshot) -> PlanRead:
                 category=item.category,
                 current_level=item.current_level,
                 target_level=item.target_level,
+                criticality=item.criticality,
                 confidence=item.confidence,
                 priority=item.priority,
                 reason=item.reason,
@@ -186,8 +190,11 @@ def plan_summary_read(plan: PlanSummary) -> PlanSummaryRead:
         title=plan.title,
         status=plan.status,
         vacancy_id=plan.vacancy_id,
+        vacancy_title=plan.vacancy_title,
         resume_id=plan.resume_id,
         topic_count=plan.topic_count,
+        kind=plan.kind,
+        created_at=plan.created_at,
         is_current=plan.is_current,
     )
 
@@ -313,6 +320,13 @@ def gap_analysis_read(report: GapReport) -> GapAnalysisRead:
                 requirement_logic=item.requirement_logic,
                 criticality=item.criticality,
                 covered_by_alternative=item.covered_by_alternative,
+                self_level=item.self_level,
+                verified_level=item.verified_level,
+                verified_gap=item.verified_gap,
+                verified_satisfied=item.verified_satisfied,
+                status=item.status,
+                evidence_type=item.evidence_type,
+                confidence=item.confidence,
             )
             for item in report.items
         ],
@@ -349,4 +363,37 @@ def gap_analysis_read(report: GapReport) -> GapAnalysisRead:
         readiness_high=report.readiness_high,
         critical_gate=report.critical_gate,
         confidence=report.confidence,
+        potential_readiness=report.potential_readiness,
+        verified_readiness=report.verified_readiness,
+        critical_verified=report.critical_verified,
+        evidence_coverage=report.evidence_coverage,
+        band=report.band,
+        band_reason=report.band_reason,
+        blockers=[
+            GapBlockerRead(
+                skill_name=item.skill_name,
+                topic_key=item.topic_key,
+                topic_name=item.topic_name,
+                required_level=item.required_level,
+                verified_level=item.verified_level,
+                gap=item.gap,
+                weight=item.weight,
+                criticality=item.criticality,
+            )
+            for item in report.blockers
+        ],
+        confirmation_queue=[
+            GapConfirmationRead(
+                skill_name=item.skill_name,
+                topic_key=item.topic_key,
+                topic_name=item.topic_name,
+                required_level=item.required_level,
+                self_level=item.self_level,
+                verified_level=item.verified_level,
+                criticality=item.criticality,
+                potential_gain=item.potential_gain,
+                reason=item.reason,
+            )
+            for item in report.confirmation_queue
+        ],
     )
