@@ -20,6 +20,9 @@ class QuizRead(BaseModel):
     topic_key: str
     topic_name: str
     questions: list[QuizQuestionRead] = []
+    attempt: int = 1
+    max_attempts: int = 2
+    attempts_count: int = 0
 
 
 class QuizStartRequest(BaseModel):
@@ -67,3 +70,9 @@ class QuizResultRead(BaseModel):
     correct_count: int
     total: int
     items: list[QuizResultItemRead] = []
+    attempt: int = 1
+    max_attempts: int = 2
+    best_score: float = Field(default=0.0, ge=0, le=1)
+    best_level: int = Field(default=0, ge=0, le=100)
+    attempts_count: int = 0
+    can_retry: bool = False

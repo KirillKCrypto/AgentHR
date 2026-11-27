@@ -204,8 +204,49 @@ async def pick_test_questions(
     return tuple(selected[:count])
 
 
+MAX_TEST_ATTEMPTS = 2
+
+
 class TestAlreadyCompleted(ValueError):
-    """Пользователь уже проходил тест по этой теме."""
+    """Лимит попыток по теме исчерпан."""
+
+
+async def count_test_attempts(
+    session: AsyncSession,
+    user_id: uuid.UUID,
+    topic_id: uuid.UUID,
+) -> int:
+    """Сколько попыток теста уже было по теме."""
+    return (
+        await session.scalar(
+            select(func.count())
+            .select_from(TopicTestResult)
+            .where(
+                TopicTestResult.user_id == user_id,
+                TopicTestResult.topic_id == topic_id,
+            )
+        )
+    ) or 0
+
+
+async def get_test_results(
+    session: AsyncSession,
+    user_id: uuid.UUID,
+    topic_id: uuid.UUID,
+) -> list[TopicTestResult]:
+    """Все попытки по теме, от первой к последней."""
+    return list(
+        (
+            await session.scalars(
+                select(TopicTestResult)
+                .where(
+                    TopicTestResult.user_id == user_id,
+                    TopicTestResult.topic_id == topic_id,
+                )
+                .order_by(TopicTestResult.attempt_no, TopicTestResult.completed_at)
+            )
+        ).all()
+    )
 
 
 async def get_test_result(
@@ -213,12 +254,19 @@ async def get_test_result(
     user_id: uuid.UUID,
     topic_id: uuid.UUID,
 ) -> TopicTestResult | None:
-    """Сохранённый результат теста по теме, если он есть."""
+    """Лучший результат теста по теме."""
     return await session.scalar(
-        select(TopicTestResult).where(
+        select(TopicTestResult)
+        .where(
             TopicTestResult.user_id == user_id,
             TopicTestResult.topic_id == topic_id,
         )
+        .order_by(
+            TopicTestResult.score.desc(),
+            TopicTestResult.level.desc(),
+            TopicTestResult.completed_at.desc(),
+        )
+        .limit(1)
     )
 
 
@@ -233,14 +281,15 @@ async def save_test_result(
     total: int,
     details: list[dict[str, Any]],
 ) -> TopicTestResult:
-    """Сохраняет результат один раз и обновляет профиль пользователя."""
-    existing = await get_test_result(session, user_id, topic.id)
-    if existing is not None:
-        raise TestAlreadyCompleted("Тест по этой теме уже пройден")
+    """Сохраняет попытку и обновляет профиль лучшим результатом."""
+    attempts = await count_test_attempts(session, user_id, topic.id)
+    if attempts >= MAX_TEST_ATTEMPTS:
+        raise TestAlreadyCompleted("Лимит попыток по этой теме исчерпан")
 
     result = TopicTestResult(
         user_id=user_id,
         topic_id=topic.id,
+        attempt_no=attempts + 1,
         score=score,
         level=level,
         correct_count=correct_count,
@@ -258,13 +307,24 @@ async def save_test_result(
     if state is None:
         state = UserSkillState(user_id=user_id, topic_id=topic.id)
         session.add(state)
-    state.proficiency = level
-    state.confidence = round(min(0.95, 0.5 + 0.45 * score), 3)
-    state.source = "test"
-    state.evidence_type = "test"
-    state.verified_level = level
+        state.proficiency = level
+        state.confidence = round(min(0.95, 0.5 + 0.45 * score), 3)
+        state.source = "test"
+        state.evidence_type = "test"
+        state.verified_level = level
+    else:
+        # Новая попытка не должна ухудшать подтверждённый уровень.
+        best_level = max(state.verified_level or 0, level)
+        if best_level > (state.verified_level or 0):
+            state.verified_level = best_level
+        if level > state.proficiency:
+            state.proficiency = level
+            state.confidence = round(min(0.95, 0.5 + 0.45 * score), 3)
+            state.source = "test"
+            state.evidence_type = "test"
+
     state.review_due_at, state.review_interval_days = next_review(
-        level, state.review_interval_days
+        state.verified_level or level, state.review_interval_days
     )
     state.last_assessed = datetime.now(UTC)
     state.evidence = [
@@ -273,6 +333,7 @@ async def save_test_result(
             "type": "test",
             "text": f"Тест по теме: {correct_count} из {total} верно",
             "score": level,
+            "attempt": attempts + 1,
         },
     ][-10:]
 
@@ -280,6 +341,6 @@ async def save_test_result(
         await session.flush()
     except IntegrityError as exc:
         await session.rollback()
-        raise TestAlreadyCompleted("Тест по этой теме уже пройден") from exc
+        raise TestAlreadyCompleted("Не удалось сохранить попытку теста") from exc
     return result
 

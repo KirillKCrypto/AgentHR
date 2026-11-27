@@ -25,7 +25,12 @@ class TopicTestResult(Base):
 
     __tablename__ = "topic_test_results"
     __table_args__ = (
-        UniqueConstraint("user_id", "topic_id", name="uq_topic_test_results_user_topic"),
+        UniqueConstraint(
+            "user_id",
+            "topic_id",
+            "attempt_no",
+            name="uq_topic_test_results_user_topic_attempt",
+        ),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(
@@ -40,6 +45,8 @@ class TopicTestResult(Base):
     topic_id: Mapped[uuid.UUID] = mapped_column(
         Uuid, ForeignKey("topics.id", ondelete="RESTRICT"), index=True
     )
+    # Номер попытки: 1 или 2. В прогресс идёт лучший результат.
+    attempt_no: Mapped[int] = mapped_column(Integer, default=1, server_default=text("1"))
     score: Mapped[float] = mapped_column(Float, default=0.0)
     level: Mapped[int] = mapped_column(Integer, default=0)
     correct_count: Mapped[int] = mapped_column(Integer, default=0)

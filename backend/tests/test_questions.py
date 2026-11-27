@@ -169,6 +169,8 @@ async def test_quiz_api_returns_options_and_grades(api_user: ApiUser) -> None:
     )
     assert started.status_code == 201, started.text
     quiz = started.json()
+    assert quiz["attempt"] == 1
+    assert quiz["max_attempts"] == 2
     assert 5 <= len(quiz["questions"]) <= 10
     assert all(len(question["options"]) == 4 for question in quiz["questions"])
     assert all("correct_option" not in question for question in quiz["questions"])
@@ -190,30 +192,53 @@ async def test_quiz_api_returns_options_and_grades(api_user: ApiUser) -> None:
     assert result["level"] == round(result["score"] * 100)
     assert all(item["correct_option"] in range(4) for item in result["items"])
 
-    repeated = await api_user.client.post(
+    retry = await api_user.client.post(
         "/questions/quiz",
         json={"topic_key": "python", "count": 10},
         headers=api_user.headers,
     )
-    assert repeated.status_code == 409
+    assert retry.status_code == 201, retry.text
+    retry_quiz = retry.json()
+    assert retry_quiz["attempt"] == 2
+    wrong_answers = [
+        {"question_id": question["id"], "selected_option": 1}
+        for question in retry_quiz["questions"]
+    ]
+    retry_graded = await api_user.client.post(
+        "/questions/quiz/grade",
+        json={"topic_key": "python", "answers": wrong_answers},
+        headers=api_user.headers,
+    )
+    assert retry_graded.status_code == 200, retry_graded.text
+    retry_result = retry_graded.json()
+    best_level = max(result["level"], retry_result["level"])
+
+    exhausted = await api_user.client.post(
+        "/questions/quiz",
+        json={"topic_key": "python", "count": 10},
+        headers=api_user.headers,
+    )
+    assert exhausted.status_code == 409
 
     saved = await api_user.client.get(
         "/questions/quiz/python/result",
         headers=api_user.headers,
     )
     assert saved.status_code == 200
-    assert saved.json()["level"] == result["level"]
+    assert saved.json()["level"] == best_level
+    assert saved.json()["attempts_count"] == 2
+    assert saved.json()["can_retry"] is False
 
     profile = await api_user.client.get("/profile", headers=api_user.headers)
     python = next(
         topic for topic in profile.json()["topics"] if topic["topic_key"] == "python"
     )
     assert python["source"] == "test"
-    assert python["verified_level"] == result["level"]
+    assert python["verified_level"] == best_level
     assert python["evidence_type"] == "test"
     assert python["review_due_at"] is not None
     assert python["review_interval_days"] >= 1
-    assert python["proficiency"] == result["level"]
+    assert python["proficiency"] == best_level
 
     async with async_session_factory() as session:
         await session.execute(

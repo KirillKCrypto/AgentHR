@@ -18,9 +18,12 @@ from app.schemas.quiz import (
 )
 from app.services.learning_topics import NON_LEARNING_TOPIC_KEYS
 from app.services.questions import (
+    MAX_TEST_ATTEMPTS,
     TestAlreadyCompleted,
+    count_test_attempts,
     ensure_question_bank,
     get_test_result,
+    get_test_results,
     pick_questions,
     pick_test_questions,
     save_test_result,
@@ -50,10 +53,11 @@ async def start_quiz(
 ) -> QuizRead:
     """Собирает тест по теме и при необходимости готовит варианты ответа."""
     topic = await _load_topic(db, payload.topic_key)
-    if await get_test_result(db, current_user.id, topic.id) is not None:
+    attempts = await count_test_attempts(db, current_user.id, topic.id)
+    if attempts >= MAX_TEST_ATTEMPTS:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
-            detail="Тест по этой теме уже пройден",
+            detail="Лимит попыток по этой теме исчерпан",
         )
     picked = await pick_test_questions(db, topic.id, count=payload.count)
     if len(picked) < payload.count:
@@ -99,6 +103,9 @@ async def start_quiz(
             )
             for question in ordered
         ],
+        attempt=attempts + 1,
+        max_attempts=MAX_TEST_ATTEMPTS,
+        attempts_count=attempts,
     )
 
 
@@ -162,7 +169,7 @@ async def grade_quiz(
         items=items,
     )
     try:
-        await save_test_result(
+        saved = await save_test_result(
             db,
             current_user.id,
             topic,
@@ -177,8 +184,19 @@ async def grade_quiz(
             status_code=status.HTTP_409_CONFLICT,
             detail=str(exc),
         ) from exc
+    best = await get_test_result(db, current_user.id, topic.id)
+    attempts_count = await count_test_attempts(db, current_user.id, topic.id)
     await db.commit()
-    return result
+    return result.model_copy(
+        update={
+            "attempt": saved.attempt_no,
+            "max_attempts": MAX_TEST_ATTEMPTS,
+            "best_score": best.score if best is not None else result.score,
+            "best_level": best.level if best is not None else result.level,
+            "attempts_count": attempts_count,
+            "can_retry": attempts_count < MAX_TEST_ATTEMPTS,
+        }
+    )
 
 
 @router.get("/quiz/{topic_key}/result")
@@ -189,12 +207,13 @@ async def read_test_result(
 ) -> QuizResultRead:
     """Сохранённый результат теста по теме."""
     topic = await _load_topic(db, topic_key)
-    saved = await get_test_result(db, current_user.id, topic.id)
-    if saved is None:
+    attempts = await get_test_results(db, current_user.id, topic.id)
+    if not attempts:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Тест по этой теме ещё не пройден",
         )
+    saved = max(attempts, key=lambda item: (item.score, item.level))
     return QuizResultRead(
         topic_key=topic.key,
         topic_name=topic.name,
@@ -203,6 +222,12 @@ async def read_test_result(
         correct_count=saved.correct_count,
         total=saved.total,
         items=[QuizResultItemRead(**item) for item in saved.details or []],
+        attempt=saved.attempt_no,
+        max_attempts=MAX_TEST_ATTEMPTS,
+        best_score=saved.score,
+        best_level=saved.level,
+        attempts_count=len(attempts),
+        can_retry=len(attempts) < MAX_TEST_ATTEMPTS,
     )
 
 
