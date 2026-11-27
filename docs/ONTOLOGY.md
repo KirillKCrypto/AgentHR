@@ -224,6 +224,26 @@ Gap-анализ теперь отдаёт две метрики:
 «на проверке». `overall_readiness` сохранён как синоним `coverage_all` для
 совместимости.
 
+### 2.5. Потенциал и подтверждение
+
+С версии метрик A+C gap-анализ различает два уровня:
+
+- `self_level` — резюме или ручная оценка;
+- `verified_level` — тест или интервью;
+- `effective_level = max(self_level, verified_level)`;
+- `potential_readiness` — готовность по `effective_level`;
+- `verified_readiness` — только по `verified_level`, неподтверждённое = 0;
+- `critical_verified` — закрытие `must_have` подтверждёнными навыками;
+- `evidence_coverage` — доля веса требований, у которых есть подтверждение.
+
+Бэнды: `ready`, `almost`, `needs_confirmation`, `not_ready`. `ready` требует
+verified ≥ 80%, `critical_verified = 100%` и `evidence_coverage ≥ 80%`.
+`needs_confirmation` показывает случай «резюме обещает, тесты не подтверждают».
+
+`confirmation_queue` сортирует неподтверждённые навыки по приросту
+`verified_readiness`, если подтвердить уровень. `blockers` — обязательные
+требования, не закрытые подтверждением.
+
 ### Важное следствие для оценки
 
 Раньше `PostgreSQL` матчился в `sql`, а `Kafka` считалась «вне онтологии» и не входила
