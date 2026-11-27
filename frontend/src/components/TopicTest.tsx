@@ -30,6 +30,7 @@ export function TopicTest({
   const [quiz, setQuiz] = useState<QuizRead | null>(null)
   const [answers, setAnswers] = useState<Record<string, number>>({})
   const [result, setResult] = useState<QuizResultRead | null>(null)
+  const [attempting, setAttempting] = useState(false)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -45,10 +46,11 @@ export function TopicTest({
     }
   }, [savedQuery.error, onUnauthorized])
 
-  const effectiveResult = result ?? savedQuery.data ?? null
+  const effectiveResult = result ?? (attempting ? null : savedQuery.data ?? null)
 
   async function start() {
     setBusy(true)
+    setAttempting(true)
     setError(null)
     setAnswers({})
     try {
@@ -59,13 +61,22 @@ export function TopicTest({
         return
       }
       if (value instanceof ApiError && value.status === 409) {
+        setAttempting(false)
         await savedQuery.refetch()
         return
       }
+      setAttempting(false)
       setError(errorMessage(value))
     } finally {
       setBusy(false)
     }
+  }
+
+  function retry() {
+    setResult(null)
+    setQuiz(null)
+    setAttempting(true)
+    void start()
   }
 
   async function grade() {
@@ -82,8 +93,12 @@ export function TopicTest({
       const graded = await gradeQuiz(topicKey, payload, token)
       setResult(graded)
       setQuiz(null)
+      setAttempting(false)
       await queryClient.invalidateQueries({ queryKey: ['profile', token] })
       await queryClient.invalidateQueries({ queryKey: ['quiz-result', topicKey, token] })
+      await queryClient.invalidateQueries({ queryKey: ['plan-progress'] })
+      await queryClient.invalidateQueries({ queryKey: ['dashboard'] })
+      await queryClient.invalidateQueries({ queryKey: ['gaps'] })
     } catch (value) {
       if (value instanceof ApiError && value.status === 401) {
         onUnauthorized?.()
@@ -92,6 +107,7 @@ export function TopicTest({
       if (value instanceof ApiError && value.status === 409) {
         await savedQuery.refetch()
         setQuiz(null)
+        setAttempting(false)
         return
       }
       setError(errorMessage(value))
@@ -104,19 +120,29 @@ export function TopicTest({
     return (
       <div className="flex flex-col gap-4 rounded-md border p-4">
         <div className="flex flex-wrap items-end gap-4">
-          <span className="text-3xl font-medium">{effectiveResult.level}</span>
+          <span className="text-3xl font-medium">{effectiveResult.best_level}</span>
           <span className="text-sm text-muted-foreground">
-            {effectiveResult.topic_name}: оценка знания темы
+            {effectiveResult.topic_name}: лучший результат
           </span>
           <Badge variant="outline">
             {effectiveResult.correct_count} из {effectiveResult.total} верно
           </Badge>
-          <Badge variant="secondary">{Math.round(effectiveResult.score * 100)}%</Badge>
+          <Badge variant="secondary">
+            попытка {effectiveResult.attempt}: {Math.round(effectiveResult.score * 100)}%
+          </Badge>
         </div>
-        <Progress value={effectiveResult.level} />
+        <Progress value={effectiveResult.best_level} />
         <p className="text-xs text-muted-foreground">
-          Тест пройден. Результат сохранён в профиле, повторное прохождение недоступно.
+          Использовано попыток: {effectiveResult.attempts_count} из{' '}
+          {effectiveResult.max_attempts}. В прогресс плана и профиль идёт лучший балл.
         </p>
+        {effectiveResult.can_retry ? (
+          <div>
+            <Button type="button" size="sm" variant="outline" onClick={retry} disabled={busy}>
+              Пройти ещё раз
+            </Button>
+          </div>
+        ) : null}
 
         <ol className="flex list-decimal flex-col gap-4 pl-5 text-sm">
           {effectiveResult.items.map((item) => (
@@ -156,7 +182,15 @@ export function TopicTest({
           <span className="text-sm text-muted-foreground">
             {quiz.topic_name}: отвечено {answered} из {quiz.questions.length}
           </span>
-          <Button type="button" size="sm" variant="ghost" onClick={() => setQuiz(null)}>
+          <Button
+            type="button"
+            size="sm"
+            variant="ghost"
+            onClick={() => {
+              setQuiz(null)
+              setAttempting(false)
+            }}
+          >
             Отменить
           </Button>
         </div>
@@ -224,7 +258,7 @@ export function TopicTest({
           {busy ? 'Готовим тест…' : 'Пройти тест (10 вопросов)'}
         </Button>
         <span className="text-xs text-muted-foreground">
-          Одна попытка на тему. 10 вопросов разной сложности.
+          Две попытки на тему. 10 вопросов разной сложности.
         </span>
       </div>
       {error ? <p className="text-sm text-destructive">{error}</p> : null}

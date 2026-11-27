@@ -7,7 +7,9 @@ import {
   fetchGaps,
   fetchProfile,
   fetchVacancy,
+  listPlans,
   type GapAnalysisRead,
+  type PlanSummary,
   type VacancyRead,
 } from '@/api/client'
 import { buttonVariants } from '@/components/ui/button'
@@ -18,6 +20,7 @@ import {
   CardHeader,
   CardTitle,
 } from '@/components/ui/card'
+import { CreatePlanButton } from '@/components/CreatePlanButton'
 import { VacancyAssessment } from '@/components/VacancyAssessment'
 import { StartInterviewButton } from '@/components/StartInterviewButton'
 import { errorMessage } from '@/lib/errors'
@@ -48,8 +51,15 @@ export default function VacancyPage() {
     enabled: token !== null,
     retry: false,
   })
+  const plansQuery = useQuery<PlanSummary[]>({
+    queryKey: ['plans', token],
+    queryFn: () => listPlans(token as string),
+    enabled: token !== null,
+    retry: false,
+  })
 
-  const error = vacancyQuery.error ?? gapsQuery.error ?? profileQuery.error
+  const error =
+    vacancyQuery.error ?? gapsQuery.error ?? profileQuery.error ?? plansQuery.error
   useEffect(() => {
     if (error instanceof ApiError && error.status === 401) {
       expire()
@@ -91,7 +101,7 @@ export default function VacancyPage() {
           <CardDescription>{errorMessage(vacancyQuery.error)}</CardDescription>
         </CardHeader>
         <CardContent>
-          <Link to="/profile" className={buttonVariants({ variant: 'outline' })}>
+          <Link to="/profile/skills" className={buttonVariants({ variant: 'outline' })}>
             К профилю
           </Link>
         </CardContent>
@@ -102,6 +112,9 @@ export default function VacancyPage() {
   const vacancy = vacancyQuery.data
   const gaps = gapsQuery.data
   const hasProfile = (profileQuery.data?.topics.length ?? 0) > 0
+  const activePlan = (plansQuery.data ?? []).find(
+    (plan) => plan.vacancy_id === vacancy.id && plan.status === 'active',
+  )
 
   return (
     <div className="flex flex-col gap-6">
@@ -122,7 +135,7 @@ export default function VacancyPage() {
           </div>
           <div className="flex flex-wrap gap-2">
             <Link
-              to={`/profile?vacancy=${vacancy.id}`}
+              to={`/profile/skills?vacancy=${vacancy.id}`}
               className={buttonVariants({ variant: 'outline' })}
             >
               Профиль и разрывы
@@ -135,8 +148,44 @@ export default function VacancyPage() {
         </CardContent>
       </Card>
 
+      <Card>
+        <CardHeader>
+          <CardTitle>План по вакансии</CardTitle>
+          <CardDescription>
+            Все обязательные требования попадают в этот план, даже если разрыв уже
+            закрыт резюме.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="flex flex-wrap items-center gap-2">
+          {activePlan ? (
+            <>
+              <span className="text-sm text-muted-foreground">
+                {activePlan.title} · {activePlan.topic_count} тем
+              </span>
+              <Link
+                to={`/plans/${activePlan.id}`}
+                className={buttonVariants({ variant: 'outline' })}
+              >
+                Открыть план
+              </Link>
+            </>
+          ) : (
+            <CreatePlanButton vacancyId={vacancy.id} label="Построить план по вакансии" />
+          )}
+          <Link to="/plans" className={buttonVariants({ variant: 'ghost' })}>
+            Все планы
+          </Link>
+        </CardContent>
+      </Card>
+
       {gaps ? (
-        <VacancyAssessment vacancy={vacancy} gaps={gaps} hasProfile={hasProfile} />
+        <VacancyAssessment
+          vacancy={vacancy}
+          gaps={gaps}
+          hasProfile={hasProfile}
+          token={token}
+          onUnauthorized={expire}
+        />
       ) : gapsQuery.isError ? (
         <Card>
           <CardHeader>

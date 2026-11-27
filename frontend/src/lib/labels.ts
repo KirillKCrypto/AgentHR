@@ -25,6 +25,36 @@ export function matchMethodLabel(method: string): string {
   return MATCH_LABELS[method] ?? method
 }
 
+const BAND_LABELS: Record<string, string> = {
+  ready: 'Готов',
+  almost: 'Почти готов',
+  needs_confirmation: 'Нужно подтвердить',
+  not_ready: 'Не готов',
+}
+
+const SKILL_STATUS_LABELS: Record<string, string> = {
+  confirmed: 'подтверждён',
+  partial: 'частично',
+  self_only: 'только резюме',
+  unverified: 'не проверен',
+  not_tested: 'не пройден',
+}
+
+export function bandLabel(band: string): string {
+  return BAND_LABELS[band] ?? band
+}
+
+export function skillStatusLabel(status: string): string {
+  return SKILL_STATUS_LABELS[status] ?? status
+}
+
+export function percent(value: number | null | undefined): string {
+  if (value === null || value === undefined) {
+    return '—'
+  }
+  return `${Math.round(value * 100)}%`
+}
+
 export function formatDate(iso: string): string {
   return new Intl.DateTimeFormat('ru-RU', {
     day: '2-digit',

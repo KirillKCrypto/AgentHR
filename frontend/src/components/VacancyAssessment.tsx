@@ -2,7 +2,13 @@ import { Link } from 'react-router'
 
 import type { GapAnalysisRead, VacancyRead } from '@/api/client'
 import { CreatePlanButton } from '@/components/CreatePlanButton'
-import { GapMetrics, GapRecommendations, GapTable } from '@/components/Gaps'
+import {
+  GapBlockers,
+  GapConfirmationQueue,
+  GapMetrics,
+  GapRecommendations,
+  GapTable,
+} from '@/components/Gaps'
 import { buttonVariants } from '@/components/ui/button'
 import {
   Card,
@@ -16,10 +22,14 @@ export function VacancyAssessment({
   vacancy,
   gaps,
   hasProfile,
+  token,
+  onUnauthorized,
 }: {
   vacancy: VacancyRead
   gaps: GapAnalysisRead
   hasProfile: boolean
+  token: string
+  onUnauthorized: () => void
 }) {
   return (
     <div className="flex flex-col gap-6">
@@ -41,7 +51,7 @@ export function VacancyAssessment({
                 появится на этой странице.
               </p>
               <div>
-                <Link to="/profile" className={buttonVariants()}>
+                <Link to="/profile/resumes" className={buttonVariants()}>
                   Загрузить резюме
                 </Link>
               </div>
@@ -49,7 +59,7 @@ export function VacancyAssessment({
           )}
           <div className="flex flex-wrap items-center gap-2">
             <Link
-              to={`/profile?vacancy=${vacancy.id}`}
+              to={`/profile/skills?vacancy=${vacancy.id}`}
               className={buttonVariants({ variant: 'outline' })}
             >
               Открыть профиль знаний
@@ -59,7 +69,17 @@ export function VacancyAssessment({
         </CardContent>
       </Card>
 
-      {hasProfile ? <GapRecommendations items={gaps.recommendations} /> : null}
+      {hasProfile ? (
+        <>
+          <GapBlockers items={gaps.blockers} />
+          <GapConfirmationQueue
+            items={gaps.confirmation_queue}
+            token={token}
+            onUnauthorized={onUnauthorized}
+          />
+          <GapRecommendations items={gaps.recommendations} />
+        </>
+      ) : null}
 
       <Card>
         <CardHeader>

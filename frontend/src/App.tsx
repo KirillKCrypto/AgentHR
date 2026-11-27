@@ -8,8 +8,14 @@ import InterviewPage from '@/pages/InterviewPage'
 import LoginPage from '@/pages/LoginPage'
 import NotFoundPage from '@/pages/NotFoundPage'
 import PlanPage from '@/pages/PlanPage'
+import PlansPage from '@/pages/PlansPage'
+import ProfileOverviewPage from '@/pages/ProfileOverviewPage'
 import ProfilePage from '@/pages/ProfilePage'
+import ProfileResumesPage from '@/pages/ProfileResumesPage'
+import ProfileSkillsPage from '@/pages/ProfileSkillsPage'
+import ProfileTestsPage from '@/pages/ProfileTestsPage'
 import ReportPage from '@/pages/ReportPage'
+import VacanciesPage from '@/pages/VacanciesPage'
 import VacancyPage from '@/pages/VacancyPage'
 import VacancyUploadPage from '@/pages/VacancyUploadPage'
 import { clearTokens, getAccessToken, subscribeAuth } from '@/lib/tokens'
@@ -31,11 +37,14 @@ function App() {
           <NavLink to="/" end className={navLinkClass}>
             Дашборд
           </NavLink>
-          <NavLink to="/profile" className={navLinkClass}>
-            Профиль знаний
+          <NavLink to="/vacancies" className={navLinkClass}>
+            Вакансии
           </NavLink>
-          <NavLink to="/vacancies/new" className={navLinkClass}>
-            Проверить вакансию
+          <NavLink to="/plans" className={navLinkClass}>
+            Планы
+          </NavLink>
+          <NavLink to="/profile" className={navLinkClass}>
+            Профиль
           </NavLink>
           <div className="ml-auto">
             <UserBadge />
@@ -46,12 +55,19 @@ function App() {
         <Routes>
           <Route path="/" element={<DashboardPage />} />
           <Route path="/login" element={<LoginPage />} />
+          <Route path="/vacancies" element={<VacanciesPage />} />
           <Route path="/vacancies/new" element={<VacancyUploadPage />} />
           <Route path="/vacancies/:vacancyId" element={<VacancyPage />} />
+          <Route path="/plans" element={<PlansPage />} />
           <Route path="/plans/:planId" element={<PlanPage />} />
           <Route path="/interviews/:interviewId" element={<InterviewPage />} />
           <Route path="/reports/:reportId" element={<ReportPage />} />
-          <Route path="/profile" element={<ProfilePage />} />
+          <Route path="/profile" element={<ProfilePage />}>
+            <Route index element={<ProfileOverviewPage />} />
+            <Route path="resumes" element={<ProfileResumesPage />} />
+            <Route path="skills" element={<ProfileSkillsPage />} />
+            <Route path="tests" element={<ProfileTestsPage />} />
+          </Route>
           <Route path="*" element={<NotFoundPage />} />
         </Routes>
       </main>

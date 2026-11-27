@@ -20,7 +20,7 @@ import {
 } from '@/components/ui/card'
 import { Progress } from '@/components/ui/progress'
 import { errorMessage } from '@/lib/errors'
-import { formatDate } from '@/lib/labels'
+import { bandLabel, formatDate, percent } from '@/lib/labels'
 import { clearTokens, getAccessToken } from '@/lib/tokens'
 
 export default function DashboardPage() {
@@ -134,7 +134,7 @@ export default function DashboardPage() {
         </CardHeader>
         <CardContent className="flex flex-wrap items-center gap-2">
           {!hasProfile ? (
-            <Link to="/profile" className={buttonVariants()}>
+            <Link to="/profile/resumes" className={buttonVariants()}>
               Загрузить резюме
             </Link>
           ) : !hasVacancy ? (
@@ -158,7 +158,7 @@ export default function DashboardPage() {
             </Link>
           ) : null}
           {hasProfile ? (
-            <Link to="/profile" className={buttonVariants({ variant: 'outline' })}>
+            <Link to="/profile/skills" className={buttonVariants({ variant: 'outline' })}>
               Профиль знаний
             </Link>
           ) : null}
@@ -215,7 +215,7 @@ export default function DashboardPage() {
                 </span>
               </div>
             ))}
-            <Link to="/profile" className={buttonVariants({ variant: 'outline' })}>
+            <Link to="/profile/skills" className={buttonVariants({ variant: 'outline' })}>
               Открыть профиль
             </Link>
           </CardContent>
@@ -323,7 +323,14 @@ export default function DashboardPage() {
 
         <Card>
           <CardHeader>
-            <CardTitle>План подготовки</CardTitle>
+            <div className="flex flex-wrap items-center gap-2">
+              <CardTitle>План подготовки</CardTitle>
+              {data.plan ? (
+                <Badge variant={data.plan.kind === 'vacancy' ? 'default' : 'outline'}>
+                  {data.plan.kind === 'vacancy' ? 'По вакансии' : 'Общий'}
+                </Badge>
+              ) : null}
+            </div>
             <CardDescription>
               {data.plan ? data.plan.title : 'Плана пока нет'}
             </CardDescription>
@@ -336,16 +343,28 @@ export default function DashboardPage() {
                     {Math.round(data.plan.progress * 100)}%
                   </span>
                   <span className="text-sm text-muted-foreground">
-                    закрыто {data.plan.completed_count} из {data.plan.topic_count} тем
+                    закрыто {data.plan.completed_count} из {data.plan.topic_count} тем ·
+                    тестов {data.plan.tests_completed}, зачтено {data.plan.tests_passed}
                   </span>
                 </div>
                 <Progress value={Math.round(data.plan.progress * 100)} />
-                <Link
-                  to={`/plans/${data.plan.id}`}
-                  className={buttonVariants({ variant: 'outline' })}
-                >
-                  Открыть план
-                </Link>
+                {data.plan.average_score !== null &&
+                data.plan.average_score !== undefined ? (
+                  <span className="text-xs text-muted-foreground">
+                    средний балл тестов {Math.round(data.plan.average_score * 100)}%
+                  </span>
+                ) : null}
+                <div className="flex flex-wrap gap-2">
+                  <Link
+                    to={`/plans/${data.plan.id}`}
+                    className={buttonVariants({ variant: 'outline' })}
+                  >
+                    Открыть план
+                  </Link>
+                  <Link to="/plans" className={buttonVariants({ variant: 'ghost' })}>
+                    Все планы
+                  </Link>
+                </div>
               </div>
             ) : (
               <div className="flex flex-col gap-3">
@@ -436,13 +455,15 @@ function ReadinessCard({
   if (!vacancy) {
     return null
   }
-  const coverage = Math.round(vacancy.readiness * 100)
-  const low = Math.round(vacancy.readiness_low * 100)
-  const high = Math.round(vacancy.readiness_high * 100)
+  const potential = Math.round(vacancy.readiness * 100)
+  const verified =
+    vacancy.verified_readiness === null || vacancy.verified_readiness === undefined
+      ? null
+      : Math.round(vacancy.verified_readiness * 100)
+  const evidence = Math.round(vacancy.evidence_coverage * 100)
+  const criticalValue = vacancy.critical_verified ?? vacancy.critical_readiness
   const critical =
-    typeof vacancy.critical_readiness === 'number'
-      ? Math.round(vacancy.critical_readiness * 100)
-      : null
+    typeof criticalValue === 'number' ? Math.round(criticalValue * 100) : null
 
   return (
     <Card>
@@ -469,33 +490,37 @@ function ReadinessCard({
           </div>
         ) : null}
 
-        <div className="grid gap-6 sm:grid-cols-3">
+        <div className="flex flex-wrap items-center gap-2 rounded-md border bg-muted/30 p-3">
+          <Badge variant={vacancy.band === 'ready' ? 'default' : 'secondary'}>
+            {bandLabel(vacancy.band)}
+          </Badge>
+          <span className="text-sm text-muted-foreground">{vacancy.band_reason}</span>
+        </div>
+
+        <div className="grid gap-6 sm:grid-cols-4">
           <div className="flex flex-col gap-1">
-            <span className="text-4xl font-medium">{coverage}%</span>
-            <span className="text-sm text-muted-foreground">
-              готовность с гейтом
+            <span className="text-4xl font-medium">
+              {verified === null ? '—' : `${verified}%`}
             </span>
-            <Progress value={coverage} />
-            <span className="text-xs text-muted-foreground">
-              диапазон {low}–{high}% · покрытие {Math.round(vacancy.coverage * 100)}%
-            </span>
+            <span className="text-sm text-muted-foreground">подтверждено</span>
+            {verified !== null ? <Progress value={verified} /> : null}
+          </div>
+          <div className="flex flex-col gap-1">
+            <span className="text-4xl font-medium">{potential}%</span>
+            <span className="text-sm text-muted-foreground">потенциал</span>
+            <Progress value={potential} />
+          </div>
+          <div className="flex flex-col gap-1">
+            <span className="text-4xl font-medium">{evidence}%</span>
+            <span className="text-sm text-muted-foreground">доказательства</span>
+            <Progress value={evidence} />
           </div>
           <div className="flex flex-col gap-1">
             <span className="text-4xl font-medium">
               {critical === null ? '—' : `${critical}%`}
             </span>
-            <span className="text-sm text-muted-foreground">
-              обязательные требования закрыты
-            </span>
+            <span className="text-sm text-muted-foreground">критические</span>
             {critical !== null ? <Progress value={critical} /> : null}
-          </div>
-          <div className="flex flex-col gap-1">
-            <span className="text-4xl font-medium">
-              {Math.round(vacancy.average_gap)}
-            </span>
-            <span className="text-sm text-muted-foreground">
-              средний разрыв, пункты
-            </span>
           </div>
         </div>
 
@@ -505,33 +530,41 @@ function ReadinessCard({
           </span>
           <span>·</span>
           <span>{vacancy.critical_gap_count} обязательных с разрывом</span>
+          <span>·</span>
+          <span>средний разрыв {Math.round(vacancy.average_gap)} п.</span>
         </div>
 
-        {vacancy.focus_topics.length > 0 ? (
+        {vacancy.blockers.length > 0 ? (
           <div className="flex flex-col gap-2">
-            <span className="text-sm font-medium">Фокус развития</span>
-            <div className="flex flex-col gap-2">
-              {vacancy.focus_topics.map((item) => (
-                <div
-                  key={item.topic_key ?? item.skill_name}
-                  className="flex flex-wrap items-center justify-between gap-2 rounded-md border p-2"
-                >
-                  <div className="flex flex-wrap items-center gap-2">
-                    <span className="text-sm">
-                      {item.topic_name ?? item.skill_name}
-                    </span>
-                    <Badge
-                      variant={item.criticality === 'must_have' ? 'default' : 'outline'}
-                    >
-                      {item.criticality === 'must_have' ? 'обязательно' : 'желательно'}
-                    </Badge>
-                  </div>
-                  <span className="text-xs text-muted-foreground">
-                    {item.current_level} из {item.required_level} · не хватает {item.gap}
-                  </span>
-                </div>
-              ))}
-            </div>
+            <span className="text-sm font-medium">Что блокирует готовность</span>
+            {vacancy.blockers.slice(0, 3).map((item) => (
+              <div
+                key={item.topic_key ?? item.skill_name}
+                className="flex flex-wrap items-center justify-between gap-2 rounded-md border p-2"
+              >
+                <span className="text-sm">{item.topic_name ?? item.skill_name}</span>
+                <span className="text-xs text-muted-foreground">
+                  {item.verified_level} из {item.required_level} · не хватает {item.gap}
+                </span>
+              </div>
+            ))}
+          </div>
+        ) : null}
+
+        {vacancy.confirmation_queue.length > 0 ? (
+          <div className="flex flex-col gap-2">
+            <span className="text-sm font-medium">Что подтвердить</span>
+            {vacancy.confirmation_queue.slice(0, 3).map((item) => (
+              <div
+                key={item.topic_key ?? item.skill_name}
+                className="flex flex-wrap items-center justify-between gap-2 rounded-md border p-2"
+              >
+                <span className="text-sm">{item.topic_name ?? item.skill_name}</span>
+                <span className="text-xs text-muted-foreground">
+                  может добавить +{percent(item.potential_gain)}
+                </span>
+              </div>
+            ))}
           </div>
         ) : null}
 
@@ -543,7 +576,7 @@ function ReadinessCard({
             Открыть вакансию
           </Link>
           <Link
-            to={`/profile?vacancy=${vacancy.id}`}
+            to={`/profile/skills?vacancy=${vacancy.id}`}
             className={buttonVariants({ variant: 'outline' })}
           >
             Разрывы в профиле

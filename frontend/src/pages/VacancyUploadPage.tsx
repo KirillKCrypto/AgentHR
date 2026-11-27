@@ -128,7 +128,7 @@ export default function VacancyUploadPage() {
             {!profileQuery.isPending && !hasProfile ? (
               <p className="text-sm text-muted-foreground">
                 Профиль пока пуст. Сначала{' '}
-                <Link to="/profile" className="underline underline-offset-4">
+                <Link to="/profile/resumes" className="underline underline-offset-4">
                   загрузите резюме
                 </Link>
                 , иначе все требования будут разрывами.
@@ -183,7 +183,7 @@ export default function VacancyUploadPage() {
         </CardContent>
       </Card>
 
-      {vacancy && gaps ? (
+      {vacancy && gaps && token !== null ? (
         <div className="flex flex-col gap-3">
           <div>
             <Link
@@ -193,7 +193,13 @@ export default function VacancyUploadPage() {
               Открыть сохранённую вакансию
             </Link>
           </div>
-          <VacancyAssessment vacancy={vacancy} gaps={gaps} hasProfile={hasProfile} />
+          <VacancyAssessment
+            vacancy={vacancy}
+            gaps={gaps}
+            hasProfile={hasProfile}
+            token={token}
+            onUnauthorized={expire}
+          />
         </div>
       ) : null}
     </div>

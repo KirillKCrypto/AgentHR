@@ -796,6 +796,11 @@ export interface components {
             id: string;
             /** Title */
             title: string;
+            /**
+             * Kind
+             * @default general
+             */
+            kind: string;
             /** Topic Count */
             topic_count: number;
             /** Progress */
@@ -804,6 +809,23 @@ export interface components {
             completed_count: number;
             /** Remaining Count */
             remaining_count: number;
+            /**
+             * Tests Completed
+             * @default 0
+             */
+            tests_completed: number;
+            /**
+             * Tests Passed
+             * @default 0
+             */
+            tests_passed: number;
+            /** Average Score */
+            average_score?: number | null;
+            /**
+             * Attempts Count
+             * @default 0
+             */
+            attempts_count: number;
         };
         /**
          * DashboardProfileRead
@@ -901,11 +923,92 @@ export interface components {
             satisfied_count: number;
             /** Critical Gap Count */
             critical_gap_count: number;
+            /** Verified Readiness */
+            verified_readiness?: number | null;
+            /** Critical Verified */
+            critical_verified?: number | null;
+            /**
+             * Evidence Coverage
+             * @default 0
+             */
+            evidence_coverage: number;
+            /**
+             * Band
+             * @default not_ready
+             */
+            band: string;
+            /**
+             * Band Reason
+             * @default
+             */
+            band_reason: string;
+            /**
+             * Blockers
+             * @default []
+             */
+            blockers: components["schemas"]["GapBlockerRead"][];
+            /**
+             * Confirmation Queue
+             * @default []
+             */
+            confirmation_queue: components["schemas"]["GapConfirmationRead"][];
             /**
              * Focus Topics
              * @default []
              */
             focus_topics: components["schemas"]["DashboardFocusTopicRead"][];
+        };
+        /**
+         * GapBlockerRead
+         * @description Обязательное требование, которое мешает готовности.
+         */
+        GapBlockerRead: {
+            /** Skill Name */
+            skill_name: string;
+            /** Topic Key */
+            topic_key?: string | null;
+            /** Topic Name */
+            topic_name?: string | null;
+            /** Required Level */
+            required_level: number;
+            /** Verified Level */
+            verified_level: number;
+            /** Gap */
+            gap: number;
+            /** Weight */
+            weight: number;
+            /**
+             * Criticality
+             * @default must_have
+             */
+            criticality: string;
+        };
+        /**
+         * GapConfirmationRead
+         * @description Навык, подтверждение которого уточнит расчёт готовности.
+         */
+        GapConfirmationRead: {
+            /** Skill Name */
+            skill_name: string;
+            /** Topic Key */
+            topic_key?: string | null;
+            /** Topic Name */
+            topic_name?: string | null;
+            /** Required Level */
+            required_level: number;
+            /** Self Level */
+            self_level: number;
+            /** Verified Level */
+            verified_level: number;
+            /**
+             * Criticality
+             * @default must_have
+             */
+            criticality: string;
+            /** Potential Gain */
+            potential_gain: number;
+            /** Reason */
+            reason: string;
         };
         /**
          * GapAnalysisRead
@@ -1033,6 +1136,42 @@ export interface components {
              * @default 0
              */
             confidence: number;
+            /**
+             * Potential Readiness
+             * @description Готовность по эффективному уровню, 0..1
+             * @default 0
+             */
+            potential_readiness: number;
+            /** Verified Readiness */
+            verified_readiness?: number | null;
+            /** Critical Verified */
+            critical_verified?: number | null;
+            /**
+             * Evidence Coverage
+             * @description Доля веса требований с подтверждением, 0..1
+             * @default 0
+             */
+            evidence_coverage: number;
+            /**
+             * Band
+             * @default not_ready
+             */
+            band: string;
+            /**
+             * Band Reason
+             * @default
+             */
+            band_reason: string;
+            /**
+             * Blockers
+             * @default []
+             */
+            blockers: components["schemas"]["GapBlockerRead"][];
+            /**
+             * Confirmation Queue
+             * @default []
+             */
+            confirmation_queue: components["schemas"]["GapConfirmationRead"][];
         };
         /**
          * GapItemRead
@@ -1074,6 +1213,41 @@ export interface components {
              * @default false
              */
             covered_by_alternative: boolean;
+            /**
+             * Self Level
+             * @default 0
+             */
+            self_level: number;
+            /**
+             * Verified Level
+             * @default 0
+             */
+            verified_level: number;
+            /**
+             * Verified Gap
+             * @default 0
+             */
+            verified_gap: number;
+            /**
+             * Verified Satisfied
+             * @default false
+             */
+            verified_satisfied: boolean;
+            /**
+             * Status
+             * @default unverified
+             */
+            status: string;
+            /**
+             * Evidence Type
+             * @default none
+             */
+            evidence_type: string;
+            /**
+             * Confidence
+             * @default 0
+             */
+            confidence: number;
         };
         /**
          * GapRecommendationRead
@@ -1439,6 +1613,11 @@ export interface components {
             current_level: number;
             /** Target Level */
             target_level: number;
+            /**
+             * Criticality
+             * @default nice_to_have
+             */
+            criticality: string;
             /** Confidence */
             confidence: number;
             /** Priority */
@@ -1475,8 +1654,22 @@ export interface components {
             completed: boolean;
             /** Test Level */
             test_level?: number | null;
+            /** Test Score */
+            test_score?: number | null;
             /** Interview Score */
             interview_score?: number | null;
+            /**
+             * Status
+             * @default not_tested
+             */
+            status: string;
+            /**
+             * Attempts Count
+             * @default 0
+             */
+            attempts_count: number;
+            /** Last Tested At */
+            last_tested_at?: string | null;
         };
         /**
          * PlanProgressRead
@@ -1496,6 +1689,27 @@ export interface components {
             completed_count: number;
             /** Remaining Count */
             remaining_count: number;
+            /**
+             * Tests Completed
+             * @default 0
+             */
+            tests_completed: number;
+            /**
+             * Tests Passed
+             * @default 0
+             */
+            tests_passed: number;
+            /** Average Score */
+            average_score?: number | null;
+            /**
+             * Attempts Count
+             * @default 0
+             */
+            attempts_count: number;
+            /** Next Topic Key */
+            next_topic_key?: string | null;
+            /** Next Topic Name */
+            next_topic_name?: string | null;
             /**
              * Items
              * @default []
@@ -1529,6 +1743,11 @@ export interface components {
             title: string;
             /** Status */
             status: string;
+            /**
+             * Kind
+             * @default general
+             */
+            kind: string;
             /** Created At */
             created_at?: string | null;
             /**
@@ -1558,10 +1777,19 @@ export interface components {
             status: string;
             /** Vacancy Id */
             vacancy_id?: string | null;
+            /** Vacancy Title */
+            vacancy_title?: string | null;
             /** Resume Id */
             resume_id?: string | null;
             /** Topic Count */
             topic_count: number;
+            /**
+             * Kind
+             * @default general
+             */
+            kind: string;
+            /** Created At */
+            created_at?: string | null;
             /**
              * Is Current
              * @default false
@@ -1714,6 +1942,21 @@ export interface components {
              * @default []
              */
             questions: components["schemas"]["QuizQuestionRead"][];
+            /**
+             * Attempt
+             * @default 1
+             */
+            attempt: number;
+            /**
+             * Max Attempts
+             * @default 2
+             */
+            max_attempts: number;
+            /**
+             * Attempts Count
+             * @default 0
+             */
+            attempts_count: number;
         };
         /**
          * QuizResultItemRead
@@ -1773,6 +2016,36 @@ export interface components {
              * @default []
              */
             items: components["schemas"]["QuizResultItemRead"][];
+            /**
+             * Attempt
+             * @default 1
+             */
+            attempt: number;
+            /**
+             * Max Attempts
+             * @default 2
+             */
+            max_attempts: number;
+            /**
+             * Best Score
+             * @default 0
+             */
+            best_score: number;
+            /**
+             * Best Level
+             * @default 0
+             */
+            best_level: number;
+            /**
+             * Attempts Count
+             * @default 0
+             */
+            attempts_count: number;
+            /**
+             * Can Retry
+             * @default false
+             */
+            can_retry: boolean;
         };
         /**
          * QuizStartRequest
